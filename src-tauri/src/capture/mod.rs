@@ -32,10 +32,11 @@ pub enum PixelFormat {
 }
 
 /// What to capture — a display, window, or application.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum CaptureTarget {
     /// Capture the main display
     #[serde(rename = "display")]
+    #[default]
     Display,
     /// Capture a specific display by its SC display ID
     #[serde(rename = "display_id")]
@@ -46,12 +47,6 @@ pub enum CaptureTarget {
     /// Capture a specific application by bundle identifier
     #[serde(rename = "application")]
     Application(String),
-}
-
-impl Default for CaptureTarget {
-    fn default() -> Self {
-        Self::Display
-    }
 }
 
 /// Configuration passed to a capture backend on start.

@@ -319,7 +319,7 @@ impl Recorder {
                 let pixel = rgb.get_pixel_mut(x, y);
                 pixel[0] = data[offset + 2]; // R ← B (source is BGRA)
                 pixel[1] = data[offset + 1]; // G
-                pixel[2] = data[offset + 0]; // B ← R
+                pixel[2] = data[offset]; // B ← R
             }
         }
 
@@ -475,7 +475,7 @@ pub(crate) fn chrono_now_formatted() -> String {
     // Approximate year (not perfect but good enough for filenames)
     let year = 1970 + (days as f64 / 365.25) as u64;
     // Approximate month/day
-    let remaining_days = days as u64 - ((year - 1970) * 365 + ((year - 1969) / 4));
+    let remaining_days = days - ((year - 1970) * 365 + ((year - 1969) / 4));
     let month = 1 + remaining_days / 28;
     let day = 1 + remaining_days % 28;
 

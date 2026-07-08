@@ -52,7 +52,7 @@ pub async fn list_clips(settings_mgr: State<'_, SettingsManager>) -> Result<Vec<
 
             // Parse timestamp from filename: clip_YYYYMMDD_HHMMSS.mp4
             let created_at = parse_clip_timestamp(&filename)
-                .or_else(|| modified.map(|m| format_unix_timestamp(m)))
+                .or_else(|| modified.map(format_unix_timestamp))
                 .unwrap_or_default();
 
             // Try to read MP4 duration from file header
@@ -142,7 +142,7 @@ pub async fn rename_clip(
 
     let modified = meta.modified().ok();
     let created_at = parse_clip_timestamp(&new_filename)
-        .or_else(|| modified.map(|m| format_unix_timestamp(m)))
+        .or_else(|| modified.map(format_unix_timestamp))
         .unwrap_or_default();
 
     let duration_secs = read_mp4_duration(&new_path).unwrap_or(0);
@@ -216,7 +216,7 @@ fn format_unix_timestamp(time: std::time::SystemTime) -> String {
     let mins = (rem % 3600) / 60;
     let secs_rem = rem % 60;
     let year = 1970 + (days as f64 / 365.25) as u64;
-    let remaining = days as u64 - ((year - 1970) * 365 + ((year - 1969) / 4));
+    let remaining = days - ((year - 1970) * 365 + ((year - 1969) / 4));
     let month = 1 + remaining / 28;
     let day = 1 + remaining % 28;
     format!(

@@ -3,23 +3,12 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppSettings {
     pub recording: RecordingSettings,
     pub hotkeys: HotkeySettings,
     pub general: GeneralSettings,
     pub storage: StorageSettings,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            recording: RecordingSettings::default(),
-            hotkeys: HotkeySettings::default(),
-            general: GeneralSettings::default(),
-            storage: StorageSettings::default(),
-        }
-    }
 }
 
 // ── Recording ──────────────────────────────────────────────────────────────

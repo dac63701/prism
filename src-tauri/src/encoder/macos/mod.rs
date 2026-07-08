@@ -224,7 +224,8 @@ impl Encoder for MacEncoder {
 
         for (i, sample) in written_samples.iter().enumerate() {
             let is_sync = i == 0
-                || (config.keyframe_interval > 0 && i as u32 % config.keyframe_interval == 0);
+                || (config.keyframe_interval > 0
+                    && (i as u32).is_multiple_of(config.keyframe_interval));
 
             let mp4_sample = mp4::Mp4Sample {
                 start_time: i as u64 * sample_duration_val as u64,
