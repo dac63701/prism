@@ -1,0 +1,7 @@
+node_modules
+dist
+.slim/deepwork/
+*.log
+.DS_Store
+src-tauri/target/
+.DS_Store?*

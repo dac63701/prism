@@ -1,0 +1,144 @@
+import { useEffect } from "react";
+import { X, Monitor, HardDrive, Film } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "@/stores/settings";
+import { useRecordingStore } from "@/stores/recording";
+import RecordingControls from "@/components/common/RecordingControls";
+import ScreenPreview from "@/components/common/ScreenPreview";
+import SourceSelector from "@/components/common/SourceSelector";
+
+export default function HomePage() {
+  const { loadSettings, loaded, settings } = useSettingsStore();
+  const isRecording = useRecordingStore((s) => s.isRecording);
+  const frameCount = useRecordingStore((s) => s.frameCount);
+  const checkStatus = useRecordingStore((s) => s.checkStatus);
+  const error = useRecordingStore((s) => s.error);
+  const clearError = useRecordingStore((s) => s.clearError);
+  const framesReceived = useRecordingStore((s) => s.framesReceived);
+
+  useEffect(() => {
+    if (!loaded) loadSettings();
+  }, [loaded, loadSettings]);
+
+  // Poll buffer info while recording
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isRecording) {
+      checkStatus();
+      interval = setInterval(checkStatus, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording, checkStatus]);
+
+  const handleSourceChange = async (targetJson: string) => {
+    try {
+      await invoke("set_capture_target", { targetJson });
+      await loadSettings();
+    } catch (err) {
+      console.error("Failed to set capture target:", err);
+    }
+  };
+
+  // Parse current source for display label
+  const targetLabel = (() => {
+    if (!settings.recording.capture_target.trim()) {
+      return "Main display";
+    }
+    try {
+      const parsed = JSON.parse(settings.recording.capture_target);
+      if (typeof parsed === "string" && parsed === "display") {
+        return "Main display";
+      }
+      if (typeof parsed === "object" && parsed !== null) {
+        if ("display_id" in parsed) {
+          return `Display ${parsed.display_id}`;
+        }
+        if ("application" in parsed) {
+          const bundleId = parsed.application as string;
+          const parts = bundleId.split(".");
+          return parts.length > 2
+            ? parts.slice(0, -1).pop() ?? bundleId
+            : parts.pop() ?? bundleId;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <div className="h-full flex gap-5 px-6 pb-5">
+      {/* ── Left: Preview + Controls ── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Preview */}
+        <div className="flex-1 min-h-0 pt-3 pb-4">
+          <ScreenPreview recording={isRecording} />
+        </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="shrink-0 mb-3 flex items-start gap-2 px-4 py-3 rounded-lg bg-red-950/60 border border-red-900/60">
+            <p className="text-xs text-red-300 flex-1 leading-relaxed">{error}</p>
+            <button
+              onClick={clearError}
+              className="p-0.5 rounded text-red-400 hover:text-red-200 transition-colors"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Controls + Info Bar */}
+        <div className="flex flex-col items-center gap-4 shrink-0">
+          <RecordingControls />
+
+          {/* State text */}
+          <p className="text-sm text-zinc-500">
+            {isRecording
+              ? framesReceived === 0
+                ? "Recording — waiting for frames..."
+                : `Recording — ${frameCount}f (${framesReceived} total)`
+              : "Idle"}
+          </p>
+
+          {/* Compact info bar */}
+          {loaded && (
+            <div className="flex items-center gap-4 text-xs text-zinc-500 bg-zinc-900/40 border border-zinc-800/50 rounded-full px-4 py-1.5">
+              {targetLabel && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <Monitor className="size-3" />
+                    {targetLabel}
+                  </span>
+                  <span className="text-zinc-700">|</span>
+                </>
+              )}
+              <span className="flex items-center gap-1.5">
+                <HardDrive className="size-3" />
+                {settings.recording.buffer_duration_secs}s clip
+              </span>
+              <span className="text-zinc-700">|</span>
+              <span className="flex items-center gap-1.5">
+                <Film className="size-3" />
+                {settings.recording.resolution} · {(settings.recording.bitrate_kbps / 1000).toFixed(1).replace(/\.0$/, "")} Mbps · {settings.recording.fps} FPS
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Right: Source Selector ── */}
+      <div className="w-64 shrink-0 pt-3 pb-5">
+        <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-4">
+          <SourceSelector
+            value={settings.recording.capture_target}
+            onChange={handleSourceChange}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
