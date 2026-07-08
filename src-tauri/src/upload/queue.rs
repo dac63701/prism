@@ -19,7 +19,7 @@ pub struct UploadTask {
     pub id: String,
     pub clip_path: String,
     pub status: UploadStatus,
-    pub progress: f32,  // 0.0 – 1.0
+    pub progress: f32, // 0.0 – 1.0
     pub started_at_secs: Option<u64>,
     pub server_url: Option<String>,
 }
@@ -52,10 +52,7 @@ impl UploadQueue {
 
     /// Get all tasks (for UI display).
     pub fn all(&self) -> Vec<UploadTask> {
-        self.inner
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default()
+        self.inner.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
     /// Mark a task as started.

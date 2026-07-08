@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::capture::{enumerate_capture_sources, CaptureSources, CaptureTarget};
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::create_encoder;
-use crate::recording::{Recorder, chrono_now_formatted};
+use crate::recording::{chrono_now_formatted, Recorder};
 use crate::settings::config::resolution_dimensions;
 use crate::settings::SettingsManager;
 
@@ -60,9 +60,7 @@ pub async fn stop_recording(
 
 /// Check whether recording is active.
 #[tauri::command]
-pub async fn is_recording(
-    recorder: State<'_, Mutex<Recorder>>,
-) -> Result<bool, String> {
+pub async fn is_recording(recorder: State<'_, Mutex<Recorder>>) -> Result<bool, String> {
     let rec = recorder.lock().map_err(|e| e.to_string())?;
     Ok(rec.is_recording())
 }
@@ -119,7 +117,11 @@ pub async fn save_clip(
         .map_err(|e| format!("Failed to create output directory: {e}"))?;
 
     // Step 4: Encode (NO lock held — polling continues)
-    eprintln!("[recording] save_clip encoding {} frames to {}", clip_data.frames.len(), output_path.display());
+    eprintln!(
+        "[recording] save_clip encoding {} frames to {}",
+        clip_data.frames.len(),
+        output_path.display()
+    );
     let mut encoder = create_encoder();
     encoder
         .encode_clip(&clip_data.frames, &output_path, &enc_config)
@@ -184,7 +186,8 @@ pub async fn set_capture_target(
 
     // Update settings
     settings.recording.capture_target = target_json;
-    settings_mgr.set(&app, settings)
+    settings_mgr
+        .set(&app, settings)
         .map_err(|e| format!("Failed to save settings: {e}"))?;
 
     // Reconfigure recorder with new target

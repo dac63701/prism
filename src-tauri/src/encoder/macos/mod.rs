@@ -66,13 +66,14 @@ impl Encoder for MacEncoder {
         };
 
         // Build the compression session
-        let session = CompressionSession::builder(target_width as i32, target_height as i32, vt_codec)
-            .with_real_time(true)
-            .with_average_bit_rate((config.bitrate_kbps as i32).saturating_mul(1000))
-            .with_expected_frame_rate(config.fps as f64)
-            .with_max_keyframe_interval(config.keyframe_interval as i32)
-            .build()
-            .map_err(|e| EncodeError::InitFailed(format!("VideoToolbox init: {e}")))?;
+        let session =
+            CompressionSession::builder(target_width as i32, target_height as i32, vt_codec)
+                .with_real_time(true)
+                .with_average_bit_rate((config.bitrate_kbps as i32).saturating_mul(1000))
+                .with_expected_frame_rate(config.fps as f64)
+                .with_max_keyframe_interval(config.keyframe_interval as i32)
+                .build()
+                .map_err(|e| EncodeError::InitFailed(format!("VideoToolbox init: {e}")))?;
 
         // Create a single IOSurface reused for all frames.
         let bgra_fcc = u32::from_be_bytes(*b"BGRA");
@@ -87,9 +88,17 @@ impl Encoder for MacEncoder {
             alloc_size,
             None,
         )
-        .ok_or_else(|| EncodeError::InitFailed("IOSurface::create_with_properties failed".into()))?;
+        .ok_or_else(|| {
+            EncodeError::InitFailed("IOSurface::create_with_properties failed".into())
+        })?;
 
-        tracing::info!("IOSurface created: {}x{} stride={} size={}", target_width, target_height, stride, alloc_size);
+        tracing::info!(
+            "IOSurface created: {}x{} stride={} size={}",
+            target_width,
+            target_height,
+            stride,
+            alloc_size
+        );
 
         // Encode each frame
         let timescale = config.fps as i32;
@@ -119,9 +128,9 @@ impl Encoder for MacEncoder {
                 .lock_read_write()
                 .map_err(|e| EncodeError::EncodeFailed(format!("IOSurface lock frame {i}: {e}")))?;
 
-            let dst_base = guard
-                .base_address_mut()
-                .ok_or_else(|| EncodeError::EncodeFailed("IOSurface base address unavailable".into()))?;
+            let dst_base = guard.base_address_mut().ok_or_else(|| {
+                EncodeError::EncodeFailed("IOSurface base address unavailable".into())
+            })?;
 
             // Compute actual number of bytes per row from the frame data
             let src_row_stride = stride;
@@ -185,9 +194,8 @@ impl Encoder for MacEncoder {
             timescale: timescale as u32,
         };
 
-        let file = std::fs::File::create(output_path).map_err(|e| {
-            EncodeError::OutputFailed(format!("Failed to create output file: {e}"))
-        })?;
+        let file = std::fs::File::create(output_path)
+            .map_err(|e| EncodeError::OutputFailed(format!("Failed to create output file: {e}")))?;
 
         let mut writer = Mp4Writer::write_start(file, &mp4_config)
             .map_err(|e| EncodeError::OutputFailed(format!("Mp4Writer start: {e}")))?;
@@ -216,8 +224,7 @@ impl Encoder for MacEncoder {
 
         for (i, sample) in written_samples.iter().enumerate() {
             let is_sync = i == 0
-                || (config.keyframe_interval > 0
-                    && i as u32 % config.keyframe_interval == 0);
+                || (config.keyframe_interval > 0 && i as u32 % config.keyframe_interval == 0);
 
             let mp4_sample = mp4::Mp4Sample {
                 start_time: i as u64 * sample_duration_val as u64,
@@ -241,9 +248,7 @@ impl Encoder for MacEncoder {
     }
 }
 
-fn extract_h264_parameter_sets(
-    sample: &EncodedFrame,
-) -> Result<(Vec<u8>, Vec<u8>), String> {
+fn extract_h264_parameter_sets(sample: &EncodedFrame) -> Result<(Vec<u8>, Vec<u8>), String> {
     let sample_buffer = sample
         .cm_sample_buffer()
         .ok_or_else(|| "encoded sample has no CMSampleBuffer".to_string())?;
@@ -311,7 +316,8 @@ fn resize_bgra_frame(
 
     let image = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba)
         .ok_or_else(|| EncodeError::EncodeFailed("Failed to build source image buffer".into()))?;
-    let resized = image::imageops::resize(&image, target_width, target_height, FilterType::Triangle);
+    let resized =
+        image::imageops::resize(&image, target_width, target_height, FilterType::Triangle);
 
     let mut bgra = Vec::with_capacity((target_width as usize) * (target_height as usize) * 4);
     for pixel in resized.pixels() {

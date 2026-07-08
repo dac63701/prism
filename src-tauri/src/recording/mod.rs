@@ -5,16 +5,19 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Manager};
 use std::sync::Mutex;
 use std::time::Duration;
+use tauri::{AppHandle, Manager};
 
-use base64::{Engine as _, engine::general_purpose};
-use image::{ImageBuffer, Rgb, imageops::FilterType};
+use base64::{engine::general_purpose, Engine as _};
 use image::codecs::jpeg::JpegEncoder;
+use image::{imageops::FilterType, ImageBuffer, Rgb};
 
-    use crate::buffer::{BufferConfig, BufferManager, StoredFrame};
-    use crate::capture::{CaptureBackend, CaptureConfig, CaptureTarget, CapturedFrame, create_capture_backend, enumerate_capture_sources};
+use crate::buffer::{BufferConfig, BufferManager, StoredFrame};
+use crate::capture::{
+    create_capture_backend, enumerate_capture_sources, CaptureBackend, CaptureConfig,
+    CaptureTarget, CapturedFrame,
+};
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::create_encoder;
 use crate::settings::config::{resolution_dimensions, AppSettings};
@@ -149,7 +152,10 @@ impl Recorder {
 
         let mut guard = self.inner.lock().expect("recorder lock poisoned");
         if let Some(inner) = guard.as_mut() {
-            inner.backend.stop().map_err(|e| format!("Failed to stop capture: {e}"))?;
+            inner
+                .backend
+                .stop()
+                .map_err(|e| format!("Failed to stop capture: {e}"))?;
         }
         Ok(())
     }
@@ -208,7 +214,10 @@ impl Recorder {
         self.inner
             .lock()
             .ok()
-            .and_then(|g| g.as_ref().map(|inner| inner.buffer.config().max_duration_secs))
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|inner| inner.buffer.config().max_duration_secs)
+            })
             .unwrap_or(60)
     }
 
@@ -265,7 +274,8 @@ impl Recorder {
 
     /// Total frames received since recording started.
     pub fn total_frames_received(&self) -> u64 {
-        self.frames_received.load(std::sync::atomic::Ordering::SeqCst)
+        self.frames_received
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Get the current buffer frame count (for diagnostics).
@@ -297,13 +307,16 @@ impl Recorder {
 
         // Downscale dimensions while maintaining aspect ratio
         let preview_w = Self::PREVIEW_MAX_WIDTH.min(width);
-        let preview_h = (height as f64 * (preview_w as f64 / width as f64)).round().max(1.0) as u32;
+        let preview_h = (height as f64 * (preview_w as f64 / width as f64))
+            .round()
+            .max(1.0) as u32;
 
         // Convert BGRA → full-size RGB image buffer
         let mut rgb = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(width, height);
         for y in 0..height {
             for x in 0..width {
-                let offset = (y as usize * stride as usize + x as usize * 4).min(data.len().saturating_sub(4));
+                let offset = (y as usize * stride as usize + x as usize * 4)
+                    .min(data.len().saturating_sub(4));
                 let pixel = rgb.get_pixel_mut(x, y);
                 pixel[0] = data[offset + 2]; // R ← B (source is BGRA)
                 pixel[1] = data[offset + 1]; // G
@@ -317,7 +330,15 @@ impl Recorder {
         // Encode as JPEG
         let mut jpg_buf = Vec::new();
         let mut encoder = JpegEncoder::new_with_quality(&mut jpg_buf, 80);
-        if encoder.encode(&preview, preview_w, preview_h, image::ExtendedColorType::Rgb8).is_err() {
+        if encoder
+            .encode(
+                &preview,
+                preview_w,
+                preview_h,
+                image::ExtendedColorType::Rgb8,
+            )
+            .is_err()
+        {
             return None;
         }
 
@@ -459,7 +480,13 @@ pub(crate) fn chrono_now_formatted() -> String {
     let month = 1 + remaining_days / 28;
     let day = 1 + remaining_days % 28;
 
-    format!("{y:04}{m:02}{d:02}_{h:02}{min:02}{s:02}",
-        y = year.min(9999), m = month.min(12), d = day.min(31),
-        h = hours, min = mins, s = secs_rem)
+    format!(
+        "{y:04}{m:02}{d:02}_{h:02}{min:02}{s:02}",
+        y = year.min(9999),
+        m = month.min(12),
+        d = day.min(31),
+        h = hours,
+        min = mins,
+        s = secs_rem
+    )
 }

@@ -47,6 +47,9 @@ impl FramePool {
 
     /// Pool statistics: (total_created, total_reused).
     pub fn stats(&self) -> (u32, u32) {
-        (self.created.load(Ordering::Relaxed), self.reused.load(Ordering::Relaxed))
+        (
+            self.created.load(Ordering::Relaxed),
+            self.reused.load(Ordering::Relaxed),
+        )
     }
 }

@@ -50,7 +50,11 @@ impl SettingsManager {
 
     /// Update settings, persist to disk, and emit change event.
     /// Returns the new settings on success.
-    pub fn set(&self, app: &AppHandle, new_settings: AppSettings) -> Result<AppSettings, SettingsError> {
+    pub fn set(
+        &self,
+        app: &AppHandle,
+        new_settings: AppSettings,
+    ) -> Result<AppSettings, SettingsError> {
         self.store.save(&new_settings)?;
         *self.inner.write().expect("settings lock poisoned") = new_settings.clone();
 

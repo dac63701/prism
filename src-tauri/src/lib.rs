@@ -26,7 +26,9 @@ pub fn run() {
                 Ok(mgr) => mgr,
                 Err(e) => {
                     eprintln!("Warning: Failed to load settings ({e}), using defaults");
-                    let app_data = app.path().app_data_dir()
+                    let app_data = app
+                        .path()
+                        .app_data_dir()
                         .unwrap_or_else(|_| std::path::PathBuf::from("."));
                     let store = settings::store::SettingsStore::new(app_data);
                     SettingsManager::with_store(store)

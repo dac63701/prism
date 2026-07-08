@@ -17,7 +17,10 @@ pub fn parse_hotkey(hk: &str) -> Result<Shortcut, String> {
 
 /// Register or re-register all hotkeys from settings.
 /// Unregisters any previously registered shortcuts first.
-pub fn register_hotkeys<R: Runtime>(app: &AppHandle<R>, settings: &HotkeySettings) -> Result<(), String> {
+pub fn register_hotkeys<R: Runtime>(
+    app: &AppHandle<R>,
+    settings: &HotkeySettings,
+) -> Result<(), String> {
     let bindings = [
         (&settings.save_clip, "save_clip"),
         (&settings.toggle_recording, "toggle_recording"),
@@ -30,8 +33,7 @@ pub fn register_hotkeys<R: Runtime>(app: &AppHandle<R>, settings: &HotkeySetting
             continue;
         }
         // Validate by parsing
-        let _ = parse_hotkey(hk_str)
-            .map_err(|e| format!("Invalid hotkey '{hk_str}': {e}"))?;
+        let _ = parse_hotkey(hk_str).map_err(|e| format!("Invalid hotkey '{hk_str}': {e}"))?;
     }
 
     // Safe to replace the old bindings now.
@@ -68,11 +70,7 @@ pub fn action_to_event(action: &str) -> &'static str {
 
 /// Global shortcut event handler — dispatches to frontend via events.
 /// Compares the triggered shortcut against configured settings.
-pub fn on_shortcut<R: Runtime>(
-    app: &AppHandle<R>,
-    shortcut: &Shortcut,
-    _event: ShortcutEvent,
-) {
+pub fn on_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &Shortcut, _event: ShortcutEvent) {
     let settings = app.state::<SettingsManager>().get().hotkeys;
 
     let action_str = find_action(&settings, shortcut);

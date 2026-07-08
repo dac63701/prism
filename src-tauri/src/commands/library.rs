@@ -20,9 +20,7 @@ pub struct ClipInfo {
 
 /// List all clips in the output directory, sorted newest-first.
 #[tauri::command]
-pub async fn list_clips(
-    settings_mgr: State<'_, SettingsManager>,
-) -> Result<Vec<ClipInfo>, String> {
+pub async fn list_clips(settings_mgr: State<'_, SettingsManager>) -> Result<Vec<ClipInfo>, String> {
     let settings = settings_mgr.get();
     let output_dir = resolve_output_dir(&settings.recording.output_directory);
 
@@ -161,9 +159,7 @@ pub async fn rename_clip(
 
 /// Open the clip library location in the system file manager.
 #[tauri::command]
-pub async fn open_clip_location(
-    settings_mgr: State<'_, SettingsManager>,
-) -> Result<(), String> {
+pub async fn open_clip_location(settings_mgr: State<'_, SettingsManager>) -> Result<(), String> {
     let settings = settings_mgr.get();
     let output_dir = resolve_output_dir(&settings.recording.output_directory);
 
@@ -188,7 +184,8 @@ fn parse_clip_timestamp(filename: &str) -> Option<String> {
     let stem = filename.strip_suffix(".mp4")?;
     // strip "clip_" prefix
     let ts_part = stem.strip_prefix("clip_")?;
-    if ts_part.len() != 15 {  // YYYYMMDD_HHMMSS = 15 chars
+    if ts_part.len() != 15 {
+        // YYYYMMDD_HHMMSS = 15 chars
         return None;
     }
     let (date_part, time_part) = ts_part.split_once('_')?;

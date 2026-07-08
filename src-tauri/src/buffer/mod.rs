@@ -3,13 +3,13 @@
 //! The [`BufferManager`] orchestrates frame ingestion from a capture backend
 //! and enables saving clips on demand (hotkey trigger, moment detection).
 
-pub mod ring;
 pub mod pool;
+pub mod ring;
 
-use std::time::Duration;
 use crate::capture::CapturedFrame;
-pub use ring::{RingBuffer, StoredFrame};
 pub use pool::FramePool;
+pub use ring::{RingBuffer, StoredFrame};
+use std::time::Duration;
 
 /// High-level configuration for the ring-buffer recording engine.
 #[derive(Debug, Clone)]
@@ -38,7 +38,9 @@ impl BufferConfig {
     /// Estimated bytes per frame at the given resolution.
     pub fn frame_size(&self, width: u32, height: u32) -> usize {
         // BGRA: 4 bytes per pixel
-        (width as usize).saturating_mul(height as usize).saturating_mul(4)
+        (width as usize)
+            .saturating_mul(height as usize)
+            .saturating_mul(4)
     }
 }
 
@@ -58,7 +60,11 @@ impl BufferManager {
         let pool = FramePool::new(frame_size, prealloc);
         let buffer = RingBuffer::new(config.capacity());
 
-        Self { buffer, pool, config }
+        Self {
+            buffer,
+            pool,
+            config,
+        }
     }
 
     /// Ingest a captured frame: push into ring buffer, release old data.

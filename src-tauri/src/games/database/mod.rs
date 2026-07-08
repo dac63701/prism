@@ -78,7 +78,11 @@ impl GameRegistry {
             .lock()
             .ok()?
             .iter()
-            .find(|g| g.window_titles.iter().any(|w| lower.contains(&w.to_lowercase())))
+            .find(|g| {
+                g.window_titles
+                    .iter()
+                    .any(|w| lower.contains(&w.to_lowercase()))
+            })
             .cloned()
     }
 

@@ -8,19 +8,22 @@
 //! - Quit
 
 use tauri::{
-    AppHandle, Emitter, Manager, Runtime,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, Runtime,
 };
 
 /// Build and attach the system tray with context menu.
 pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let save_clip =
-        MenuItemBuilder::with_id("save_clip", "Save Clip").accelerator("CmdOrCtrl+Shift+X").build(app)?;
-    let open_library =
-        MenuItemBuilder::with_id("open_library", "Open Library").accelerator("CmdOrCtrl+Shift+L").build(app)?;
-    let settings_item =
-        MenuItemBuilder::with_id("open_settings", "Settings").accelerator("CmdOrCtrl+,").build(app)?;
+    let save_clip = MenuItemBuilder::with_id("save_clip", "Save Clip")
+        .accelerator("CmdOrCtrl+Shift+X")
+        .build(app)?;
+    let open_library = MenuItemBuilder::with_id("open_library", "Open Library")
+        .accelerator("CmdOrCtrl+Shift+L")
+        .build(app)?;
+    let settings_item = MenuItemBuilder::with_id("open_settings", "Settings")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit Prism").build(app)?;
 
     let menu = MenuBuilder::new(app)
@@ -33,14 +36,10 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     TrayIconBuilder::new()
         .tooltip("Prism — Game Clipping")
-        .icon(
-            app.default_window_icon()
-                .cloned()
-                .unwrap_or_else(|| {
-                    // 1x1 transparent pixel as safety fallback
-                    tauri::image::Image::new(&[0, 0, 0, 0], 1, 1)
-                })
-        )
+        .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
+            // 1x1 transparent pixel as safety fallback
+            tauri::image::Image::new(&[0, 0, 0, 0], 1, 1)
+        }))
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "save_clip" => {

@@ -20,8 +20,7 @@ pub async fn upload_clip(
         .unwrap_or("clip.mp4")
         .to_string();
 
-    let file_part = reqwest::multipart::Part::bytes(file_bytes)
-        .file_name(filename);
+    let file_part = reqwest::multipart::Part::bytes(file_bytes).file_name(filename);
 
     let form = reqwest::multipart::Form::new().part("clip", file_part);
 

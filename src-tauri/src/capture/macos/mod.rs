@@ -50,7 +50,9 @@ impl CaptureBackend for MacCaptureBackend {
         let (filter, width, height) = build_filter(&config.target, &content)?;
 
         // --- 3. Stream configuration ---------------------------------------
-        let mut cfg = SCStreamConfiguration::new().with_width(width).with_height(height);
+        let mut cfg = SCStreamConfiguration::new()
+            .with_width(width)
+            .with_height(height);
         cfg.set_pixel_format(ScPixelFormat::BGRA);
         cfg.set_shows_cursor(config.capture_cursor);
 
@@ -83,7 +85,12 @@ impl CaptureBackend for MacCaptureBackend {
 
         self.stream = Some(stream);
         self.active = true;
-        tracing::info!("macOS capture started (target={:?}, {}x{})", config.target, width, height);
+        tracing::info!(
+            "macOS capture started (target={:?}, {}x{})",
+            config.target,
+            width,
+            height
+        );
         Ok(())
     }
 
@@ -115,7 +122,9 @@ type FilterResult = Result<(SCContentFilter, u32, u32), CaptureError>;
 
 fn build_filter(target: &CaptureTarget, content: &SCShareableContent) -> FilterResult {
     match target {
-        CaptureTarget::Display | CaptureTarget::DisplayId(_) => build_display_filter(target, content),
+        CaptureTarget::Display | CaptureTarget::DisplayId(_) => {
+            build_display_filter(target, content)
+        }
         CaptureTarget::Window(window_id) => build_window_filter(*window_id, content),
         CaptureTarget::Application(bundle_id) => build_application_filter(bundle_id, content),
     }
