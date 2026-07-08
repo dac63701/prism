@@ -1,6 +1,4 @@
-use crate::capture::{
-    CaptureBackend, CaptureConfig, CaptureError, CaptureSources, CapturedFrame,
-};
+use crate::capture::{CaptureBackend, CaptureConfig, CaptureError, CaptureSources, CapturedFrame};
 
 pub struct LinuxCaptureBackend;
 
