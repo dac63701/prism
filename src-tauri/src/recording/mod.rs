@@ -15,8 +15,7 @@ use image::{imageops::FilterType, ImageBuffer, Rgb};
 
 use crate::buffer::{BufferConfig, BufferManager, StoredFrame};
 use crate::capture::{
-    create_capture_backend, enumerate_capture_sources, CaptureBackend, CaptureConfig,
-    CaptureTarget, CapturedFrame,
+    create_capture_backend, CaptureBackend, CaptureConfig, CaptureTarget, CapturedFrame,
 };
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::create_encoder;

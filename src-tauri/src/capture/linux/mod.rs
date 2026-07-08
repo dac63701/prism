@@ -1,2 +1,36 @@
-//! Platform-specific implementation (stub)
-// TODO: Implement for this platform
+use crate::capture::{
+    CaptureBackend, CaptureConfig, CaptureError, CaptureSources, CapturedFrame,
+};
+
+pub struct LinuxCaptureBackend;
+
+impl LinuxCaptureBackend {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl CaptureBackend for LinuxCaptureBackend {
+    fn start(&mut self, _config: CaptureConfig) -> Result<(), CaptureError> {
+        Err(CaptureError::UnsupportedPlatform)
+    }
+
+    fn stop(&mut self) -> Result<(), CaptureError> {
+        Err(CaptureError::UnsupportedPlatform)
+    }
+
+    fn read_latest_frame(&mut self) -> Option<CapturedFrame> {
+        None
+    }
+
+    fn is_active(&self) -> bool {
+        false
+    }
+}
+
+pub fn enumerate_sources() -> CaptureSources {
+    CaptureSources {
+        displays: vec![],
+        applications: vec![],
+    }
+}
