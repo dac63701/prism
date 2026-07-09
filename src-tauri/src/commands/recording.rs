@@ -4,11 +4,13 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::capture::{enumerate_capture_sources, CaptureSources, CaptureTarget};
+use std::path::Path;
+
+use crate::capture::{enumerate_capture_sources, CaptureSources, CaptureTarget, PixelFormat};
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::create_encoder;
 use crate::recording::{chrono_now_formatted, Recorder};
-use crate::settings::config::resolution_dimensions;
+use crate::settings::config::{is_native_resolution, resolution_dimensions};
 use crate::settings::SettingsManager;
 
 /// Start the ring-buffer recording and spawn the polling task.
@@ -97,7 +99,12 @@ pub async fn save_clip(
 
     // Step 2: Build encoder config from settings
     let rs = &settings.recording;
-    let (target_width, target_height) = resolution_dimensions(&rs.resolution);
+    let first = &clip_data.frames[0];
+    let (target_width, target_height) = if is_native_resolution(&rs.resolution) {
+        (first.width, first.height)
+    } else {
+        resolution_dimensions(&rs.resolution)
+    };
     let enc_config = EncoderConfig {
         codec: Codec::H264,
         bitrate_kbps: rs.bitrate_kbps,
@@ -156,6 +163,15 @@ pub async fn save_clip(
         .encode_clip(&frames_with_sps, &output_path, &enc_config)
         .map_err(|e| format!("Encoding failed: {e}"))?;
     eprintln!("[recording] save_clip encoding complete");
+
+    // Step 6: Generate server-side thumbnail from latest captured frame
+    if let Some(preview) = &clip_data.preview_frame {
+        let thumb_stem = output_path.file_stem().unwrap_or_default().to_string_lossy();
+        let thumb_path = output_path.with_file_name(format!("{}_thumb.jpg", thumb_stem));
+        if let Err(e) = generate_thumbnail(preview, &thumb_path) {
+            eprintln!("[recording] thumbnail generation failed: {e}");
+        }
+    }
 
     let _ = app.emit("clip-saved", &output_path.to_string_lossy().to_string());
 
@@ -232,16 +248,63 @@ pub async fn set_capture_target(
     // Reconfigure recorder with new target
     {
         let rec = recorder.lock().map_err(|e| e.to_string())?;
-        if rec.is_recording() {
+        let was_recording = rec.is_recording();
+        if was_recording {
             rec.stop_recording().ok();
             rec.reconfigure_target(target);
-            rec.start_recording()?;
+            let started = rec.start_recording();
+            if started.is_ok() {
+                rec.start_polling(app.clone());
+            }
+            let _ = app.emit("recording-state-changed", started.is_ok());
         } else {
             rec.reconfigure_target(target);
+            let _ = app.emit("recording-state-changed", false);
         }
-
-        let _ = app.emit("recording-state-changed", rec.is_recording());
     }
+
+    Ok(())
+}
+
+/// Generate a JPEG thumbnail from a captured frame and save it alongside the MP4.
+/// Downscales to 320px wide while preserving aspect ratio.
+fn generate_thumbnail(frame: &crate::capture::CapturedFrame, thumb_path: &Path) -> Result<(), String> {
+    use image::imageops::FilterType;
+
+    let w = frame.width;
+    let h = frame.height;
+    let max_w = 320u32;
+    let thumb_w = max_w.min(w).max(1);
+    let thumb_h = (h as f64 * (thumb_w as f64 / w as f64)).round().max(1.0) as u32;
+
+    let rgb = match frame.pixel_format {
+        PixelFormat::Nv12 => crate::capture::nv12_to_rgb(&frame.data, w, h),
+        PixelFormat::Bgra => {
+            let mut rgb = vec![0u8; (w * h * 3) as usize];
+            for y in 0..h {
+                for x in 0..w {
+                    let off = (y * frame.stride + x * 4) as usize;
+                    let dst = (y * w + x) as usize * 3;
+                    rgb[dst] = frame.data[off + 2];
+                    rgb[dst + 1] = frame.data[off + 1];
+                    rgb[dst + 2] = frame.data[off];
+                }
+            }
+            rgb
+        }
+        PixelFormat::H264 => return Err("Cannot generate thumbnail from H.264 data".into()),
+    };
+
+    let img = image::RgbImage::from_raw(w, h, rgb)
+        .ok_or("Failed to create RGB image from frame data")?;
+    let resized = image::imageops::resize(&img, thumb_w, thumb_h, FilterType::Triangle);
+
+    let file = std::fs::File::create(thumb_path)
+        .map_err(|e| format!("Failed to create thumbnail file: {e}"))?;
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, 75);
+    encoder
+        .encode(&resized, thumb_w, thumb_h, image::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("JPEG encode failed: {e}"))?;
 
     Ok(())
 }

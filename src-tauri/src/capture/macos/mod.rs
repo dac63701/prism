@@ -5,6 +5,7 @@
 //! permission.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use screencapturekit::cm::{CMSampleBuffer, CMSampleBufferExt};
 use screencapturekit::shareable_content::SCShareableContent;
@@ -60,11 +61,25 @@ impl CaptureBackend for MacCaptureBackend {
         let mut stream = SCStream::new(&filter, &cfg);
 
         // --- 5. Register output handler ------------------------------------
+        // FPS limiter: the SCStream fires at the display refresh rate (up to
+        // 144Hz). For a 4K display that means 33 MB per frame × 144 = 4.7 GB/s
+        // allocation churn in the callback alone.  We skip frames when the
+        // time since the last processed frame is less than 1/fps so that the
+        // poll loop doesn't drown in 144 fps allocations it can't consume.
         let latest = self.latest.clone();
+        let min_interval = Duration::from_secs_f64(1.0 / config.fps.max(1) as f64);
+        let last_frame = Arc::new(std::sync::Mutex::new(Instant::now()));
         let registered = stream.add_output_handler(
             move |sample: CMSampleBuffer, of_type: SCStreamOutputType| {
                 if of_type != SCStreamOutputType::Screen {
                     return;
+                }
+                let now = Instant::now();
+                if let Ok(mut last) = last_frame.lock() {
+                    if now.duration_since(*last) < min_interval {
+                        return;
+                    }
+                    *last = now;
                 }
                 if let Some(pixel_buffer) = sample.image_buffer() {
                     Self::handle_frame(&latest, &pixel_buffer);

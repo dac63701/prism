@@ -3,6 +3,8 @@
 //! Uses the [`videotoolbox`] crate for VTCompressionSession (HW H.264/HEVC)
 //! and the [`mp4`] crate for ISO-BMFF muxing.
 
+pub mod vt_encoder;
+
 use std::path::Path;
 
 use apple_cf::iosurface::IOSurface;
@@ -14,6 +16,7 @@ use videotoolbox::session::Codec as VtCodec;
 use crate::buffer::StoredFrame;
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::{EncodeError, Encoder};
+use crate::capture::PixelFormat;
 
 /// macOS VideoToolbox-backed hardware encoder.
 pub struct MacEncoder;
@@ -33,6 +36,11 @@ impl Encoder for MacEncoder {
     ) -> Result<(), EncodeError> {
         if frames.is_empty() {
             return Err(EncodeError::EncodeFailed("No frames to encode".into()));
+        }
+
+        // Fast path: frames are already H.264 AVCC — mux directly.
+        if frames[0].pixel_format == PixelFormat::H264 {
+            return mux_h264_clip(frames, output_path, config);
         }
 
         let source_width = frames[0].width;
@@ -105,20 +113,36 @@ impl Encoder for MacEncoder {
         let mut encoded_samples: Vec<EncodedFrame> = Vec::with_capacity(frames.len());
 
         for (i, frame) in frames.iter().enumerate() {
+            // Step 1: Convert NV12 → BGRA if needed (ring buffer stores NV12 on macOS)
+            let bgra_buf;
+            let bgra_data: &[u8] = match frame.pixel_format {
+                crate::capture::PixelFormat::Nv12 => {
+                    bgra_buf = crate::capture::nv12_to_bgra(
+                        frame.data.as_slice(),
+                        frame.width,
+                        frame.height,
+                    );
+                    &bgra_buf
+                }
+                _ => frame.data.as_slice(),
+            };
+
+            // Step 2: Resize if the source doesn't match target dimensions
+            let src_stride = (frame.width as usize) * 4; // BGRA is tightly packed after conversion
             let resized_bgra;
             let src: &[u8] = if frame.width == target_width
                 && frame.height == target_height
-                && frame.stride as usize == stride
+                && src_stride == stride
             {
-                frame.data.as_slice()
+                bgra_data
             } else {
                 resized_bgra = resize_bgra_frame(
-                    frame.data.as_slice(),
+                    bgra_data,
                     frame.width,
                     frame.height,
                     target_width,
                     target_height,
-                    frame.stride as usize,
+                    src_stride,
                 )?;
                 &resized_bgra
             };
@@ -132,14 +156,13 @@ impl Encoder for MacEncoder {
                 EncodeError::EncodeFailed("IOSurface base address unavailable".into())
             })?;
 
-            // Compute actual number of bytes per row from the frame data
-            let src_row_stride = stride;
+            let row_stride = stride;
             let copy_height = target_height as usize;
-            let copy_bytes_per_row = stride; // BGRA = 4 bytes per pixel
+            let copy_bytes_per_row = stride;
 
             for y in 0..copy_height {
-                let src_off = y * src_row_stride;
-                let dst_off = y * src_row_stride;
+                let src_off = y * row_stride;
+                let dst_off = y * row_stride;
                 let to_copy = copy_bytes_per_row;
                 if src_off + to_copy <= src.len() && dst_off + to_copy <= alloc_size {
                     unsafe {
@@ -249,7 +272,7 @@ impl Encoder for MacEncoder {
     }
 }
 
-fn extract_h264_parameter_sets(sample: &EncodedFrame) -> Result<(Vec<u8>, Vec<u8>), String> {
+pub(crate) fn extract_h264_parameter_sets(sample: &EncodedFrame) -> Result<(Vec<u8>, Vec<u8>), String> {
     let sample_buffer = sample
         .cm_sample_buffer()
         .ok_or_else(|| "encoded sample has no CMSampleBuffer".to_string())?;
@@ -302,17 +325,132 @@ fn extract_h264_parameter_sets(sample: &EncodedFrame) -> Result<(Vec<u8>, Vec<u8
     Ok((sps, pps))
 }
 
-fn resize_bgra_frame(
+/// Mux pre-encoded H.264 AVCC frames directly into an MP4 container.
+/// Matches [`WindowsEncoder::encode_clip`] — no re-encoding.
+fn mux_h264_clip(
+    frames: &[StoredFrame],
+    output_path: &Path,
+    config: &EncoderConfig,
+) -> Result<(), EncodeError> {
+    let (sps, pps) = extract_sps_pps(frames)?;
+
+    use mp4::{AvcConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
+
+    let mp4_config = Mp4Config {
+        major_brand: "isom".parse().unwrap(),
+        minor_version: 512,
+        compatible_brands: vec![
+            "isom".parse().unwrap(),
+            "iso2".parse().unwrap(),
+            "avc1".parse().unwrap(),
+        ],
+        timescale: config.fps,
+    };
+
+    let file = std::fs::File::create(output_path)
+        .map_err(|e| EncodeError::OutputFailed(format!("Create output: {e}")))?;
+
+    let mut writer = Mp4Writer::write_start(file, &mp4_config)
+        .map_err(|e| EncodeError::OutputFailed(format!("Mp4Writer start: {e}")))?;
+
+    let avc_config = AvcConfig {
+        width: config.target_width as u16,
+        height: config.target_height as u16,
+        seq_param_set: sps,
+        pic_param_set: pps,
+    };
+
+    let track_config = TrackConfig {
+        track_type: TrackType::Video,
+        timescale: config.fps,
+        language: "und".to_string(),
+        media_conf: MediaConfig::AvcConfig(avc_config),
+    };
+
+    writer
+        .add_track(&track_config)
+        .map_err(|e| EncodeError::OutputFailed(format!("add_track: {e}")))?;
+
+    for (i, frame) in frames.iter().enumerate() {
+        if frame.pixel_format != PixelFormat::H264 {
+            return Err(EncodeError::EncodeFailed(
+                "mux_h264_clip expects H.264 encoded frames".into(),
+            ));
+        }
+
+        let sample = mp4::Mp4Sample {
+            start_time: i as u64,
+            duration: 1,
+            rendering_offset: 0,
+            is_sync: frame.is_sync,
+            bytes: Bytes::copy_from_slice(&frame.data),
+        };
+
+        writer
+            .write_sample(1, &sample)
+            .map_err(|e| EncodeError::EncodeFailed(format!("write_sample {i}: {e}")))?;
+    }
+
+    writer
+        .write_end()
+        .map_err(|e| EncodeError::OutputFailed(format!("write_end: {e}")))?;
+
+    Ok(())
+}
+
+/// Extract SPS and PPS NAL units from AVCC-format H.264 frames.
+/// Scans every frame for NAL types 7 (SPS) and 8 (PPS).
+pub(crate) fn extract_sps_pps(frames: &[StoredFrame]) -> Result<(Vec<u8>, Vec<u8>), EncodeError> {
+    for frame in frames {
+        if frame.pixel_format != PixelFormat::H264 {
+            continue;
+        }
+        let data = &frame.data;
+        let mut offset = 0;
+        let mut sps = Vec::new();
+        let mut pps = Vec::new();
+
+        while offset + 4 <= data.len() {
+            let nal_len =
+                u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+            offset += 4;
+            if offset + nal_len > data.len() {
+                break;
+            }
+            let nal_type = data[offset] & 0x1F;
+            match nal_type {
+                7 => sps = data[offset..offset + nal_len].to_vec(),
+                8 => pps = data[offset..offset + nal_len].to_vec(),
+                _ => {}
+            }
+            offset += nal_len;
+        }
+
+        if !sps.is_empty() && !pps.is_empty() {
+            return Ok((sps, pps));
+        }
+    }
+
+    Err(EncodeError::EncodeFailed(
+        "No SPS/PPS found in H.264 stream".into(),
+    ))
+}
+
+pub(crate) fn resize_bgra_frame(
     data: &[u8],
     width: u32,
     height: u32,
     target_width: u32,
     target_height: u32,
-    _stride: usize,
+    stride: usize,
 ) -> Result<Vec<u8>, EncodeError> {
     let mut rgba = Vec::with_capacity((width as usize) * (height as usize) * 4);
-    for pixel in data.chunks_exact(4) {
-        rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    for y in 0..height {
+        let row_start = (y as usize) * stride;
+        for x in 0..width {
+            let off = row_start + (x as usize) * 4;
+            rgba.extend_from_slice(&[data[off + 2], data[off + 1], data[off], data[off + 3]]);
+        }
     }
 
     let image = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, rgba)

@@ -23,6 +23,7 @@ interface RecordingState {
   saveClip: (durationSecs?: number) => Promise<string>;
   checkStatus: () => Promise<void>;
   clearLastClipPath: () => void;
+  setError: (err: string) => void;
   clearError: () => void;
 }
 
@@ -132,6 +133,8 @@ export const useRecordingStore = create<RecordingState>((set) => {
     clearLastClipPath: () => {
       set({ lastClipPath: null });
     },
+
+    setError: (err: string) => set({ error: err }),
 
     clearError: () => {
       set({ error: null });

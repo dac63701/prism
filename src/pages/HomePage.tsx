@@ -21,6 +21,7 @@ export default function HomePage() {
   const recordingElapsedSeconds = useRecordingStore((s) => s.recordingElapsedSeconds);
   const checkStatus = useRecordingStore((s) => s.checkStatus);
   const error = useRecordingStore((s) => s.error);
+  const setError = useRecordingStore((s) => s.setError);
   const clearError = useRecordingStore((s) => s.clearError);
   const framesReceived = useRecordingStore((s) => s.framesReceived);
 
@@ -51,7 +52,8 @@ export default function HomePage() {
       await invoke("set_capture_target", { targetJson });
       await loadSettings();
     } catch (err) {
-      console.error("Failed to set capture target:", err);
+      const msg = typeof err === "string" ? err : "Failed to switch capture target";
+      setError(msg);
     }
   };
 

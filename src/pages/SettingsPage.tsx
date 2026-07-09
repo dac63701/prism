@@ -6,6 +6,7 @@ import PresetSlider from "@/components/settings/PresetSlider";
 import HotkeyCaptureInput from "@/components/settings/HotkeyCaptureInput";
 
 const RESOLUTION_OPTIONS = [
+  { value: "native", label: "Native" },
   { value: "720p", label: "720p" },
   { value: "1080p", label: "1080p" },
   { value: "1440p", label: "1440p" },

@@ -63,6 +63,7 @@ export default function ClipDetailPage() {
   }
 
   const videoSrc = convertFileSrc(clip.path);
+  const posterSrc = convertFileSrc(clip.path.replace(/\.mp4$/, "_thumb.jpg"));
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -174,6 +175,16 @@ export default function ClipDetailPage() {
       {/* Video Player */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4">
         <div className="relative w-full max-w-3xl aspect-video bg-black rounded-xl overflow-hidden group">
+          {/* Poster thumbnail (shown until video plays) */}
+          {!playing && (
+            <img
+              src={posterSrc}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          )}
+
           <video
             ref={videoRef}
             src={videoSrc}

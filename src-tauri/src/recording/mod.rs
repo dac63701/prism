@@ -18,7 +18,13 @@ use crate::capture::{
 };
 #[cfg(target_os = "windows")]
 use crate::encoder::windows::mf_encoder::MfH264Encoder;
-use crate::settings::config::{resolution_dimensions, AppSettings};
+#[cfg(target_os = "macos")]
+use crate::encoder::macos::vt_encoder::VtH264Encoder;
+#[cfg(target_os = "macos")]
+use crate::encoder::macos::resize_bgra_frame;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+use crate::settings::config::{is_native_resolution, resolution_dimensions};
+use crate::settings::config::AppSettings;
 
 /// Polling interval as a fraction of the frame duration,
 /// so we don't busy-loop but still catch frames in time.
@@ -49,20 +55,35 @@ struct RecorderInner {
     output_dir: PathBuf,
     /// Most recently captured frame (for live preview)
     latest_frame: Option<CapturedFrame>,
-    /// H.264 hardware encoder for the shadow buffer (Windows only).
+    /// H.264 hardware encoder for the shadow buffer.
     #[cfg(target_os = "windows")]
     h264_encoder: Option<MfH264Encoder>,
-    /// Frame index for the H.264 encoder (Windows only).
+    #[cfg(target_os = "macos")]
+    h264_encoder: Option<VtH264Encoder>,
+    /// Frame index for the H.264 encoder.
     #[cfg(target_os = "windows")]
+    frame_index: u64,
+    #[cfg(target_os = "macos")]
     frame_index: u64,
     /// Cached SPS NAL unit (AVCC format) from the H.264 encoder.
     #[cfg(target_os = "windows")]
     sps: Vec<u8>,
+    #[cfg(target_os = "macos")]
+    sps: Vec<u8>,
     /// Cached PPS NAL unit (AVCC format) from the H.264 encoder.
     #[cfg(target_os = "windows")]
     pps: Vec<u8>,
+    #[cfg(target_os = "macos")]
+    pps: Vec<u8>,
     /// Monotonic timestamp when recording started (for elapsed-time display).
     recording_started_at: Option<std::time::Instant>,
+    /// Uses capture-source dimensions; encoder init deferred until first frame.
+    resolution_is_native: bool,
+    /// Stored bitrate used for encoder lazy-init.
+    native_bitrate_kbps: u32,
+    /// Target encoder dimensions (from settings for non-native, from first frame for native).
+    target_width: u32,
+    target_height: u32,
 }
 
 impl Recorder {
@@ -90,13 +111,34 @@ impl Recorder {
             target,
         };
 
+        let native = is_native_resolution(&rs.resolution);
+        let (target_w, target_h) = if native {
+            (1920, 1080)
+        } else {
+            resolution_dimensions(&rs.resolution)
+        };
+
         #[cfg(target_os = "windows")]
-        let h264_encoder = {
-            let (w, h) = resolution_dimensions(&rs.resolution);
-            match MfH264Encoder::new(w, h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2)) {
+        let h264_encoder = if native {
+            None
+        } else {
+            match MfH264Encoder::new(target_w, target_h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2)) {
                 Ok(enc) => Some(enc),
                 Err(e) => {
                     eprintln!("[prism] H.264 encoder init failed — falling back to raw NV12: {e}");
+                    None
+                }
+            }
+        };
+
+        #[cfg(target_os = "macos")]
+        let h264_encoder = if native {
+            None
+        } else {
+            match VtH264Encoder::new(target_w, target_h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2)) {
+                Ok(enc) => Some(enc),
+                Err(e) => {
+                    eprintln!("[prism] VT H.264 encoder init failed — falling back to raw NV12: {e}");
                     None
                 }
             }
@@ -112,13 +154,25 @@ impl Recorder {
                 latest_frame: None,
                 #[cfg(target_os = "windows")]
                 h264_encoder,
+                #[cfg(target_os = "macos")]
+                h264_encoder,
                 #[cfg(target_os = "windows")]
+                frame_index: 0,
+                #[cfg(target_os = "macos")]
                 frame_index: 0,
                 #[cfg(target_os = "windows")]
                 sps: Vec::new(),
+                #[cfg(target_os = "macos")]
+                sps: Vec::new(),
                 #[cfg(target_os = "windows")]
                 pps: Vec::new(),
+                #[cfg(target_os = "macos")]
+                pps: Vec::new(),
                 recording_started_at: None,
+                resolution_is_native: native,
+                native_bitrate_kbps: rs.bitrate_kbps,
+                target_width: target_w,
+                target_height: target_h,
             })),
             running: AtomicBool::new(false),
             polling_spawned: AtomicBool::new(false),
@@ -144,22 +198,31 @@ impl Recorder {
                 inner.resolution.0,
                 inner.resolution.1,
             );
-            // Rebuild H.264 encoder with new settings
+            // Rebuild H.264 encoder with new settings.
+            // Native resolution defers init until first frame.
+            inner.resolution_is_native = is_native_resolution(&rs.resolution);
+            inner.native_bitrate_kbps = rs.bitrate_kbps;
+            if inner.resolution_is_native {
+                inner.target_width = 0;
+                inner.target_height = 0;
+            } else {
+                let (w, h) = resolution_dimensions(&rs.resolution);
+                inner.target_width = w;
+                inner.target_height = h;
+            }
             #[cfg(target_os = "windows")]
             {
-                let (w, h) = resolution_dimensions(&rs.resolution);
                 inner.frame_index = 0;
                 inner.sps.clear();
                 inner.pps.clear();
-                inner.h264_encoder = match MfH264Encoder::new(
-                    w, h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2),
-                ) {
-                    Ok(enc) => Some(enc),
-                    Err(e) => {
-                        eprintln!("[prism] H.264 encoder reinit failed — falling back to raw NV12: {e}");
-                        None
-                    }
-                };
+                inner.h264_encoder = None;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                inner.frame_index = 0;
+                inner.sps.clear();
+                inner.pps.clear();
+                inner.h264_encoder = None;
             }
             // Update capture config
             inner.backend_config.fps = rs.fps;
@@ -198,11 +261,14 @@ impl Recorder {
     }
 
     /// Stop the capture backend and mark as stopped.
+    /// Clears the ring buffer, resets the elapsed timer, and resets the
+    /// frame counter so the next recording session starts fresh.
     /// Resets the polling-spawned flag so the next `start_recording` can
     /// re-create the background frame-polling task.
     pub fn stop_recording(&self) -> Result<(), String> {
         self.running.store(false, Ordering::SeqCst);
         self.polling_spawned.store(false, Ordering::SeqCst);
+        self.frames_received.store(0, Ordering::SeqCst);
 
         let mut guard = self.inner.lock().expect("recorder lock poisoned");
         if let Some(inner) = guard.as_mut() {
@@ -210,6 +276,22 @@ impl Recorder {
                 .backend
                 .stop()
                 .map_err(|e| format!("Failed to stop capture: {e}"))?;
+            inner.buffer.clear();
+            inner.recording_started_at = None;
+            inner.latest_frame = None;
+            #[cfg(target_os = "windows")]
+            {
+                inner.frame_index = 0;
+                inner.sps.clear();
+                inner.pps.clear();
+            }
+            #[cfg(target_os = "macos")]
+            {
+                inner.h264_encoder = None;
+                inner.frame_index = 0;
+                inner.sps.clear();
+                inner.pps.clear();
+            }
         }
         Ok(())
     }
@@ -304,7 +386,23 @@ if let Some(frame) = inner.backend.read_latest_frame() {
 
             #[cfg(target_os = "windows")]
             {
-                // Encode NV12 frame → compressed H.264 packets → ring buffer
+                // Lazy encoder init — fires for ALL resolutions when the encoder
+                // was cleared (e.g. after stop_recording + source switch).
+                if inner.h264_encoder.is_none() {
+                    let (enc_w, enc_h) = if inner.resolution_is_native {
+                        (frame.width, frame.height)
+                    } else {
+                        (inner.target_width.max(1), inner.target_height.max(1))
+                    };
+                    match MfH264Encoder::new(
+                        enc_w, enc_h,
+                        inner.backend_config.fps, inner.native_bitrate_kbps,
+                        inner.backend_config.fps.saturating_mul(2),
+                    ) {
+                        Ok(enc) => { inner.h264_encoder = Some(enc); inner.frame_index = 0; }
+                        Err(e) => eprintln!("[prism] Encoder init failed: {e}"),
+                    }
+                }
                 if let Some(ref mut encoder) = inner.h264_encoder {
                     match encoder.encode_frame(&frame.data) {
                         Ok(packets) => {
@@ -345,8 +443,177 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                 inner.frame_index += 1;
             }
 
-            #[cfg(not(target_os = "windows"))]
-            inner.buffer.push_frame(frame);
+            #[cfg(target_os = "macos")]
+            {
+                // macOS captures BGRA; convert to NV12.
+                // If the capture resolution differs from the target encoder
+                // resolution, resize BGRA first so the ring buffer and encoder
+                // both work at the smaller dimensions (avoids ~100 MB/frame
+                // memory churn in the encoder's resize path at 4K).
+                // Diagnostic: log capture resolution once on first frame
+                if inner.frame_index == 0 {
+                    eprintln!(
+                        "[prism] macOS frame: capture={}x{} target={}x{} native={} fps={}",
+                        frame.width, frame.height,
+                        inner.target_width, inner.target_height,
+                        inner.resolution_is_native,
+                        inner.backend_config.fps,
+                    );
+                }
+                let (nv12, nv12_width, nv12_height): (Vec<u8>, u32, u32) =
+                    if frame.pixel_format == crate::capture::PixelFormat::Bgra {
+                        if !inner.resolution_is_native
+                            && (frame.width != inner.target_width
+                                || frame.height != inner.target_height)
+                        {
+                            match resize_bgra_frame(
+                                &frame.data,
+                                frame.width,
+                                frame.height,
+                                inner.target_width.max(1),
+                                inner.target_height.max(1),
+                                frame.stride as usize,
+                            ) {
+                                Ok(resized_bgra) => {
+                                    let nv12 = crate::capture::bgra_to_nv12(
+                                        &resized_bgra,
+                                        inner.target_width.max(1),
+                                        inner.target_height.max(1),
+                                        inner.target_width.max(1) * 4,
+                                    );
+                                    (nv12, inner.target_width.max(1), inner.target_height.max(1))
+                                }
+                                Err(e) => {
+                                    eprintln!("[prism] BGRA resize failed (using original): {e}");
+                                    let nv12 = crate::capture::bgra_to_nv12(
+                                        &frame.data,
+                                        frame.width,
+                                        frame.height,
+                                        frame.stride,
+                                    );
+                                    (nv12, frame.width, frame.height)
+                                }
+                            }
+                        } else {
+                            let nv12 = crate::capture::bgra_to_nv12(
+                                &frame.data,
+                                frame.width,
+                                frame.height,
+                                frame.stride,
+                            );
+                            (nv12, frame.width, frame.height)
+                        }
+                    } else {
+                        (frame.data.to_vec(), frame.width, frame.height)
+                    };
+
+                // Lazy encoder init — fires for ALL resolutions when the encoder
+                // was cleared (e.g. after stop_recording + source switch).
+                if inner.h264_encoder.is_none() {
+                    let (enc_w, enc_h) = if inner.resolution_is_native {
+                        (nv12_width, nv12_height)
+                    } else {
+                        (inner.target_width.max(1), inner.target_height.max(1))
+                    };
+                    match VtH264Encoder::new(
+                        enc_w, enc_h,
+                        inner.backend_config.fps, inner.native_bitrate_kbps,
+                        inner.backend_config.fps.saturating_mul(2),
+                    ) {
+                        Ok(enc) => { inner.h264_encoder = Some(enc); inner.frame_index = 0; }
+                        Err(e) => eprintln!("[prism] VT encoder init failed: {e}"),
+                    }
+                }
+                // Encode NV12 → compressed H.264 packets → ring buffer
+                if let Some(ref mut encoder) = inner.h264_encoder {
+                    match encoder.encode_frame(&nv12, nv12_width, nv12_height) {
+                        Ok(packets) => {
+                            if !packets.is_empty() {
+                                if inner.sps.is_empty() && encoder.sps_pps_ready() {
+                                    inner.sps = encoder.sps().to_vec();
+                                    inner.pps = encoder.pps().to_vec();
+                                    eprintln!(
+                                        "[prism] macOS: captured SPS({}) PPS({})",
+                                        inner.sps.len(),
+                                        inner.pps.len()
+                                    );
+                                }
+                                for pkt in packets {
+                                    let stored = StoredFrame {
+                                        data: std::sync::Arc::new(pkt.data),
+                                        width: nv12_width,
+                                        height: nv12_height,
+                                        stride: 0,
+                                        pixel_format: crate::capture::PixelFormat::H264,
+                                        timestamp: frame.timestamp,
+                                        is_sync: pkt.is_sync,
+                                    };
+                                    inner.buffer.push_frame(stored);
+                                }
+                            } else {
+                                eprintln!("[prism] VT encoder skipped frame — storing raw NV12");
+                                let nv12_frame = CapturedFrame {
+                                    data: std::sync::Arc::new(nv12),
+                                    width: nv12_width,
+                                    height: nv12_height,
+                                    stride: nv12_width,
+                                    pixel_format: crate::capture::PixelFormat::Nv12,
+                                    timestamp: frame.timestamp,
+                                };
+                                inner.buffer.push_frame(nv12_frame);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("VT H.264 encode error (falling back to raw NV12): {e}");
+                            let nv12_frame = CapturedFrame {
+                                data: std::sync::Arc::new(nv12),
+                                width: nv12_width,
+                                height: nv12_height,
+                                stride: nv12_width,
+                                pixel_format: crate::capture::PixelFormat::Nv12,
+                                timestamp: frame.timestamp,
+                            };
+                            inner.buffer.push_frame(nv12_frame);
+                        }
+                    }
+                } else {
+                    // No encoder available — store raw NV12
+                    let nv12_frame = CapturedFrame {
+                        data: std::sync::Arc::new(nv12),
+                        width: nv12_width,
+                        height: nv12_height,
+                        stride: nv12_width,
+                        pixel_format: crate::capture::PixelFormat::Nv12,
+                        timestamp: frame.timestamp,
+                    };
+                    inner.buffer.push_frame(nv12_frame);
+                }
+                inner.frame_index += 1;
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                // Linux: convert BGRA→NV12 if needed, store raw
+                if frame.pixel_format == crate::capture::PixelFormat::Bgra {
+                    let nv12 = crate::capture::bgra_to_nv12(
+                        &frame.data,
+                        frame.width,
+                        frame.height,
+                        frame.stride,
+                    );
+                    let nv12_frame = CapturedFrame {
+                        data: std::sync::Arc::new(nv12),
+                        width: frame.width,
+                        height: frame.height,
+                        stride: frame.width,
+                        pixel_format: crate::capture::PixelFormat::Nv12,
+                        timestamp: frame.timestamp,
+                    };
+                    inner.buffer.push_frame(nv12_frame);
+                } else {
+                    inner.buffer.push_frame(frame);
+                }
+            }
 
             self.frames_received.fetch_add(1, Ordering::SeqCst);
             1
@@ -455,6 +722,7 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                 let y_plane = data;
                 let y_size = (width * height) as usize;
                 let uv_plane = &data[y_size..];
+                let uv_width = (stride + 1) / 2;
 
                 for dy in 0..preview_h {
                     for dx in 0..preview_w {
@@ -462,7 +730,7 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                         let sy = (dy * height) / preview_h;
 
                         let y_off = (sy * stride + sx) as usize;
-                        let uv_off = ((sy / 2) * (stride / 2) + (sx / 2)) as usize * 2;
+                        let uv_off = ((sy / 2) * uv_width + (sx / 2)) as usize * 2;
 
                         let y_val = y_plane[y_off] as i32 - 16;
                         let u_val = uv_plane[uv_off] as i32 - 128;
@@ -531,6 +799,8 @@ pub struct ClipData {
     pub sps: Vec<u8>,
     /// Cached PPS NAL unit (AVCC format) from the H.264 encoder.
     pub pps: Vec<u8>,
+    /// Most recently captured frame (NV12 on macOS) for server-side thumbnail generation.
+    pub preview_frame: Option<CapturedFrame>,
 }
 
 impl Recorder {
@@ -552,14 +822,15 @@ impl Recorder {
         Ok(ClipData {
             frames,
             output_dir: inner.output_dir.clone(),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             sps: inner.sps.clone(),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             pps: inner.pps.clone(),
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             sps: Vec::new(),
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             pps: Vec::new(),
+            preview_frame: inner.latest_frame.clone(),
         })
     }
 }

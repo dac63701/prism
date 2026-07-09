@@ -22,7 +22,8 @@ pub struct RecordingSettings {
     /// Target output bitrate in kilobits per second.
     #[serde(default = "default_bitrate_kbps")]
     pub bitrate_kbps: u32,
-    /// Target output resolution: "720p" | "1080p" | "1440p" | "2160p".
+    /// Target output resolution: "native" | "720p" | "1080p" | "1440p" | "2160p".
+    /// "native" preserves the capture source's original dimensions.
     #[serde(default = "default_resolution_string")]
     pub resolution: String,
     /// Output directory — if empty, use default OS Videos/Prism
@@ -127,6 +128,7 @@ pub fn default_bitrate_kbps() -> u32 {
 }
 
 /// Map a user-facing resolution label to dimensions.
+/// Returns `(0, 0)` for "native" — callers should use capture-source dimensions.
 /// Performs a case-insensitive match without allocating.
 pub fn resolution_dimensions(label: &str) -> (u32, u32) {
     // Labels are always lowercase in practice, but handle edge cases
@@ -134,9 +136,15 @@ pub fn resolution_dimensions(label: &str) -> (u32, u32) {
         return (1920, 1080);
     }
     match label.as_bytes() {
+        b"native" | b"Native" | b"NATIVE" => (0, 0),
         b"720p" | b"720P" => (1280, 720),
         b"1440p" | b"1440P" => (2560, 1440),
         b"2160p" | b"2160P" | b"4k" | b"4K" => (3840, 2160),
         _ => (1920, 1080),
     }
+}
+
+/// Returns `true` when the resolution label is set to native capture.
+pub fn is_native_resolution(label: &str) -> bool {
+    label.eq_ignore_ascii_case("native")
 }

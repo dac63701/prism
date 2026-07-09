@@ -20,7 +20,8 @@
     "security": {
       "csp": null,
       "assetProtocol": {
-        "scope": ["$HOME/Videos/Prism/**", "$HOME/Videos/**"]
+        "enable": true,
+        "scope": ["$HOME/Videos/Prism/**", "$HOME/Videos/**", "$HOME/Movies/Prism/**", "$HOME/Movies/**"]
       }
     }
   },
