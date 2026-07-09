@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { ArrowLeft, Play, Pause, PictureInPicture2, Edit3, Check, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -9,12 +9,19 @@ export default function ClipDetailPage() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { clips, renameClip, loadClips, loaded, loading } = useClipsStore();
+  const clips = useClipsStore((s) => s.clips);
+  const renameClip = useClipsStore((s) => s.renameClip);
+  const loadClips = useClipsStore((s) => s.loadClips);
+  const loaded = useClipsStore((s) => s.loaded);
+  const loading = useClipsStore((s) => s.loading);
 
   // Prefer clip from location state, fall back to store lookup
-  const clip: Clip | undefined =
-    (location.state as { clip?: Clip })?.clip ??
-    clips.find((c) => c.filename === filename);
+  const clip: Clip | undefined = useMemo(
+    () =>
+      (location.state as { clip?: Clip })?.clip ??
+      clips.find((c) => c.filename === filename),
+    [location.state, clips, filename],
+  );
 
   const [playing, setPlaying] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -57,8 +64,6 @@ export default function ClipDetailPage() {
 
   const videoSrc = convertFileSrc(clip.path);
 
-  // ── Playback ─────────────────────────────────────────────────────
-
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
@@ -82,8 +87,6 @@ export default function ClipDetailPage() {
       console.error("PiP failed:", err);
     }
   };
-
-  // ── Rename ───────────────────────────────────────────────────────
 
   const handleRename = async () => {
     const trimmed = newName.trim();
@@ -204,7 +207,7 @@ export default function ClipDetailPage() {
             </div>
           )}
 
-          {/* Bottom controls bar — fades in on hover */}
+          {/* Bottom controls bar */}
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-8 opacity-0 group-hover:opacity-100 transition-opacity">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">

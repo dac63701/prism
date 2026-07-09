@@ -116,15 +116,44 @@ pub async fn save_clip(
     std::fs::create_dir_all(&clip_data.output_dir)
         .map_err(|e| format!("Failed to create output directory: {e}"))?;
 
-    // Step 4: Encode (NO lock held — polling continues)
+    // Step 4: If SPS/PPS were cached from the encoder, prepend them so
+    // extract_sps_pps can find NAL type 7/8 without needing the original
+    // keyframe (which may have been evicted from the ring buffer).
+    eprintln!(
+        "[recording] save_clip: {} frames, sps={} pps={}",
+        clip_data.frames.len(),
+        clip_data.sps.len(),
+        clip_data.pps.len()
+    );
+    let frames_with_sps = if !clip_data.sps.is_empty() && !clip_data.pps.is_empty() {
+        let mut augmented = clip_data.frames;
+        if let Some(first) = augmented.first_mut() {
+            // Prepend SPS + PPS to the first frame's data so extract_sps_pps
+            // finds them. The first frame may not be a keyframe, but MP4 requires
+            // SPS/PPS at the stream level regardless.
+            let mut combined = clip_data.sps.clone();
+            combined.extend_from_slice(&clip_data.pps);
+            combined.extend_from_slice(&first.data);
+            let total = combined.len();
+            first.data = std::sync::Arc::new(combined);
+            first.is_sync = true;
+            eprintln!("[recording] prepended SPS/PPS to frame 0 ({total} bytes total)");
+        }
+        augmented
+    } else {
+        eprintln!("[recording] no SPS/PPS cached — will scan frames directly");
+        clip_data.frames
+    };
+
+    // Step 5: Encode (NO lock held — polling continues)
     eprintln!(
         "[recording] save_clip encoding {} frames to {}",
-        clip_data.frames.len(),
+        frames_with_sps.len(),
         output_path.display()
     );
     let mut encoder = create_encoder();
     encoder
-        .encode_clip(&clip_data.frames, &output_path, &enc_config)
+        .encode_clip(&frames_with_sps, &output_path, &enc_config)
         .map_err(|e| format!("Encoding failed: {e}"))?;
     eprintln!("[recording] save_clip encoding complete");
 
@@ -152,13 +181,23 @@ pub async fn get_buffer_info(
     let fc = rec.frame_count();
     let fr = rec.total_frames_received();
     let clip_len = rec.buffer_duration_secs();
+    let fps = rec.cached_fps();
+    let buffer_time = if fps > 0 {
+        fc as f64 / fps as f64
+    } else {
+        0.0
+    };
+    let elapsed = rec.recording_elapsed_secs();
     Ok(serde_json::json!({
         "frame_count": fc,
+        "buffer_time_seconds": buffer_time,
         "clip_length_seconds": clip_len,
         "is_recording": rec.is_recording(),
         "frames_received": fr,
         "preview_available": rec.preview_available(),
         "polling_active": true,
+        "recording_elapsed_seconds": elapsed,
+        "fps": fps,
     }))
 }
 

@@ -36,7 +36,7 @@ pub struct RecordingSettings {
 impl Default for RecordingSettings {
     fn default() -> Self {
         Self {
-            buffer_duration_secs: 60,
+            buffer_duration_secs: 30,
             fps: 60,
             bitrate_kbps: default_bitrate_kbps(),
             resolution: default_resolution().into(),
@@ -127,11 +127,16 @@ pub fn default_bitrate_kbps() -> u32 {
 }
 
 /// Map a user-facing resolution label to dimensions.
+/// Performs a case-insensitive match without allocating.
 pub fn resolution_dimensions(label: &str) -> (u32, u32) {
-    match label.to_lowercase().as_str() {
-        "720p" => (1280, 720),
-        "1440p" => (2560, 1440),
-        "2160p" | "4k" => (3840, 2160),
+    // Labels are always lowercase in practice, but handle edge cases
+    if label.len() < 4 {
+        return (1920, 1080);
+    }
+    match label.as_bytes() {
+        b"720p" | b"720P" => (1280, 720),
+        b"1440p" | b"1440P" => (2560, 1440),
+        b"2160p" | b"2160P" | b"4k" | b"4K" => (3840, 2160),
         _ => (1920, 1080),
     }
 }

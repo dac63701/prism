@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Monitor, AppWindow, RefreshCw, Check } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
@@ -31,24 +31,33 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
   const [sources, setSources] = useState<CaptureSources | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"display" | "app">("display");
+  const mountedRef = useRef(true);
 
   const loadSources = async () => {
     setLoading(true);
     try {
       const result = await invoke<CaptureSources>("get_capture_sources");
-      setSources(result);
+      if (mountedRef.current) {
+        setSources(result);
+      }
     } catch (err) {
       console.error("Failed to get capture sources:", err);
     }
-    setLoading(false);
+    if (mountedRef.current) {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     loadSources();
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  // Parse current target JSON into a comparable form
-  const currentTarget = (() => {
+  // Parse current target JSON — memoized to avoid re-parsing on every render
+  const currentTarget = useMemo(() => {
     if (!value.trim()) {
       return { kind: "display" as const, id: undefined };
     }
@@ -69,18 +78,16 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
     } catch {
       return null;
     }
-  })();
+  }, [value]);
 
   const isDisplaySelected = (displayId: number, isMain: boolean) => {
     if (!currentTarget || currentTarget.kind !== "display") return false;
-    // If the generic "display" target is selected and this is the main display
     if (currentTarget.id === undefined) return isMain;
     return currentTarget.id === displayId;
   };
 
   const selectDisplay = (displayId: number, isMain: boolean) => {
     if (isMain) {
-      // Main display uses the generic "display" target (most reliable)
       onChange('"display"');
     } else {
       onChange(JSON.stringify({ display_id: displayId }));

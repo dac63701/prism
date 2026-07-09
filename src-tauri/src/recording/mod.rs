@@ -4,21 +4,20 @@
 //! can control recording and trigger clip saves.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 use base64::{engine::general_purpose, Engine as _};
-use image::codecs::jpeg::JpegEncoder;
-use image::{imageops::FilterType, ImageBuffer, Rgb};
+use image::ImageBuffer;
 
 use crate::buffer::{BufferConfig, BufferManager, StoredFrame};
 use crate::capture::{
     create_capture_backend, CaptureBackend, CaptureConfig, CaptureTarget, CapturedFrame,
 };
-use crate::encoder::codecs::{Codec, EncoderConfig};
-use crate::encoder::create_encoder;
+#[cfg(target_os = "windows")]
+use crate::encoder::windows::mf_encoder::MfH264Encoder;
 use crate::settings::config::{resolution_dimensions, AppSettings};
 
 /// Polling interval as a fraction of the frame duration,
@@ -36,6 +35,8 @@ pub struct Recorder {
     polling_spawned: AtomicBool,
     /// Total frames ever received from capture backend (diagnostics).
     frames_received: std::sync::atomic::AtomicU64,
+    /// Cached FPS to avoid lock contention in the polling loop.
+    cached_fps: AtomicU32,
 }
 
 struct RecorderInner {
@@ -48,6 +49,20 @@ struct RecorderInner {
     output_dir: PathBuf,
     /// Most recently captured frame (for live preview)
     latest_frame: Option<CapturedFrame>,
+    /// H.264 hardware encoder for the shadow buffer (Windows only).
+    #[cfg(target_os = "windows")]
+    h264_encoder: Option<MfH264Encoder>,
+    /// Frame index for the H.264 encoder (Windows only).
+    #[cfg(target_os = "windows")]
+    frame_index: u64,
+    /// Cached SPS NAL unit (AVCC format) from the H.264 encoder.
+    #[cfg(target_os = "windows")]
+    sps: Vec<u8>,
+    /// Cached PPS NAL unit (AVCC format) from the H.264 encoder.
+    #[cfg(target_os = "windows")]
+    pps: Vec<u8>,
+    /// Monotonic timestamp when recording started (for elapsed-time display).
+    recording_started_at: Option<std::time::Instant>,
 }
 
 impl Recorder {
@@ -75,6 +90,18 @@ impl Recorder {
             target,
         };
 
+        #[cfg(target_os = "windows")]
+        let h264_encoder = {
+            let (w, h) = resolution_dimensions(&rs.resolution);
+            match MfH264Encoder::new(w, h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2)) {
+                Ok(enc) => Some(enc),
+                Err(e) => {
+                    eprintln!("[prism] H.264 encoder init failed — falling back to raw NV12: {e}");
+                    None
+                }
+            }
+        };
+
         Self {
             inner: Mutex::new(Some(RecorderInner {
                 backend,
@@ -83,16 +110,27 @@ impl Recorder {
                 resolution: (1920, 1080),
                 output_dir: resolve_output_dir(&settings.recording.output_directory),
                 latest_frame: None,
+                #[cfg(target_os = "windows")]
+                h264_encoder,
+                #[cfg(target_os = "windows")]
+                frame_index: 0,
+                #[cfg(target_os = "windows")]
+                sps: Vec::new(),
+                #[cfg(target_os = "windows")]
+                pps: Vec::new(),
+                recording_started_at: None,
             })),
             running: AtomicBool::new(false),
             polling_spawned: AtomicBool::new(false),
             frames_received: std::sync::atomic::AtomicU64::new(0),
+            cached_fps: AtomicU32::new(rs.fps),
         }
     }
 
     /// Apply new settings at runtime (re-creates buffer, updates config).
     pub fn reconfigure(&self, settings: &AppSettings) {
         let rs = &settings.recording;
+        self.cached_fps.store(rs.fps, Ordering::SeqCst);
         let mut guard = self.inner.lock().expect("recorder lock poisoned");
         if let Some(inner) = guard.as_mut() {
             // Update output directory
@@ -106,6 +144,23 @@ impl Recorder {
                 inner.resolution.0,
                 inner.resolution.1,
             );
+            // Rebuild H.264 encoder with new settings
+            #[cfg(target_os = "windows")]
+            {
+                let (w, h) = resolution_dimensions(&rs.resolution);
+                inner.frame_index = 0;
+                inner.sps.clear();
+                inner.pps.clear();
+                inner.h264_encoder = match MfH264Encoder::new(
+                    w, h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2),
+                ) {
+                    Ok(enc) => Some(enc),
+                    Err(e) => {
+                        eprintln!("[prism] H.264 encoder reinit failed — falling back to raw NV12: {e}");
+                        None
+                    }
+                };
+            }
             // Update capture config
             inner.backend_config.fps = rs.fps;
         }
@@ -233,7 +288,12 @@ impl Recorder {
             None => return 0,
         };
 
-        if let Some(frame) = inner.backend.read_latest_frame() {
+if let Some(frame) = inner.backend.read_latest_frame() {
+            // Mark recording start on first frame
+            if inner.recording_started_at.is_none() {
+                inner.recording_started_at = Some(std::time::Instant::now());
+            }
+
             let res = inner.resolution;
             // Update resolution from first frame
             if res == (0, 0) || res != (frame.width, frame.height) {
@@ -241,7 +301,53 @@ impl Recorder {
             }
             // Keep a copy for live preview (Arc clone is cheap)
             inner.latest_frame = Some(frame.clone());
+
+            #[cfg(target_os = "windows")]
+            {
+                // Encode NV12 frame → compressed H.264 packets → ring buffer
+                if let Some(ref mut encoder) = inner.h264_encoder {
+                    match encoder.encode_frame(&frame.data) {
+                        Ok(packets) => {
+                            // Capture SPS/PPS from encoder if not yet available
+                            if inner.sps.is_empty() && encoder.sps_pps_ready() {
+                                inner.sps = encoder.sps().to_vec();
+                                inner.pps = encoder.pps().to_vec();
+                                eprintln!(
+                                    "[prism] captured SPS({}) PPS({})",
+                                    inner.sps.len(),
+                                    inner.pps.len()
+                                );
+                            }
+
+                            for pkt in packets {
+                                let stored = StoredFrame {
+                                    data: std::sync::Arc::new(pkt.data),
+                                    width: frame.width,
+                                    height: frame.height,
+                                    stride: 0,
+                                    pixel_format: crate::capture::PixelFormat::H264,
+                                    timestamp: frame.timestamp,
+                                    is_sync: pkt.is_sync,
+                                };
+                                inner.buffer.push_frame(stored);
+                            }
+                        }
+                        Err(e) => {
+                            // Encoding failed — store the raw NV12 frame as fallback
+                            eprintln!("H.264 encode error (falling back to raw): {e}");
+                            inner.buffer.push_frame(frame);
+                        }
+                    }
+                } else {
+                    // No encoder available — store raw
+                    inner.buffer.push_frame(frame);
+                }
+                inner.frame_index += 1;
+            }
+
+            #[cfg(not(target_os = "windows"))]
             inner.buffer.push_frame(frame);
+
             self.frames_received.fetch_add(1, Ordering::SeqCst);
             1
         } else {
@@ -250,11 +356,9 @@ impl Recorder {
     }
 
     /// Calculate the sleep duration between polls based on settings FPS.
+    /// Uses the cached atomic FPS to avoid lock contention.
     pub fn poll_interval(&self) -> Duration {
-        let fps = match self.inner.lock() {
-            Ok(ref g) => g.as_ref().map(|i| i.backend_config.fps).unwrap_or(60),
-            Err(_) => 60,
-        };
+        let fps = self.cached_fps.load(Ordering::Relaxed);
         if fps == 0 {
             return Duration::from_millis(16);
         }
@@ -271,10 +375,40 @@ impl Recorder {
             .unwrap_or(false)
     }
 
+    /// Cached FPS value (atomic, no lock).
+    pub fn cached_fps(&self) -> u32 {
+        self.cached_fps.load(Ordering::Relaxed)
+    }
+
     /// Total frames received since recording started.
     pub fn total_frames_received(&self) -> u64 {
         self.frames_received
             .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Seconds elapsed since recording started (0 if not recording).
+    pub fn recording_elapsed_secs(&self) -> f64 {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.as_ref().and_then(|inner| {
+                    inner
+                        .recording_started_at
+                        .map(|t| t.elapsed().as_secs_f64())
+                })
+            })
+            .unwrap_or(0.0)
+    }
+
+    /// Seconds of buffer time available (frame_count / fps).
+    pub fn buffer_time_secs(&self) -> f64 {
+        let fps = self.cached_fps.load(Ordering::Relaxed);
+        if fps == 0 {
+            return 0.0;
+        }
+        let fc = self.frame_count();
+        fc as f64 / fps as f64
     }
 
     /// Get the current buffer frame count (for diagnostics).
@@ -293,6 +427,9 @@ impl Recorder {
 
     /// Encode the latest captured frame as a JPEG data URL for frontend preview.
     ///
+    /// Handles both NV12 (chroma-subsampled, the ring-buffer format) and BGRA
+    /// (legacy macOS) sources. Uses point-sampled downscaling in a single pass.
+    ///
     /// Returns `None` if no frame has been captured yet.
     pub fn get_preview_frame(&self) -> Option<String> {
         let guard = self.inner.lock().ok()?;
@@ -303,6 +440,7 @@ impl Recorder {
         let height = frame.height;
         let stride = frame.stride;
         let data = frame.data.as_slice();
+        let fmt = frame.pixel_format;
 
         // Downscale dimensions while maintaining aspect ratio
         let preview_w = Self::PREVIEW_MAX_WIDTH.min(width);
@@ -310,28 +448,64 @@ impl Recorder {
             .round()
             .max(1.0) as u32;
 
-        // Convert BGRA → full-size RGB image buffer
-        let mut rgb = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(width, height);
-        for y in 0..height {
-            for x in 0..width {
-                let offset = (y as usize * stride as usize + x as usize * 4)
-                    .min(data.len().saturating_sub(4));
-                let pixel = rgb.get_pixel_mut(x, y);
-                pixel[0] = data[offset + 2]; // R ← B (source is BGRA)
-                pixel[1] = data[offset + 1]; // G
-                pixel[2] = data[offset]; // B ← R
+        let mut rgb = ImageBuffer::<image::Rgb<u8>, Vec<u8>>::new(preview_w, preview_h);
+
+        match fmt {
+            crate::capture::PixelFormat::Nv12 => {
+                let y_plane = data;
+                let y_size = (width * height) as usize;
+                let uv_plane = &data[y_size..];
+
+                for dy in 0..preview_h {
+                    for dx in 0..preview_w {
+                        let sx = (dx * width) / preview_w;
+                        let sy = (dy * height) / preview_h;
+
+                        let y_off = (sy * stride + sx) as usize;
+                        let uv_off = ((sy / 2) * (stride / 2) + (sx / 2)) as usize * 2;
+
+                        let y_val = y_plane[y_off] as i32 - 16;
+                        let u_val = uv_plane[uv_off] as i32 - 128;
+                        let v_val = uv_plane[uv_off + 1] as i32 - 128;
+
+                        let r = ((298 * y_val + 409 * v_val + 128) >> 8).clamp(0, 255) as u8;
+                        let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
+                        let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
+
+                        let pixel = rgb.get_pixel_mut(dx, dy);
+                        pixel[0] = r;
+                        pixel[1] = g;
+                        pixel[2] = b;
+                    }
+                }
+            }
+            crate::capture::PixelFormat::Bgra => {
+                for dy in 0..preview_h {
+                    for dx in 0..preview_w {
+                        let sx = (dx * width) / preview_w;
+                        let sy = (dy * height) / preview_h;
+                        let offset = (sy as usize * stride as usize + sx as usize * 4)
+                            .min(data.len().saturating_sub(4));
+                        let pixel = rgb.get_pixel_mut(dx, dy);
+                        pixel[0] = data[offset + 2]; // R ← B
+                        pixel[1] = data[offset + 1]; // G
+                        pixel[2] = data[offset];     // B ← R
+                    }
+                }
+            }
+            crate::capture::PixelFormat::H264 => {
+                // H.264 frames are compressed — can't render as preview.
+                // The preview path stores the latest decoded NV12 frame
+                // separately, so this arm is only for exhaustiveness.
             }
         }
 
-        // Resize for preview
-        let preview = image::imageops::resize(&rgb, preview_w, preview_h, FilterType::Triangle);
-
-        // Encode as JPEG
+        // Encode to JPEG
         let mut jpg_buf = Vec::new();
-        let mut encoder = JpegEncoder::new_with_quality(&mut jpg_buf, 80);
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg_buf, 80);
         if encoder
             .encode(
-                &preview,
+                &rgb,
                 preview_w,
                 preview_h,
                 image::ExtendedColorType::Rgb8,
@@ -345,66 +519,6 @@ impl Recorder {
         Some(format!("data:image/jpeg;base64,{b64}"))
     }
 
-    // ── Clip saving ──────────────────────────────────────────────────────
-
-    /// Save a clip from the last N seconds of the ring buffer.
-    ///
-    /// Extracts frames from buffer, creates an encoder, writes MP4,
-    /// and returns the output path on success.
-    pub fn save_clip(&self, duration_secs: u32, settings: &AppSettings) -> Result<PathBuf, String> {
-        let rs = &settings.recording;
-
-        // 1. Extract frames from buffer (borrow briefly)
-        let (frames, output_dir) = {
-            let guard = self.inner.lock().map_err(|e| e.to_string())?;
-            let inner = guard.as_ref().ok_or("Recorder not initialized")?;
-            let frames = if duration_secs > 0 {
-                inner.buffer.clip(Duration::from_secs(duration_secs as u64))
-            } else {
-                inner.buffer.clip_all()
-            };
-            (frames, inner.output_dir.clone())
-        };
-
-        if frames.is_empty() {
-            return Err("No frames available to clip".into());
-        }
-
-        // 2. Build encoder config from settings
-        let (target_width, target_height) = resolution_dimensions(&rs.resolution);
-
-        let enc_config = EncoderConfig {
-            codec: Codec::H264,
-            bitrate_kbps: rs.bitrate_kbps,
-            fps: rs.fps,
-            keyframe_interval: rs.fps.saturating_mul(2), // keyframe every 2s
-            target_width,
-            target_height,
-        };
-
-        // 3. Generate output path
-        let timestamp = chrono_now_formatted();
-        let filename = format!("clip_{timestamp}.mp4");
-        let output_path = output_dir.join(&filename);
-
-        // Ensure output directory exists
-        std::fs::create_dir_all(&output_dir)
-            .map_err(|e| format!("Failed to create output directory: {e}"))?;
-
-        // 4. Encode
-        let mut encoder = create_encoder();
-        encoder
-            .encode_clip(&frames, &output_path, &enc_config)
-            .map_err(|e| format!("Encoding failed: {e}"))?;
-
-        Ok(output_path)
-    }
-
-    /// Save a clip with automatic duration from settings.
-    pub fn save_clip_from_settings(&self, settings: &AppSettings) -> Result<PathBuf, String> {
-        let duration = settings.recording.buffer_duration_secs;
-        self.save_clip(duration, settings)
-    }
 }
 
 // ── Clip data extraction (call under lock, encode outside) ───────────────
@@ -413,6 +527,10 @@ impl Recorder {
 pub struct ClipData {
     pub frames: Vec<StoredFrame>,
     pub output_dir: PathBuf,
+    /// Cached SPS NAL unit (AVCC format) from the H.264 encoder.
+    pub sps: Vec<u8>,
+    /// Cached PPS NAL unit (AVCC format) from the H.264 encoder.
+    pub pps: Vec<u8>,
 }
 
 impl Recorder {
@@ -434,6 +552,14 @@ impl Recorder {
         Ok(ClipData {
             frames,
             output_dir: inner.output_dir.clone(),
+            #[cfg(target_os = "windows")]
+            sps: inner.sps.clone(),
+            #[cfg(target_os = "windows")]
+            pps: inner.pps.clone(),
+            #[cfg(not(target_os = "windows"))]
+            sps: Vec::new(),
+            #[cfg(not(target_os = "windows"))]
+            pps: Vec::new(),
         })
     }
 }

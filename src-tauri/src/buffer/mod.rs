@@ -6,7 +6,6 @@
 pub mod pool;
 pub mod ring;
 
-use crate::capture::CapturedFrame;
 pub use pool::FramePool;
 pub use ring::{RingBuffer, StoredFrame};
 use std::time::Duration;
@@ -35,12 +34,15 @@ impl BufferConfig {
         (self.max_duration_secs as usize).saturating_mul(self.fps as usize)
     }
 
-    /// Estimated bytes per frame at the given resolution.
+    /// NV12 frame size at the given resolution: width × height × 1.5.
+    /// This is the size of raw frames when the encoder is unavailable
+    /// (fallback path). Compressed H.264 packets are ~10 KB and the
+    /// byte-budgeted ring buffer handles both cases correctly.
     pub fn frame_size(&self, width: u32, height: u32) -> usize {
-        // BGRA: 4 bytes per pixel
         (width as usize)
             .saturating_mul(height as usize)
-            .saturating_mul(4)
+            .saturating_mul(3)
+            .saturating_div(2)
     }
 }
 
@@ -52,13 +54,27 @@ pub struct BufferManager {
 }
 
 impl BufferManager {
+    /// Maximum memory budget for the shadow buffer (256 MB).
+    /// The ring buffer uses byte-accounted eviction to automatically stay
+    /// within this budget regardless of whether frames are compressed H.264
+    /// (~10 KB) or raw NV12 (~3 MB at 1080p).
+    const SHADOW_BUFFER_BYTES: usize = 256 * 1024 * 1024;
+
+    /// Hard frame-count ceiling — prevents unbounded slot allocation even
+    /// with small frame sizes. 7 minutes of 60 fps = 25,200 frames.
+    const MAX_FRAME_CAPACITY: usize = 30_000;
+
     /// Create a new buffer manager with the given config and estimated resolution.
     pub fn new(config: BufferConfig, width: u32, height: u32) -> Self {
         let frame_size = config.frame_size(width, height);
-        // Pre-allocate half the ring buffer's capacity to balance memory vs allocations
-        let prealloc = (config.capacity() / 2).max(1);
-        let pool = FramePool::new(frame_size, prealloc);
-        let buffer = RingBuffer::new(config.capacity());
+        let pool = FramePool::new(frame_size);
+        // Frame-capacity ceiling: at most MAX_FRAME_CAPACITY or config capacity,
+        // whichever is smaller.
+        let capacity = config
+            .capacity()
+            .min(Self::MAX_FRAME_CAPACITY)
+            .max(60);
+        let buffer = RingBuffer::with_byte_budget(capacity, Self::SHADOW_BUFFER_BYTES);
 
         Self {
             buffer,
@@ -67,9 +83,9 @@ impl BufferManager {
         }
     }
 
-    /// Ingest a captured frame: push into ring buffer, release old data.
-    pub fn push_frame(&mut self, frame: CapturedFrame) {
-        // TODO: Optionally use pool for data allocation
+    /// Push a frame into the ring buffer.
+    /// Accepts either `CapturedFrame` (raw capture data) or `StoredFrame` (encoded packet).
+    pub fn push_frame(&mut self, frame: impl Into<StoredFrame>) {
         self.buffer.push(frame);
     }
 

@@ -51,10 +51,17 @@ interface SettingsState {
   resetSettings: () => Promise<void>;
 }
 
+let unlistenSettings: (() => void) | null = null;
+
 export const useSettingsStore = create<SettingsState>((set) => {
-  listen<AppSettings>("settings-changed", (event) => {
-    set({ settings: event.payload });
-  });
+  // Register event listener once; store unlisten for cleanup
+  (async () => {
+    if (unlistenSettings) return; // already registered
+    const unlisten = await listen<AppSettings>("settings-changed", (event) => {
+      set({ settings: event.payload });
+    });
+    unlistenSettings = unlisten;
+  })();
 
   return {
     settings: getDefaultSettings(),

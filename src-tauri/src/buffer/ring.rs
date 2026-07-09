@@ -1,5 +1,4 @@
-//! Circular ring buffer that stores the last N seconds of video frames.
-
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,6 +13,7 @@ pub struct StoredFrame {
     pub stride: u32,
     pub pixel_format: crate::capture::PixelFormat,
     pub timestamp: Instant,
+    pub is_sync: bool,
 }
 
 impl From<CapturedFrame> for StoredFrame {
@@ -25,104 +25,98 @@ impl From<CapturedFrame> for StoredFrame {
             stride: f.stride,
             pixel_format: f.pixel_format,
             timestamp: f.timestamp,
+            is_sync: true,
         }
     }
 }
 
-/// Fixed-capacity circular buffer for gameplay frames.
+/// Bounded FIFO buffer for gameplay frames with dual constraints:
+/// - Max frame count (`capacity`)
+/// - Max total bytes (`max_bytes`)
+///
+/// When either limit is exceeded, the oldest frames are evicted first.
 pub struct RingBuffer {
-    /// Pre-allocated slot array (None = empty slot).
-    slots: Vec<Option<StoredFrame>>,
-    /// Total capacity (max frame count).
+    frames: VecDeque<StoredFrame>,
+    /// Hard frame-count limit.
     capacity: usize,
-    /// Index where the next frame will be written.
-    write_index: usize,
-    /// Number of frames currently stored.
-    count: usize,
+    /// Sum of `data.len()` across all stored frames.
+    total_bytes: usize,
+    /// If non-zero, the buffer will evict oldest frames to stay under this
+    /// budget (even if below the frame-count limit).
+    max_bytes: usize,
 }
 
 impl RingBuffer {
-    /// Create a ring buffer that holds at most `capacity` frames.
+    /// Create a ring buffer bounded by `capacity` frames with no byte limit.
     pub fn new(capacity: usize) -> Self {
-        let mut slots = Vec::with_capacity(capacity);
-        for _ in 0..capacity {
-            slots.push(None);
-        }
         Self {
-            slots,
+            frames: VecDeque::with_capacity(capacity),
             capacity,
-            write_index: 0,
-            count: 0,
+            total_bytes: 0,
+            max_bytes: 0,
         }
     }
 
-    /// Push a frame into the buffer. If full, the oldest frame is overwritten.
+    /// Create a ring buffer bounded by both frame count and byte budget.
+    pub fn with_byte_budget(capacity: usize, max_bytes: usize) -> Self {
+        Self {
+            frames: VecDeque::with_capacity(capacity),
+            capacity,
+            total_bytes: 0,
+            max_bytes,
+        }
+    }
+
+    /// Push a frame into the buffer. Oldest frames are evicted first if either
+    /// the frame-count limit or the byte budget would be exceeded.
     pub fn push(&mut self, frame: impl Into<StoredFrame>) {
-        self.slots[self.write_index] = Some(frame.into());
-        self.write_index = (self.write_index + 1) % self.capacity;
-        if self.count < self.capacity {
-            self.count += 1;
-        }
-    }
+        let frame = frame.into();
+        let frame_len = frame.data.len();
 
-    /// Return all frames within the last `duration` from `now`.
-    ///
-    /// Frames are returned in chronological order (oldest first).
-    pub fn clip_since(&self, duration: Duration, now: Instant) -> Vec<StoredFrame> {
-        let cutoff = now.checked_sub(duration).unwrap_or(now);
-        let mut result = Vec::new();
-
-        let start = if self.count < self.capacity {
-            0
-        } else {
-            self.write_index // oldest frame is at write_index when full
-        };
-        let len = self.count;
-
-        for i in 0..len {
-            let idx = (start + i) % self.capacity;
-            if let Some(ref frame) = self.slots[idx] {
-                if frame.timestamp >= cutoff {
-                    result.push(frame.clone());
+        // Evict oldest frames to stay within byte budget
+        if self.max_bytes > 0 {
+            while self.total_bytes + frame_len > self.max_bytes && !self.frames.is_empty() {
+                if let Some(old) = self.frames.pop_front() {
+                    self.total_bytes = self.total_bytes.saturating_sub(old.data.len());
                 }
             }
         }
 
-        result
-    }
-
-    /// Return all frames in the buffer (oldest first).
-    pub fn all_frames(&self) -> Vec<StoredFrame> {
-        let start = if self.count < self.capacity {
-            0
-        } else {
-            self.write_index
-        };
-        let len = self.count;
-        let mut result = Vec::with_capacity(len);
-
-        for i in 0..len {
-            let idx = (start + i) % self.capacity;
-            if let Some(ref frame) = self.slots[idx] {
-                result.push(frame.clone());
+        // Evict oldest frames to stay within frame-count limit
+        while self.frames.len() >= self.capacity {
+            if let Some(old) = self.frames.pop_front() {
+                self.total_bytes = self.total_bytes.saturating_sub(old.data.len());
             }
         }
 
-        result
+        self.total_bytes += frame_len;
+        self.frames.push_back(frame);
     }
 
-    /// Clear all frames from the buffer.
+    /// Return all frames within the last `duration` from `now`.
+    pub fn clip_since(&self, duration: Duration, now: Instant) -> Vec<StoredFrame> {
+        let cutoff = now.checked_sub(duration).unwrap_or(now);
+        self.frames
+            .iter()
+            .filter(|f| f.timestamp >= cutoff)
+            .cloned()
+            .collect()
+    }
+
+    /// Return all frames (oldest first).
+    pub fn all_frames(&self) -> Vec<StoredFrame> {
+        self.frames.iter().cloned().collect()
+    }
+
+    /// Clear all frames.
     pub fn clear(&mut self) {
-        for slot in &mut self.slots[..self.count.max(self.capacity)] {
-            *slot = None;
-        }
-        self.write_index = 0;
-        self.count = 0;
+        self.frames.clear();
+        self.total_bytes = 0;
     }
 
     /// Current number of frames stored.
     pub fn len(&self) -> usize {
-        self.count
+        self.frames.len()
     }
 
     /// Maximum frame capacity.
@@ -130,9 +124,14 @@ impl RingBuffer {
         self.capacity
     }
 
+    /// Total bytes of all stored frames.
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
     /// Whether the buffer is empty.
     pub fn is_empty(&self) -> bool {
-        self.count == 0
+        self.frames.is_empty()
     }
 }
 
@@ -140,7 +139,6 @@ impl RingBuffer {
 mod tests {
     use super::*;
     use crate::capture::PixelFormat;
-    use std::time::{Duration, Instant};
 
     fn make_frame(t: Instant) -> CapturedFrame {
         CapturedFrame {
@@ -178,16 +176,37 @@ mod tests {
     fn test_clip_since() {
         let mut buf = RingBuffer::new(10);
         let now = Instant::now();
-        // Push 5 frames at 1s intervals
         for i in 0..5 {
             buf.push(make_frame(now + Duration::from_secs(i * 2)));
         }
-        // Clip last 3 seconds from `now + 8s` (frame 4 is at 8s)
         let clip_time = now + Duration::from_secs(8);
         let clipped = buf.clip_since(Duration::from_secs(3), clip_time);
-        // Should get frames at 6s and 8s (indices 2, 3, 4 but 4=8s, 3=6s, 2=4s...
-        // actually: frames[0]=0s, [1]=2s, [2]=4s, [3]=6s, [4]=8s
-        // clip_since(3s, 8s) = frames with timestamp >= 5s = frames[3]=6s, frames[4]=8s
         assert_eq!(clipped.len(), 2);
+    }
+
+    #[test]
+    fn test_byte_budget_eviction() {
+        // Budget of 250 bytes with 100-byte frames → at most 2 frames
+        let mut buf = RingBuffer::with_byte_budget(10, 250);
+        let now = Instant::now();
+        buf.push(make_frame(now));
+        assert_eq!(buf.len(), 1);
+        buf.push(make_frame(now + Duration::from_secs(1)));
+        assert_eq!(buf.len(), 2);
+        assert_eq!(buf.total_bytes(), 200);
+        // Third frame exceeds 250 → oldest evicted
+        buf.push(make_frame(now + Duration::from_secs(2)));
+        assert_eq!(buf.len(), 2);
+        assert_eq!(buf.total_bytes(), 200);
+    }
+
+    #[test]
+    fn test_frame_capacity_still_applies() {
+        let mut buf = RingBuffer::with_byte_budget(2, usize::MAX);
+        let now = Instant::now();
+        for i in 0..3 {
+            buf.push(make_frame(now + Duration::from_secs(i)));
+        }
+        assert_eq!(buf.len(), 2);
     }
 }

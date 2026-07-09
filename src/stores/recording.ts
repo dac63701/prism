@@ -3,9 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useClipsStore } from "@/stores/clips";
 
-/// IPC timeout for save_clip (seconds). VT encoding can hang indefinitely
-/// if the pixel buffer format or resolution is incompatible, so we protect
-/// the frontend from freezing by timing out and resetting the saving state.
+/// IPC timeout for save_clip (seconds).
 const SAVE_CLIP_TIMEOUT_SECS = 15;
 
 interface RecordingState {
@@ -17,6 +15,8 @@ interface RecordingState {
   starting: boolean;
   lastClipPath: string | null;
   error: string | null;
+  bufferTimeSeconds: number;
+  recordingElapsedSeconds: number;
 
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -26,25 +26,29 @@ interface RecordingState {
   clearError: () => void;
 }
 
+let unlistenStateChanged: (() => void) | null = null;
+let unlistenClipSaved: (() => void) | null = null;
+
 export const useRecordingStore = create<RecordingState>((set) => {
-  // Set up event listeners
   const setupListeners = async () => {
-    try {
-      await listen<boolean>("recording-state-changed", (event) => {
+    // Only register once
+    if (!unlistenStateChanged) {
+      unlistenStateChanged = await listen<boolean>("recording-state-changed", (event) => {
         console.log("[recording] event: recording-state-changed =", event.payload);
         set({ isRecording: event.payload, starting: false });
       });
-
-      await listen<string>("clip-saved", (event) => {
+    }
+    if (!unlistenClipSaved) {
+      unlistenClipSaved = await listen<string>("clip-saved", (event) => {
         console.log("[recording] event: clip-saved =", event.payload);
         set({ lastClipPath: event.payload, saving: false });
         void useClipsStore.getState().loadClips();
       });
-    } catch (err) {
-      console.error("[recording] Failed to set up event listeners:", err);
     }
   };
-  setupListeners();
+  setupListeners().catch((err) => {
+    console.error("[recording] Failed to set up event listeners:", err);
+  });
 
   return {
     isRecording: false,
@@ -55,24 +59,14 @@ export const useRecordingStore = create<RecordingState>((set) => {
     starting: false,
     lastClipPath: null,
     error: null,
+    bufferTimeSeconds: 0,
+    recordingElapsedSeconds: 0,
 
     startRecording: async () => {
       console.log("[recording] startRecording() called");
       set({ error: null, starting: true });
       try {
-        const result = await invoke<string | null>("start_recording");
-        console.log("[recording] start_recording invoke returned:", result);
-        // The event listener should update isRecording.
-        // But in case the event doesn't arrive (e.g. command succeeded
-        // but emit failed), also check state after a short delay.
-        setTimeout(async () => {
-          try {
-            const info = await invoke<{ is_recording: boolean }>("get_buffer_info");
-            if (info.is_recording) {
-              set({ isRecording: true, starting: false });
-            }
-          } catch {}
-        }, 500);
+        await invoke<string | null>("start_recording");
       } catch (err) {
         const msg = typeof err === "string" ? err : "Failed to start recording";
         console.error("[recording] start_recording failed:", err);
@@ -84,7 +78,6 @@ export const useRecordingStore = create<RecordingState>((set) => {
       console.log("[recording] stopRecording() called");
       try {
         await invoke("stop_recording");
-        console.log("[recording] stop_recording invoke succeeded");
       } catch (err) {
         console.error("[recording] stop_recording failed:", err);
       }
@@ -93,7 +86,6 @@ export const useRecordingStore = create<RecordingState>((set) => {
     saveClip: async (durationSecs?: number) => {
       set({ saving: true, error: null });
       try {
-        // Race the IPC against a timeout to prevent UI freeze if VT hangs
         const path = await Promise.race([
           invoke<string>("save_clip", {
             durationSecs: durationSecs ?? 30,
@@ -105,7 +97,6 @@ export const useRecordingStore = create<RecordingState>((set) => {
             ),
           ),
         ]);
-        console.log("[recording] save_clip succeeded:", path);
         return path;
       } catch (err) {
         const msg = typeof err === "string" ? err : err instanceof Error ? err.message : "Clip save failed";
@@ -119,15 +110,19 @@ export const useRecordingStore = create<RecordingState>((set) => {
       try {
         const info = await invoke<{
           frame_count: number;
+          buffer_time_seconds: number;
           is_recording: boolean;
           frames_received: number;
           preview_available: boolean;
+          recording_elapsed_seconds: number;
         }>("get_buffer_info");
         set({
           frameCount: info.frame_count,
           isRecording: info.is_recording,
           framesReceived: info.frames_received,
           previewAvailable: info.preview_available,
+          bufferTimeSeconds: info.buffer_time_seconds,
+          recordingElapsedSeconds: info.recording_elapsed_seconds,
         });
       } catch (err) {
         console.error("[recording] checkStatus failed:", err);

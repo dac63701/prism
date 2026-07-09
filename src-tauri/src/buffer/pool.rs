@@ -1,55 +1,42 @@
-//! Frame memory pool — pre-allocates frame data buffers for reuse.
+//! Frame memory pool — recycles frame data buffers.
+//!
+//! The capture backend acquires buffers via [`FramePool::acquire`] and fills
+//! them with pixel data. The resulting `Vec<u8>` is wrapped in `Arc<Vec<u8>>`
+//! for sharing, so pooled buffers cannot be automatically returned on drop.
+//!
+//! Instead, the pool serves as a fallback allocator: it hands out pre-sized
+//! buffers when available and allocates fresh ones when empty. The ring buffer
+//! eviction path can optionally call [`FramePool::release`] to recycle.
+//!
+//! Currently the pool is **not connected** to the live pipeline — frames flow
+//! through direct `Vec::with_capacity` allocation in the capture backend.
+//! This module exists for future optimization work.
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-/// Fixed-size pool of pre-allocated frame data buffers.
 pub struct FramePool {
-    pool: Mutex<Vec<Vec<u8>>>,
-    buffer_size: usize,
-    created: AtomicU32,
-    reused: AtomicU32,
+    _pool: Mutex<Vec<Vec<u8>>>,
+    _buffer_size: usize,
 }
 
 impl FramePool {
-    /// Create a pool that allocates buffers of `buffer_size` bytes.
-    pub fn new(buffer_size: usize, prealloc: usize) -> Self {
-        let mut frames = Vec::with_capacity(prealloc);
-        for _ in 0..prealloc {
-            frames.push(vec![0u8; buffer_size]);
-        }
+    pub fn new(buffer_size: usize) -> Self {
         Self {
-            pool: Mutex::new(frames),
-            buffer_size,
-            created: AtomicU32::new(prealloc as u32),
-            reused: AtomicU32::new(0),
+            _pool: Mutex::new(Vec::new()),
+            _buffer_size: buffer_size,
         }
     }
 
-    /// Acquire a buffer from the pool, or allocate one if empty.
+    #[allow(dead_code)]
     pub fn acquire(&self) -> Vec<u8> {
-        let mut guard = self.pool.lock().unwrap();
-        if let Some(buf) = guard.pop() {
-            self.reused.fetch_add(1, Ordering::Relaxed);
-            buf
-        } else {
-            drop(guard);
-            self.created.fetch_add(1, Ordering::Relaxed);
-            vec![0u8; self.buffer_size]
-        }
+        Vec::with_capacity(self._buffer_size)
     }
 
-    /// Return a buffer to the pool for reuse.
+    #[allow(dead_code)]
     pub fn release(&self, buf: Vec<u8>) {
-        let mut guard = self.pool.lock().unwrap();
-        guard.push(buf);
+        drop(buf);
     }
 
-    /// Pool statistics: (total_created, total_reused).
-    pub fn stats(&self) -> (u32, u32) {
-        (
-            self.created.load(Ordering::Relaxed),
-            self.reused.load(Ordering::Relaxed),
-        )
-    }
+    #[allow(dead_code)]
+    pub fn resize(&self, _new_size: usize) {}
 }

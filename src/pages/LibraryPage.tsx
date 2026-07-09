@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, Film, Trash2, FolderOpen, Play } from "lucide-react";
 import { useClipsStore, formatSize, formatDuration, formatDate } from "@/stores/clips";
@@ -6,7 +6,12 @@ import ClipThumbnail from "@/components/common/ClipThumbnail";
 
 export default function LibraryPage() {
   const navigate = useNavigate();
-  const { clips, loading, loadClips, deleteClip, openClipLocation } = useClipsStore();
+  const clips = useClipsStore((s) => s.clips);
+  const loading = useClipsStore((s) => s.loading);
+  const loadClips = useClipsStore((s) => s.loadClips);
+  const deleteClip = useClipsStore((s) => s.deleteClip);
+  const openClipLocation = useClipsStore((s) => s.openClipLocation);
+
   const [search, setSearch] = useState("");
   const [showConfirm, setShowConfirm] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -15,8 +20,9 @@ export default function LibraryPage() {
     loadClips();
   }, [loadClips]);
 
-  const filtered = clips.filter((c) =>
-    c.filename.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () => clips.filter((c) => c.filename.toLowerCase().includes(search.toLowerCase())),
+    [clips, search],
   );
 
   const handleDelete = useCallback(async (filename: string) => {

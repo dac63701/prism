@@ -29,6 +29,9 @@ pub enum PixelFormat {
     Bgra,
     /// 8-bit YUV 4:2:0 planar (NV12) — preferred by hardware encoders
     Nv12,
+    /// Compressed H.264 NAL unit in AVCC format (4-byte length prefix).
+    /// Used by the Windows shadow buffer — data holds encoded bitstream.
+    H264,
 }
 
 /// What to capture — a display, window, or application.
@@ -141,7 +144,11 @@ pub fn enumerate_capture_sources() -> CaptureSources {
     {
         macos::enumerate_sources()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::enumerate_sources()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         CaptureSources {
             displays: vec![],
@@ -201,6 +208,83 @@ impl LatestFrame {
     pub fn take(&self) -> Option<CapturedFrame> {
         self.inner.lock().ok().and_then(|mut g| g.take())
     }
+}
+
+// ---------------------------------------------------------------------------
+// BGRA → NV12 conversion (chroma subsampling, 4 B/px → 1.5 B/px)
+// ---------------------------------------------------------------------------
+
+/// Convert a BGRA frame to NV12 format in-place into a new buffer.
+///
+/// NV12 layout: [Y plane: width×height bytes] [UV plane: (width/2)×(height/2)×2 bytes]
+/// Total: width × height × 3/2 bytes
+///
+/// Uses integer-only BT.601 coefficients (no floating point).
+pub fn bgra_to_nv12(bgra: &[u8], width: u32, height: u32, bgra_stride: u32) -> Vec<u8> {
+    let y_size = (width * height) as usize;
+    let uv_size = y_size / 2;
+    let mut nv12 = vec![0u8; y_size + uv_size];
+    let (y_plane, uv_plane) = nv12.split_at_mut(y_size);
+
+    for y in 0..height {
+        for x in 0..width {
+            let bgra_off = (y * bgra_stride + x * 4) as usize;
+            let b = bgra[bgra_off] as i32;
+            let g = bgra[bgra_off + 1] as i32;
+            let r = bgra[bgra_off + 2] as i32;
+
+            // Y =  ((66*R + 129*G +  25*B + 128) >> 8) + 16
+            let y_val = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
+            y_plane[(y * width + x) as usize] = y_val.clamp(0, 255) as u8;
+
+            // UV is sampled at 2×2 block level
+            if y % 2 == 0 && x % 2 == 0 {
+                // U = ((-38*R -  74*G + 112*B + 128) >> 8) + 128
+                // V = ((112*R -  94*G -  18*B + 128) >> 8) + 128
+                let u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
+                let v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
+                let uv_off = ((y / 2) * (width / 2) + (x / 2)) as usize * 2;
+                uv_plane[uv_off] = u.clamp(0, 255) as u8;
+                uv_plane[uv_off + 1] = v.clamp(0, 255) as u8;
+            }
+        }
+    }
+
+    nv12
+}
+
+/// Convert an NV12 frame to RGB (for preview / JPEG encoding).
+/// Output is tightly packed R8G8B8 (3 bytes per pixel).
+pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let y_size = (width * height) as usize;
+    let y_plane = &nv12[..y_size];
+    let uv_plane = &nv12[y_size..];
+    let mut rgb = vec![0u8; (width * height * 3) as usize];
+
+    for y in 0..height {
+        for x in 0..width {
+            let y_off = (y * width + x) as usize;
+            let uv_off = ((y / 2) * (width / 2) + (x / 2)) as usize * 2;
+
+            let y_val = y_plane[y_off] as i32 - 16;
+            let u_val = uv_plane[uv_off] as i32 - 128;
+            let v_val = uv_plane[uv_off + 1] as i32 - 128;
+
+            // BT.601: R = clamp((298*C + 409*E + 128) >> 8)
+            //         G = clamp((298*C - 100*D - 208*E + 128) >> 8)
+            //         B = clamp((298*C + 516*D + 128) >> 8)
+            let r = ((298 * y_val + 409 * v_val + 128) >> 8).clamp(0, 255) as u8;
+            let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
+            let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
+
+            let rgb_off = (y * width + x) as usize * 3;
+            rgb[rgb_off] = r;
+            rgb[rgb_off + 1] = g;
+            rgb[rgb_off + 2] = b;
+        }
+    }
+
+    rgb
 }
 
 // ---------------------------------------------------------------------------

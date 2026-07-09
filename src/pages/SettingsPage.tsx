@@ -74,7 +74,10 @@ function FieldRow({
 }
 
 export default function SettingsPage() {
-  const { settings, loadSettings, updateSettings, loaded } = useSettingsStore();
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const loaded = useSettingsStore((s) => s.loaded);
+  const settings = useSettingsStore((s) => s.settings);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
 
   useEffect(() => {
     if (!loaded) loadSettings();
@@ -95,21 +98,7 @@ export default function SettingsPage() {
     key: K,
     value: AppSettings[S][K]
   ) => {
-    return save({
-      ...settings,
-      [section]: { ...settings[section], [key]: value },
-    });
-  };
-
-  const setFieldDebounced = <
-    S extends keyof AppSettings,
-    K extends keyof AppSettings[S]
-  >(
-    section: S,
-    key: K,
-    value: AppSettings[S][K]
-  ) => {
-    debouncedSave({
+    save({
       ...settings,
       [section]: { ...settings[section], [key]: value },
     });
@@ -123,6 +112,9 @@ export default function SettingsPage() {
   };
 
   const s = settings;
+
+  // Force inputs to remount with correct values after async load
+  const loadedKey = loaded ? "loaded" : "initial";
 
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
@@ -206,13 +198,13 @@ export default function SettingsPage() {
             <FieldRow label="Output directory">
               <input
                 type="text"
+                key={`output-${loadedKey}`}
                 defaultValue={s.recording.output_directory}
                 onChange={(e) =>
-                  setFieldDebounced(
-                    "recording",
-                    "output_directory",
-                    e.target.value as never
-                  )
+                  debouncedSave({
+                    ...settings,
+                    recording: { ...settings.recording, output_directory: e.target.value },
+                  })
                 }
                 placeholder="~/Videos/Prism"
                 className="w-64 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
@@ -324,6 +316,7 @@ export default function SettingsPage() {
             <FieldRow label="Max clips (GB)">
               <input
                 type="number"
+                key={`max-gb-${loadedKey}`}
                 min={0}
                 defaultValue={s.storage.max_clips_gb}
                 onChange={(e) =>
@@ -341,6 +334,7 @@ export default function SettingsPage() {
             <FieldRow label="Auto-prune (days)">
               <input
                 type="number"
+                key={`prune-${loadedKey}`}
                 min={0}
                 defaultValue={s.storage.auto_prune_days ?? ""}
                 onChange={(e) => {

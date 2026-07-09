@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { X, Monitor, HardDrive, Film } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settings";
@@ -8,9 +8,17 @@ import ScreenPreview from "@/components/common/ScreenPreview";
 import SourceSelector from "@/components/common/SourceSelector";
 
 export default function HomePage() {
-  const { loadSettings, loaded, settings } = useSettingsStore();
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const loaded = useSettingsStore((s) => s.loaded);
+  const captureTarget = useSettingsStore((s) => s.settings.recording.capture_target);
+  const bufferDurationSecs = useSettingsStore((s) => s.settings.recording.buffer_duration_secs);
+  const resolution = useSettingsStore((s) => s.settings.recording.resolution);
+  const bitrateKbps = useSettingsStore((s) => s.settings.recording.bitrate_kbps);
+  const fps = useSettingsStore((s) => s.settings.recording.fps);
+
   const isRecording = useRecordingStore((s) => s.isRecording);
-  const frameCount = useRecordingStore((s) => s.frameCount);
+  const bufferTimeSeconds = useRecordingStore((s) => s.bufferTimeSeconds);
+  const recordingElapsedSeconds = useRecordingStore((s) => s.recordingElapsedSeconds);
   const checkStatus = useRecordingStore((s) => s.checkStatus);
   const error = useRecordingStore((s) => s.error);
   const clearError = useRecordingStore((s) => s.clearError);
@@ -20,7 +28,7 @@ export default function HomePage() {
     if (!loaded) loadSettings();
   }, [loaded, loadSettings]);
 
-  // Poll buffer info while recording
+  // Poll buffer info while recording (1 Hz for status display)
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (isRecording) {
@@ -32,6 +40,12 @@ export default function HomePage() {
     };
   }, [isRecording, checkStatus]);
 
+  function formatElapsed(secs: number): string {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
   const handleSourceChange = async (targetJson: string) => {
     try {
       await invoke("set_capture_target", { targetJson });
@@ -42,12 +56,12 @@ export default function HomePage() {
   };
 
   // Parse current source for display label
-  const targetLabel = (() => {
-    if (!settings.recording.capture_target.trim()) {
+  const targetLabel = useMemo(() => {
+    if (!captureTarget.trim()) {
       return "Main display";
     }
     try {
-      const parsed = JSON.parse(settings.recording.capture_target);
+      const parsed = JSON.parse(captureTarget);
       if (typeof parsed === "string" && parsed === "display") {
         return "Main display";
       }
@@ -67,7 +81,7 @@ export default function HomePage() {
     } catch {
       return null;
     }
-  })();
+  }, [captureTarget]);
 
   return (
     <div className="h-full flex gap-5 px-6 pb-5">
@@ -95,12 +109,12 @@ export default function HomePage() {
         <div className="flex flex-col items-center gap-4 shrink-0">
           <RecordingControls />
 
-          {/* State text */}
+          {/* State text — elapsed time + buffer time */}
           <p className="text-sm text-zinc-500">
             {isRecording
               ? framesReceived === 0
                 ? "Recording — waiting for frames..."
-                : `Recording — ${frameCount}f (${framesReceived} total)`
+                : `${formatElapsed(recordingElapsedSeconds)} · ${formatElapsed(bufferTimeSeconds)} buffered`
               : "Idle"}
           </p>
 
@@ -118,12 +132,12 @@ export default function HomePage() {
               )}
               <span className="flex items-center gap-1.5">
                 <HardDrive className="size-3" />
-                {settings.recording.buffer_duration_secs}s clip
+                {bufferDurationSecs}s clip
               </span>
               <span className="text-zinc-700">|</span>
               <span className="flex items-center gap-1.5">
                 <Film className="size-3" />
-                {settings.recording.resolution} · {(settings.recording.bitrate_kbps / 1000).toFixed(1).replace(/\.0$/, "")} Mbps · {settings.recording.fps} FPS
+                {resolution} · {(bitrateKbps / 1000).toFixed(1).replace(/\.0$/, "")} Mbps · {fps} FPS
               </span>
             </div>
           )}
@@ -134,7 +148,7 @@ export default function HomePage() {
       <div className="w-64 shrink-0 pt-3 pb-5">
         <div className="rounded-xl bg-zinc-950 border border-zinc-800 p-4">
           <SourceSelector
-            value={settings.recording.capture_target}
+            value={captureTarget}
             onChange={handleSourceChange}
           />
         </div>
