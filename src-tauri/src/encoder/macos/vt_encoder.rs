@@ -49,14 +49,13 @@ impl VtH264Encoder {
         let stride = (width as usize) * 4;
         let alloc_size = (height as usize) * stride;
 
-        let session =
-            CompressionSession::builder(width as i32, height as i32, VtCodec::H264)
-                .with_real_time(true)
-                .with_average_bit_rate((bitrate_kbps as i32).saturating_mul(1000))
-                .with_expected_frame_rate(fps as f64)
-                .with_max_keyframe_interval(keyframe_interval as i32)
-                .build()
-                .map_err(|e| EncodeError::InitFailed(format!("VT CompressionSession init: {e}")))?;
+        let session = CompressionSession::builder(width as i32, height as i32, VtCodec::H264)
+            .with_real_time(true)
+            .with_average_bit_rate((bitrate_kbps as i32).saturating_mul(1000))
+            .with_expected_frame_rate(fps as f64)
+            .with_max_keyframe_interval(keyframe_interval as i32)
+            .build()
+            .map_err(|e| EncodeError::InitFailed(format!("VT CompressionSession init: {e}")))?;
 
         let bgra_fcc = u32::from_be_bytes(*b"BGRA");
         let surface = IOSurface::create_with_properties(
@@ -102,7 +101,12 @@ impl VtH264Encoder {
     ///
     /// Returns one packet per frame on success. Falls back to the caller
     /// if encoding produces no data (encoder not ready, etc).
-    pub fn encode_frame(&mut self, nv12_data: &[u8], width: u32, height: u32) -> Result<Vec<EncodedPacket>, EncodeError> {
+    pub fn encode_frame(
+        &mut self,
+        nv12_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<EncodedPacket>, EncodeError> {
         // --- Step 1: NV12 → BGRA (VT expects BGRA IOSurface) ---
         let bgra = crate::capture::nv12_to_bgra(nv12_data, width, height);
 
@@ -112,9 +116,9 @@ impl VtH264Encoder {
             .lock_read_write()
             .map_err(|e| EncodeError::EncodeFailed(format!("IOSurface lock: {e}")))?;
 
-        let dst_base = guard
-            .base_address_mut()
-            .ok_or_else(|| EncodeError::EncodeFailed("IOSurface base address unavailable".into()))?;
+        let dst_base = guard.base_address_mut().ok_or_else(|| {
+            EncodeError::EncodeFailed("IOSurface base address unavailable".into())
+        })?;
 
         let row_bytes = (self.width as usize) * 4;
         let copy_height = self.height as usize;
@@ -159,7 +163,9 @@ impl VtH264Encoder {
         let encoded: EncodedFrame = self
             .session
             .encode(&self.surface, presentation_time)
-            .map_err(|e| EncodeError::EncodeFailed(format!("VT encode frame {}: {e}", self.frame_index)))?;
+            .map_err(|e| {
+                EncodeError::EncodeFailed(format!("VT encode frame {}: {e}", self.frame_index))
+            })?;
 
         self.frame_index += 1;
 
@@ -189,7 +195,9 @@ impl VtH264Encoder {
                     );
                 }
                 Err(e) => {
-                    tracing::warn!("VtH264Encoder: failed to extract SPS/PPS from format description: {e}");
+                    tracing::warn!(
+                        "VtH264Encoder: failed to extract SPS/PPS from format description: {e}"
+                    );
                 }
             }
         }
@@ -203,7 +211,7 @@ impl VtH264Encoder {
 
         let is_sync = self.sps_pps_ready
             && (self.keyframe_interval == 0
-                || (self.frame_index - 1) % self.keyframe_interval as u64 == 0);
+                || (self.frame_index - 1).is_multiple_of(self.keyframe_interval as u64));
 
         Ok(vec![EncodedPacket {
             data: encoded.data,

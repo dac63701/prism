@@ -115,8 +115,7 @@ fn extract_sps_pps(frames: &[StoredFrame]) -> Result<(Vec<u8>, Vec<u8>), EncodeE
         let mut pps = Vec::new();
 
         while offset + 4 <= data.len() {
-            let nal_len =
-                u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+            let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
             offset += 4;
             if offset + nal_len > data.len() {
                 break;

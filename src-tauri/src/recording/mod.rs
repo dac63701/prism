@@ -16,15 +16,15 @@ use crate::buffer::{BufferConfig, BufferManager, StoredFrame};
 use crate::capture::{
     create_capture_backend, CaptureBackend, CaptureConfig, CaptureTarget, CapturedFrame,
 };
-#[cfg(target_os = "windows")]
-use crate::encoder::windows::mf_encoder::MfH264Encoder;
-#[cfg(target_os = "macos")]
-use crate::encoder::macos::vt_encoder::VtH264Encoder;
 #[cfg(target_os = "macos")]
 use crate::encoder::macos::resize_bgra_frame;
+#[cfg(target_os = "macos")]
+use crate::encoder::macos::vt_encoder::VtH264Encoder;
+#[cfg(target_os = "windows")]
+use crate::encoder::windows::mf_encoder::MfH264Encoder;
+use crate::settings::config::AppSettings;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use crate::settings::config::{is_native_resolution, resolution_dimensions};
-use crate::settings::config::AppSettings;
 
 /// Polling interval as a fraction of the frame duration,
 /// so we don't busy-loop but still catch frames in time.
@@ -122,7 +122,13 @@ impl Recorder {
         let h264_encoder = if native {
             None
         } else {
-            match MfH264Encoder::new(target_w, target_h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2)) {
+            match MfH264Encoder::new(
+                target_w,
+                target_h,
+                rs.fps,
+                rs.bitrate_kbps,
+                rs.fps.saturating_mul(2),
+            ) {
                 Ok(enc) => Some(enc),
                 Err(e) => {
                     eprintln!("[prism] H.264 encoder init failed — falling back to raw NV12: {e}");
@@ -135,10 +141,18 @@ impl Recorder {
         let h264_encoder = if native {
             None
         } else {
-            match VtH264Encoder::new(target_w, target_h, rs.fps, rs.bitrate_kbps, rs.fps.saturating_mul(2)) {
+            match VtH264Encoder::new(
+                target_w,
+                target_h,
+                rs.fps,
+                rs.bitrate_kbps,
+                rs.fps.saturating_mul(2),
+            ) {
                 Ok(enc) => Some(enc),
                 Err(e) => {
-                    eprintln!("[prism] VT H.264 encoder init failed — falling back to raw NV12: {e}");
+                    eprintln!(
+                        "[prism] VT H.264 encoder init failed — falling back to raw NV12: {e}"
+                    );
                     None
                 }
             }
@@ -281,6 +295,7 @@ impl Recorder {
             inner.latest_frame = None;
             #[cfg(target_os = "windows")]
             {
+                inner.h264_encoder = None;
                 inner.frame_index = 0;
                 inner.sps.clear();
                 inner.pps.clear();
@@ -370,7 +385,7 @@ impl Recorder {
             None => return 0,
         };
 
-if let Some(frame) = inner.backend.read_latest_frame() {
+        if let Some(frame) = inner.backend.read_latest_frame() {
             // Mark recording start on first frame
             if inner.recording_started_at.is_none() {
                 inner.recording_started_at = Some(std::time::Instant::now());
@@ -395,11 +410,16 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                         (inner.target_width.max(1), inner.target_height.max(1))
                     };
                     match MfH264Encoder::new(
-                        enc_w, enc_h,
-                        inner.backend_config.fps, inner.native_bitrate_kbps,
+                        enc_w,
+                        enc_h,
+                        inner.backend_config.fps,
+                        inner.native_bitrate_kbps,
                         inner.backend_config.fps.saturating_mul(2),
                     ) {
-                        Ok(enc) => { inner.h264_encoder = Some(enc); inner.frame_index = 0; }
+                        Ok(enc) => {
+                            inner.h264_encoder = Some(enc);
+                            inner.frame_index = 0;
+                        }
                         Err(e) => eprintln!("[prism] Encoder init failed: {e}"),
                     }
                 }
@@ -454,8 +474,10 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                 if inner.frame_index == 0 {
                     eprintln!(
                         "[prism] macOS frame: capture={}x{} target={}x{} native={} fps={}",
-                        frame.width, frame.height,
-                        inner.target_width, inner.target_height,
+                        frame.width,
+                        frame.height,
+                        inner.target_width,
+                        inner.target_height,
                         inner.resolution_is_native,
                         inner.backend_config.fps,
                     );
@@ -516,11 +538,16 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                         (inner.target_width.max(1), inner.target_height.max(1))
                     };
                     match VtH264Encoder::new(
-                        enc_w, enc_h,
-                        inner.backend_config.fps, inner.native_bitrate_kbps,
+                        enc_w,
+                        enc_h,
+                        inner.backend_config.fps,
+                        inner.native_bitrate_kbps,
                         inner.backend_config.fps.saturating_mul(2),
                     ) {
-                        Ok(enc) => { inner.h264_encoder = Some(enc); inner.frame_index = 0; }
+                        Ok(enc) => {
+                            inner.h264_encoder = Some(enc);
+                            inner.frame_index = 0;
+                        }
                         Err(e) => eprintln!("[prism] VT encoder init failed: {e}"),
                     }
                 }
@@ -722,7 +749,7 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                 let y_plane = data;
                 let y_size = (width * height) as usize;
                 let uv_plane = &data[y_size..];
-                let uv_width = (stride + 1) / 2;
+                let uv_width = stride.div_ceil(2);
 
                 for dy in 0..preview_h {
                     for dx in 0..preview_w {
@@ -737,7 +764,8 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                         let v_val = uv_plane[uv_off + 1] as i32 - 128;
 
                         let r = ((298 * y_val + 409 * v_val + 128) >> 8).clamp(0, 255) as u8;
-                        let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
+                        let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255)
+                            as u8;
                         let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
 
                         let pixel = rgb.get_pixel_mut(dx, dy);
@@ -757,7 +785,7 @@ if let Some(frame) = inner.backend.read_latest_frame() {
                         let pixel = rgb.get_pixel_mut(dx, dy);
                         pixel[0] = data[offset + 2]; // R ← B
                         pixel[1] = data[offset + 1]; // G
-                        pixel[2] = data[offset];     // B ← R
+                        pixel[2] = data[offset]; // B ← R
                     }
                 }
             }
@@ -772,12 +800,7 @@ if let Some(frame) = inner.backend.read_latest_frame() {
         let mut jpg_buf = Vec::new();
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpg_buf, 80);
         if encoder
-            .encode(
-                &rgb,
-                preview_w,
-                preview_h,
-                image::ExtendedColorType::Rgb8,
-            )
+            .encode(&rgb, preview_w, preview_h, image::ExtendedColorType::Rgb8)
             .is_err()
         {
             return None;
@@ -786,7 +809,6 @@ if let Some(frame) = inner.backend.read_latest_frame() {
         let b64 = general_purpose::STANDARD.encode(&jpg_buf);
         Some(format!("data:image/jpeg;base64,{b64}"))
     }
-
 }
 
 // ── Clip data extraction (call under lock, encode outside) ───────────────

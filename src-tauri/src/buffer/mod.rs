@@ -70,10 +70,7 @@ impl BufferManager {
         let pool = FramePool::new(frame_size);
         // Frame-capacity ceiling: at most MAX_FRAME_CAPACITY or config capacity,
         // whichever is smaller.
-        let capacity = config
-            .capacity()
-            .min(Self::MAX_FRAME_CAPACITY)
-            .max(60);
+        let capacity = config.capacity().clamp(60, Self::MAX_FRAME_CAPACITY);
         let buffer = RingBuffer::with_byte_budget(capacity, Self::SHADOW_BUFFER_BYTES);
 
         Self {

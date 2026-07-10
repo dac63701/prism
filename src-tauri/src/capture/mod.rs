@@ -222,8 +222,8 @@ impl LatestFrame {
 /// Uses integer-only BT.601 coefficients (no floating point).
 pub fn bgra_to_nv12(bgra: &[u8], width: u32, height: u32, bgra_stride: u32) -> Vec<u8> {
     let y_size = (width * height) as usize;
-    let uv_width = (width + 1) / 2;
-    let uv_height = (height + 1) / 2;
+    let uv_width = width.div_ceil(2);
+    let uv_height = height.div_ceil(2);
     let uv_size = (uv_width * uv_height * 2) as usize;
     let mut nv12 = vec![0u8; y_size + uv_size];
     let (y_plane, uv_plane) = nv12.split_at_mut(y_size);
@@ -257,7 +257,7 @@ pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
     let y_size = (width * height) as usize;
     let y_plane = &nv12[..y_size];
     let uv_plane = &nv12[y_size..];
-    let uv_width = (width + 1) / 2;
+    let uv_width = width.div_ceil(2);
     let mut rgb = vec![0u8; (width * height * 3) as usize];
 
     for y in 0..height {
@@ -292,7 +292,7 @@ pub fn nv12_to_bgra(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
     let y_size = (width * height) as usize;
     let y_plane = &nv12[..y_size];
     let uv_plane = &nv12[y_size..];
-    let uv_width = (width + 1) / 2;
+    let uv_width = width.div_ceil(2);
     let mut bgra = vec![0u8; (width * height * 4) as usize];
 
     for y in 0..height {

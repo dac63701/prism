@@ -14,9 +14,9 @@ use videotoolbox::compression::{CompressionSession, EncodedFrame};
 use videotoolbox::session::Codec as VtCodec;
 
 use crate::buffer::StoredFrame;
+use crate::capture::PixelFormat;
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::{EncodeError, Encoder};
-use crate::capture::PixelFormat;
 
 /// macOS VideoToolbox-backed hardware encoder.
 pub struct MacEncoder;
@@ -272,7 +272,9 @@ impl Encoder for MacEncoder {
     }
 }
 
-pub(crate) fn extract_h264_parameter_sets(sample: &EncodedFrame) -> Result<(Vec<u8>, Vec<u8>), String> {
+pub(crate) fn extract_h264_parameter_sets(
+    sample: &EncodedFrame,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
     let sample_buffer = sample
         .cm_sample_buffer()
         .ok_or_else(|| "encoded sample has no CMSampleBuffer".to_string())?;
@@ -411,8 +413,7 @@ pub(crate) fn extract_sps_pps(frames: &[StoredFrame]) -> Result<(Vec<u8>, Vec<u8
         let mut pps = Vec::new();
 
         while offset + 4 <= data.len() {
-            let nal_len =
-                u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+            let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
             offset += 4;
             if offset + nal_len > data.len() {
                 break;

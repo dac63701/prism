@@ -1,16 +1,16 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use windows::core::Interface;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::*;
 use windows::Win32::Graphics::Direct3D11::*;
-use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
-use windows::core::Interface;
+use windows::Win32::Graphics::Dxgi::*;
 
 use crate::capture::{
-    CaptureBackend, CaptureConfig, CaptureError, CaptureSources, CapturedFrame,
-    DisplayInfo, LatestFrame, PixelFormat,
+    CaptureBackend, CaptureConfig, CaptureError, CaptureSources, CapturedFrame, DisplayInfo,
+    LatestFrame, PixelFormat,
 };
 
 pub struct WindowsCaptureBackend {
@@ -46,7 +46,8 @@ impl WindowsCaptureBackend {
             .device
             .as_ref()
             .ok_or(CaptureError::UnsupportedPlatform)?;
-        let dxgi_device: IDXGIDevice = device.cast()
+        let dxgi_device: IDXGIDevice = device
+            .cast()
             .map_err(|_| CaptureError::StartFailed("Failed to cast to IDXGIDevice".into()))?;
         let adapter = unsafe { dxgi_device.GetAdapter() }
             .map_err(|_| CaptureError::StartFailed("No DXGI adapter".into()))?;
@@ -60,12 +61,9 @@ impl WindowsCaptureBackend {
         loop {
             match unsafe { adapter.EnumOutputs(output_index) } {
                 Ok(output) => {
-                    let output1: IDXGIOutput1 =
-                        output.cast().map_err(|_| {
-                            CaptureError::StartFailed(
-                                "Output doesn't support IDXGIOutput1".into(),
-                            )
-                        })?;
+                    let output1: IDXGIOutput1 = output.cast().map_err(|_| {
+                        CaptureError::StartFailed("Output doesn't support IDXGIOutput1".into())
+                    })?;
 
                     if output_index == target_display_id {
                         return Ok(output1);
@@ -76,9 +74,7 @@ impl WindowsCaptureBackend {
             output_index += 1;
         }
 
-        Err(CaptureError::StartFailed(
-            "Target display not found".into(),
-        ))
+        Err(CaptureError::StartFailed("Target display not found".into()))
     }
 
     fn ensure_staging(
@@ -104,7 +100,10 @@ impl WindowsCaptureBackend {
                 MipLevels: 1,
                 ArraySize: 1,
                 Format: format,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
                 Usage: D3D11_USAGE_STAGING,
                 BindFlags: D3D11_BIND_FLAG(0).0 as u32,
                 CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
@@ -124,14 +123,8 @@ impl WindowsCaptureBackend {
     }
 
     fn acquire_frame(&mut self) -> Result<Option<CapturedFrame>, CaptureError> {
-        let duplication = self
-            .duplication
-            .as_ref()
-            .ok_or(CaptureError::NoFrame)?;
-        let context = self
-            .context
-            .as_ref()
-            .ok_or(CaptureError::NoFrame)?;
+        let duplication = self.duplication.as_ref().ok_or(CaptureError::NoFrame)?;
+        let context = self.context.as_ref().ok_or(CaptureError::NoFrame)?;
 
         let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut desktop_resource: Option<IDXGIResource> = None;
@@ -161,10 +154,9 @@ impl WindowsCaptureBackend {
         }
 
         let resource = desktop_resource.ok_or(CaptureError::NoFrame)?;
-        let src_texture: ID3D11Texture2D =
-            resource.cast().map_err(|e| {
-                CaptureError::StreamError(format!("Failed to cast resource: {e}"))
-            })?;
+        let src_texture: ID3D11Texture2D = resource
+            .cast()
+            .map_err(|e| CaptureError::StreamError(format!("Failed to cast resource: {e}")))?;
 
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { src_texture.GetDesc(&mut desc) };
@@ -292,8 +284,8 @@ impl Drop for WindowsCaptureBackend {
 
 // ── D3D11 device creation ───────────────────────────────────────────────
 
-fn create_d3d11_device(
-) -> Result<(Option<ID3D11Device>, Option<ID3D11DeviceContext>), CaptureError> {
+fn create_d3d11_device() -> Result<(Option<ID3D11Device>, Option<ID3D11DeviceContext>), CaptureError>
+{
     let mut device: Option<ID3D11Device> = None;
     let mut context: Option<ID3D11DeviceContext> = None;
 

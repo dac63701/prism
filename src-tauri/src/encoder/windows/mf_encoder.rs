@@ -20,9 +20,8 @@ use crate::encoder::EncodeError;
 static MF_INITIALIZED: OnceLock<Result<(), windows::core::Error>> = OnceLock::new();
 
 fn ensure_mf() -> Result<(), EncodeError> {
-    let result = MF_INITIALIZED.get_or_init(|| {
-        unsafe { MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET) }
-    });
+    let result =
+        MF_INITIALIZED.get_or_init(|| unsafe { MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET) });
     match result {
         Ok(()) => Ok(()),
         Err(e) => Err(EncodeError::InitFailed(format!("MFStartup failed: {e}"))),
@@ -83,14 +82,10 @@ impl MfH264Encoder {
 
         unsafe {
             // Create the H.264 encoder MFT via its CLSID
-            let transform: IMFTransform = CoCreateInstance(
-                &CLSID_MSH264EncoderMFT,
-                None,
-                CLSCTX_INPROC_SERVER,
-            )
-            .map_err(|e| {
-                EncodeError::InitFailed(format!("CoCreateInstance H.264 encoder MFT: {e}"))
-            })?;
+            let transform: IMFTransform =
+                CoCreateInstance(&CLSID_MSH264EncoderMFT, None, CLSCTX_INPROC_SERVER).map_err(
+                    |e| EncodeError::InitFailed(format!("CoCreateInstance H.264 encoder MFT: {e}")),
+                )?;
 
             // ------ Set input type: NV12 ------
             let input_type: IMFMediaType = MFCreateMediaType()
@@ -257,11 +252,9 @@ impl MfH264Encoder {
 
                 let mut status: u32 = 0;
 
-                let result = self.transform.ProcessOutput(
-                    0,
-                    &mut [output.clone()],
-                    &mut status,
-                );
+                let result = self
+                    .transform
+                    .ProcessOutput(0, &mut [output.clone()], &mut status);
 
                 if result.is_ok() {
                     if let Some(ref out_sample) = *output.pSample {
@@ -295,9 +288,7 @@ impl MfH264Encoder {
                         }
                         continue;
                     }
-                    return Err(EncodeError::EncodeFailed(format!(
-                        "ProcessOutput: {err}"
-                    )));
+                    return Err(EncodeError::EncodeFailed(format!("ProcessOutput: {err}")));
                 }
             }
 
@@ -444,11 +435,7 @@ fn capture_sps_pps_from_annex_b(data: &[u8], sps_out: &mut Vec<u8>, pps_out: &mu
             && data[i + 3] == 1
         {
             i += 4;
-        } else if i + 3 <= data.len()
-            && data[i] == 0
-            && data[i + 1] == 0
-            && data[i + 2] == 1
-        {
+        } else if i + 3 <= data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
             i += 3;
         } else {
             i += 1;
@@ -472,11 +459,7 @@ fn capture_sps_pps_from_annex_b(data: &[u8], sps_out: &mut Vec<u8>, pps_out: &mu
             {
                 break;
             }
-            if i + 3 <= data.len()
-                && data[i] == 0
-                && data[i + 1] == 0
-                && data[i + 2] == 1
-            {
+            if i + 3 <= data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
                 break;
             }
             i += 1;

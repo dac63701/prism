@@ -166,7 +166,10 @@ pub async fn save_clip(
 
     // Step 6: Generate server-side thumbnail from latest captured frame
     if let Some(preview) = &clip_data.preview_frame {
-        let thumb_stem = output_path.file_stem().unwrap_or_default().to_string_lossy();
+        let thumb_stem = output_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy();
         let thumb_path = output_path.with_file_name(format!("{}_thumb.jpg", thumb_stem));
         if let Err(e) = generate_thumbnail(preview, &thumb_path) {
             eprintln!("[recording] thumbnail generation failed: {e}");
@@ -198,11 +201,7 @@ pub async fn get_buffer_info(
     let fr = rec.total_frames_received();
     let clip_len = rec.buffer_duration_secs();
     let fps = rec.cached_fps();
-    let buffer_time = if fps > 0 {
-        fc as f64 / fps as f64
-    } else {
-        0.0
-    };
+    let buffer_time = if fps > 0 { fc as f64 / fps as f64 } else { 0.0 };
     let elapsed = rec.recording_elapsed_secs();
     Ok(serde_json::json!({
         "frame_count": fc,
@@ -268,7 +267,10 @@ pub async fn set_capture_target(
 
 /// Generate a JPEG thumbnail from a captured frame and save it alongside the MP4.
 /// Downscales to 320px wide while preserving aspect ratio.
-fn generate_thumbnail(frame: &crate::capture::CapturedFrame, thumb_path: &Path) -> Result<(), String> {
+fn generate_thumbnail(
+    frame: &crate::capture::CapturedFrame,
+    thumb_path: &Path,
+) -> Result<(), String> {
     use image::imageops::FilterType;
 
     let w = frame.width;
@@ -295,8 +297,8 @@ fn generate_thumbnail(frame: &crate::capture::CapturedFrame, thumb_path: &Path) 
         PixelFormat::H264 => return Err("Cannot generate thumbnail from H.264 data".into()),
     };
 
-    let img = image::RgbImage::from_raw(w, h, rgb)
-        .ok_or("Failed to create RGB image from frame data")?;
+    let img =
+        image::RgbImage::from_raw(w, h, rgb).ok_or("Failed to create RGB image from frame data")?;
     let resized = image::imageops::resize(&img, thumb_w, thumb_h, FilterType::Triangle);
 
     let file = std::fs::File::create(thumb_path)
