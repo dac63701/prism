@@ -244,11 +244,10 @@ impl MfH264Encoder {
             let mut packets: Vec<EncodedPacket> = Vec::new();
 
             loop {
-                let mut output = MFT_OUTPUT_DATA_BUFFER::default();
-                output.dwStreamID = 0;
-                *output.pSample = None;
-                output.dwStatus = 0;
-                *output.pEvents = None;
+                let mut output = MFT_OUTPUT_DATA_BUFFER {
+                    dwStreamID: 0,
+                    ..Default::default()
+                };
 
                 let mut status: u32 = 0;
 

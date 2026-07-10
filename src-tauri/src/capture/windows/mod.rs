@@ -265,10 +265,7 @@ impl CaptureBackend for WindowsCaptureBackend {
     }
 
     fn read_latest_frame(&mut self) -> Option<CapturedFrame> {
-        match self.acquire_frame() {
-            Ok(frame) => frame,
-            Err(_) => None,
-        }
+        self.acquire_frame().unwrap_or_default()
     }
 
     fn is_active(&self) -> bool {
@@ -303,10 +300,10 @@ fn create_d3d11_device() -> Result<(Option<ID3D11Device>, Option<ID3D11DeviceCon
         )
     };
 
-    if hr.is_err() {
+    if let Err(e) = hr {
         return Err(CaptureError::StartFailed(format!(
             "D3D11CreateDevice failed: {}",
-            hr.unwrap_err()
+            e
         )));
     }
 
