@@ -71,12 +71,10 @@ Combined with slow `FilterType::Triangle` resize and fallback paths using wrong 
 3. **Correct H.264 StoredFrame dimensions** — encoded packets now store `nv12_width`/`nv12_height`.
 4. **Diagnostic logging** on first frame: capture vs target resolution, native flag, FPS.
 
-### Plan: quality-hotkey-ui (NOT STARTED)
-Resolution/bitrate dropdown + click-to-capture hotkey inputs + hotkey re-registration.
+### Plan: quality-hotkey-ui ✅ DONE
+Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wired.
 
-### Plan: thumbnails-monitor-fix
-- **Part A (thumbnails)**: ✅ DONE — `preview_frame` in ClipData, `generate_thumbnail()` in
-  `commands/recording.rs` at 320px JPEG Q75 after clip save. Frontend `<img>` loading in
-  ClipDetailPage.tsx.
-- **Part B (monitor switching)**: 🟡 IN PROGRESS — B-1 (encoder reset on stop) is done;
-  B-2 (always emit state event) and B-3 (frontend error surfacing) are pending.
+### Plan: thumbnails-monitor-fix ✅ DONE
+- **Part A (thumbnails)**: ✅ DONE — server-side JPEG thumbnails at clip save.
+- **Part B (monitor switching)**: ✅ DONE — encoder reset on stop (Win + Mac), emit on error,
+  frontend error surfacing.

@@ -22,6 +22,7 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    #[allow(dead_code)]
     #[error("Rate limit exceeded")]
     RateLimited,
 
@@ -54,15 +55,24 @@ impl IntoResponse for AppError {
             AppError::StorageExceeded => (StatusCode::INSUFFICIENT_STORAGE, self.to_string()),
             AppError::Database(_) => {
                 tracing::error!(%self);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
             AppError::Storage(_) => {
                 tracing::error!(%self);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
             AppError::Internal(_) => {
                 tracing::error!(%self);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
         };
 

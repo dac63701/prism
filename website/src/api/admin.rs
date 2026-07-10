@@ -50,6 +50,7 @@ pub struct UpdateSettingsRequest {
     max_upload_size_mb: Option<u64>,
     default_max_storage_gb: Option<u64>,
     rate_limit_per_min: Option<u64>,
+    signups_allowed: Option<bool>,
 }
 
 // ── User Management ────────────────────────────────────────────────
@@ -85,8 +86,16 @@ pub async fn get_user(
 
     let (clips, _) = db::clips::list_clips(
         &pool,
-        Some(user_id), "", "", "", "created_at", "desc", 1, 1000,
-    ).await?;
+        Some(user_id),
+        "",
+        "",
+        "",
+        "created_at",
+        "desc",
+        1,
+        1000,
+    )
+    .await?;
 
     let total_storage: i64 = clips.iter().map(|c| c.size_bytes).sum();
 
@@ -143,8 +152,16 @@ pub async fn delete_user(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let (clips, _) = db::clips::list_clips(
         &pool,
-        Some(user_id), "", "", "", "created_at", "desc", 1, 1000,
-    ).await?;
+        Some(user_id),
+        "",
+        "",
+        "",
+        "created_at",
+        "desc",
+        1,
+        1000,
+    )
+    .await?;
 
     for clip in &clips {
         let clip_detailed = db::clips::get_clip(&pool, clip.id).await?;
@@ -293,11 +310,72 @@ pub async fn get_logs(
     })))
 }
 
+// ── Server Config ──────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct EffectiveConfig {
+    max_upload_size_mb: u64,
+    default_max_storage_gb: u64,
+    rate_limit_per_min: u64,
+    signups_allowed: bool,
+}
+
+pub async fn get_config(
+    State(pool): State<PgPool>,
+    State(cfg): State<Config>,
+    _admin: AdminUser,
+) -> Result<Json<EffectiveConfig>, AppError> {
+    let rows = db::config::get_all(&pool).await?;
+    let mut map = std::collections::HashMap::new();
+    for entry in rows {
+        map.insert(entry.key, entry.value);
+    }
+
+    Ok(Json(EffectiveConfig {
+        max_upload_size_mb: map
+            .get("max_upload_size_mb")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(cfg.max_upload_size_mb),
+        default_max_storage_gb: map
+            .get("default_max_storage_gb")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(cfg.default_max_storage_gb),
+        rate_limit_per_min: map
+            .get("rate_limit_per_min")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(cfg.rate_limit_per_min),
+        signups_allowed: map
+            .get("signups_allowed")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(true),
+    }))
+}
+
+pub async fn update_config(
+    State(pool): State<PgPool>,
+    _admin: AdminUser,
+    Json(body): Json<UpdateSettingsRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if let Some(v) = body.max_upload_size_mb {
+        db::config::set_value(&pool, "max_upload_size_mb", &v.to_string()).await?;
+    }
+    if let Some(v) = body.default_max_storage_gb {
+        db::config::set_value(&pool, "default_max_storage_gb", &v.to_string()).await?;
+    }
+    if let Some(v) = body.rate_limit_per_min {
+        db::config::set_value(&pool, "rate_limit_per_min", &v.to_string()).await?;
+    }
+    if let Some(v) = body.signups_allowed {
+        db::config::set_value(&pool, "signups_allowed", &v.to_string()).await?;
+    }
+
+    tracing::info!("admin_settings_updated");
+    Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
 // ── Health ─────────────────────────────────────────────────────────
 
-pub async fn health(
-    State(pool): State<PgPool>,
-) -> Result<Json<serde_json::Value>, AppError> {
+pub async fn health(State(pool): State<PgPool>) -> Result<Json<serde_json::Value>, AppError> {
     sqlx::query_scalar::<_, i32>("SELECT 1")
         .fetch_one(&pool)
         .await

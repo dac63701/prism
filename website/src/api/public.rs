@@ -8,6 +8,7 @@ use sqlx::PgPool;
 
 use crate::config::Config;
 use crate::db;
+use crate::db::tags;
 use crate::errors::AppError;
 use crate::storage::local::LocalStorage;
 use crate::storage::StorageBackend;
@@ -25,11 +26,13 @@ pub async fn share_meta(
     }
 
     db::clips::increment_download_count(&pool, clip.id).await?;
+    let tags_list = tags::get_tags_for_clip(&pool, clip.id).await?;
 
     Ok(Json(serde_json::json!({
         "id": clip.id,
         "title": clip.title,
         "game": clip.game,
+        "tags": tags_list,
         "duration_secs": clip.duration_secs,
         "width": clip.width,
         "height": clip.height,
@@ -37,7 +40,7 @@ pub async fn share_meta(
         "codec": clip.codec,
         "visibility": clip.visibility,
         "created_at": clip.created_at.to_rfc3339(),
-        "thumbnail_url": clip.thumbnail_path.map(|p| format!("/api/media/{}", p)),
+        "thumbnail_url": clip.thumbnail_path.as_ref().map(|p| format!("/api/media/{}", p)),
     })))
 }
 
@@ -62,14 +65,20 @@ pub async fn serve_share_page(
 
     let description = format!(
         "Game: {} · Duration: {:.0}s · {}MB",
-        if clip.game.is_empty() { "Unknown" } else { &clip.game },
+        if clip.game.is_empty() {
+            "Unknown"
+        } else {
+            &clip.game
+        },
         clip.duration_secs,
         clip.size_bytes as f64 / 1_048_576.0,
     );
 
-    let og_image = clip.thumbnail_path.as_ref().map(|p| {
-        format!("{}/api/media/{}", config.public_url(), p)
-    }).unwrap_or_default();
+    let og_image = clip
+        .thumbnail_path
+        .as_ref()
+        .map(|p| format!("{}/api/media/{}", config.public_url(), p))
+        .unwrap_or_default();
 
     let html = format!(
         r#"<!DOCTYPE html>
@@ -97,8 +106,16 @@ pub async fn serve_share_page(
     <div id="root" data-share-id="{}"></div>
 </body>
 </html>"#,
-        title, title, description, og_image, config.public_url(), share_id,
-        title, description, og_image, share_id,
+        title,
+        title,
+        description,
+        og_image,
+        config.public_url(),
+        share_id,
+        title,
+        description,
+        og_image,
+        share_id,
     );
 
     Ok(Html(html).into_response())

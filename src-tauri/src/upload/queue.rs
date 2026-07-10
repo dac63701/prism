@@ -97,4 +97,11 @@ impl UploadQueue {
             }
         }
     }
+
+    /// Remove completed tasks from the queue.
+    pub fn clear_completed(&self) {
+        if let Ok(mut queue) = self.inner.lock() {
+            queue.retain(|t| !matches!(t.status, UploadStatus::Completed));
+        }
+    }
 }

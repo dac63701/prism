@@ -1,5 +1,5 @@
-use axum::http::request::Parts;
 use axum::http::header;
+use axum::http::request::Parts;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -80,7 +80,8 @@ pub fn verify_refresh_token(token: &str, secret: &str) -> Result<RefreshClaims, 
 }
 
 pub fn extract_bearer_token(parts: &Parts) -> Option<String> {
-    parts.headers
+    parts
+        .headers
         .get(header::AUTHORIZATION)?
         .to_str()
         .ok()

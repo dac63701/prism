@@ -12,13 +12,14 @@ use std::sync::Arc;
 
 use axum::{
     extract::{ConnectInfo, Request},
-    http::{header, StatusCode},
+    http::{header, HeaderValue, Method, StatusCode},
     middleware as axum_middleware,
     response::IntoResponse,
     routing::get,
     Router,
 };
 use sqlx::PgPool;
+use tower_http::cors::CorsLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -102,6 +103,23 @@ async fn main() {
         rate_limiter,
     };
 
+    let cors = CorsLayer::new()
+        .allow_origin([
+            "https://goprism.studio".parse::<HeaderValue>().unwrap(),
+            "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+            "http://localhost:1420".parse::<HeaderValue>().unwrap(),
+        ])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_credentials(true);
+
     let app = api::add_api_routes(Router::<AppState>::new())
         .route("/s/{share_id}", get(api::public::serve_share_page))
         .fallback(handle_frontend)
@@ -111,16 +129,29 @@ async fn main() {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
-            header::HeaderValue::from_static("nosniff"),
+            HeaderValue::from_static("nosniff"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
-            header::HeaderValue::from_static("DENY"),
+            HeaderValue::from_static("DENY"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::REFERRER_POLICY,
-            header::HeaderValue::from_static("strict-origin-when-cross-origin"),
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
         ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static(
+                "default-src 'self'; \
+                 script-src 'self'; \
+                 style-src 'self' 'unsafe-inline'; \
+                 img-src 'self' data:; \
+                 media-src 'self'; \
+                 connect-src 'self' https://goprism.studio; \
+                 frame-ancestors 'none'",
+            ),
+        ))
+        .layer(cors)
         .with_state(state);
 
     let addr: std::net::SocketAddr = format!(

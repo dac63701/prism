@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -19,10 +21,7 @@ pub fn extract_key_prefix(key: &str) -> &str {
     }
 }
 
-pub async fn verify_api_key(
-    pool: &PgPool,
-    key: &str,
-) -> Result<Uuid, AppError> {
+pub async fn verify_api_key(pool: &PgPool, key: &str) -> Result<Uuid, AppError> {
     if !key.starts_with("prism_") {
         return Err(AppError::Unauthorized);
     }

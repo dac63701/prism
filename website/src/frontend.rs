@@ -4,9 +4,9 @@ use axum::{
     http::{header, StatusCode},
     response::{IntoResponse, Response},
 };
+use std::path::PathBuf;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
-use std::path::PathBuf;
 
 /// Serve the built React frontend.
 /// Falls back to index.html for SPA routing (non-file routes).

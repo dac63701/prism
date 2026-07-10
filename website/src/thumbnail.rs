@@ -4,7 +4,11 @@ use crate::errors::AppError;
 
 /// Generate a JPEG thumbnail (320px wide) from an MP4 video file.
 /// Uses `image` crate on the first frame extracted via a minimal approach.
-pub fn generate_thumbnail(video_path: &Path, thumb_path: &Path, max_w: u32) -> Result<(), AppError> {
+pub fn generate_thumbnail(
+    video_path: &Path,
+    thumb_path: &Path,
+    max_w: u32,
+) -> Result<(), AppError> {
     if !video_path.exists() {
         return Err(AppError::NotFound("Video file not found".into()));
     }
@@ -16,14 +20,18 @@ pub fn generate_thumbnail(video_path: &Path, thumb_path: &Path, max_w: u32) -> R
     let mp4_reader = mp4::Mp4Reader::read_header(reader, size)
         .map_err(|e| AppError::BadRequest(format!("Failed to read MP4: {e}")))?;
 
-    let track = mp4_reader.tracks().values()
+    let track = mp4_reader
+        .tracks()
+        .values()
         .find(|t| matches!(t.track_type(), Ok(mp4::TrackType::Video)))
         .ok_or_else(|| AppError::BadRequest("No video track in MP4".into()))?;
     let width = track.width() as u32;
     let height = track.height() as u32;
 
     let thumb_w = max_w.min(width).max(1);
-    let thumb_h = (height as f64 * (thumb_w as f64 / width as f64)).round().max(1.0) as u32;
+    let thumb_h = (height as f64 * (thumb_w as f64 / width as f64))
+        .round()
+        .max(1.0) as u32;
 
     let mut img = image::RgbImage::new(thumb_w, thumb_h);
     for y in 0..thumb_h {
@@ -51,6 +59,7 @@ pub fn generate_thumbnail(video_path: &Path, thumb_path: &Path, max_w: u32) -> R
 }
 
 /// Generate a colored placeholder thumbnail (for when extraction isn't available).
+#[allow(dead_code)]
 pub fn generate_placeholder_thumb(thumb_path: &Path, dim: (u32, u32)) -> Result<(), AppError> {
     if let Some(parent) = thumb_path.parent() {
         std::fs::create_dir_all(parent)?;

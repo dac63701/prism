@@ -2,9 +2,18 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useClipsStore } from "@/stores/clips";
+import { useSettingsStore } from "@/stores/settings";
 
-/// IPC timeout for save_clip (seconds).
 const SAVE_CLIP_TIMEOUT_SECS = 15;
+
+export interface UploadTask {
+  id: string;
+  clip_path: string;
+  status: "Pending" | "Uploading" | "Completed" | "Failed";
+  progress: number;
+  started_at_secs: number | null;
+  server_url: string | null;
+}
 
 interface RecordingState {
   isRecording: boolean;
@@ -17,6 +26,7 @@ interface RecordingState {
   error: string | null;
   bufferTimeSeconds: number;
   recordingElapsedSeconds: number;
+  uploads: UploadTask[];
 
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -25,14 +35,17 @@ interface RecordingState {
   clearLastClipPath: () => void;
   setError: (err: string) => void;
   clearError: () => void;
+  refreshUploadQueue: () => Promise<void>;
+  clearCompletedUploads: () => Promise<void>;
 }
 
 let unlistenStateChanged: (() => void) | null = null;
 let unlistenClipSaved: (() => void) | null = null;
+let unlistenUploadCompleted: (() => void) | null = null;
+let unlistenUploadFailed: (() => void) | null = null;
 
-export const useRecordingStore = create<RecordingState>((set) => {
+export const useRecordingStore = create<RecordingState>((set, get) => {
   const setupListeners = async () => {
-    // Only register once
     if (!unlistenStateChanged) {
       unlistenStateChanged = await listen<boolean>("recording-state-changed", (event) => {
         console.log("[recording] event: recording-state-changed =", event.payload);
@@ -40,10 +53,37 @@ export const useRecordingStore = create<RecordingState>((set) => {
       });
     }
     if (!unlistenClipSaved) {
-      unlistenClipSaved = await listen<string>("clip-saved", (event) => {
+      unlistenClipSaved = await listen<string>("clip-saved", async (event) => {
         console.log("[recording] event: clip-saved =", event.payload);
         set({ lastClipPath: event.payload, saving: false });
         void useClipsStore.getState().loadClips();
+
+        const settings = useSettingsStore.getState().settings;
+        if (settings?.upload.auto_upload && settings?.upload.server_url && settings?.upload.api_key) {
+          try {
+            await invoke("upload_clip_to_server", {
+              clipPath: event.payload,
+              title: "",
+              game: "",
+              durationSecs: 0,
+              width: 0,
+              height: 0,
+            });
+          } catch (err) {
+            console.error("[recording] auto-upload failed:", err);
+          }
+          void get().refreshUploadQueue();
+        }
+      });
+    }
+    if (!unlistenUploadCompleted) {
+      unlistenUploadCompleted = await listen("upload-completed", () => {
+        void get().refreshUploadQueue();
+      });
+    }
+    if (!unlistenUploadFailed) {
+      unlistenUploadFailed = await listen("upload-failed", () => {
+        void get().refreshUploadQueue();
       });
     }
   };
@@ -62,6 +102,7 @@ export const useRecordingStore = create<RecordingState>((set) => {
     error: null,
     bufferTimeSeconds: 0,
     recordingElapsedSeconds: 0,
+    uploads: [],
 
     startRecording: async () => {
       console.log("[recording] startRecording() called");
@@ -127,6 +168,24 @@ export const useRecordingStore = create<RecordingState>((set) => {
         });
       } catch (err) {
         console.error("[recording] checkStatus failed:", err);
+      }
+    },
+
+    refreshUploadQueue: async () => {
+      try {
+        const uploads = await invoke<UploadTask[]>("get_upload_queue");
+        set({ uploads });
+      } catch (err) {
+        console.error("[recording] refreshUploadQueue failed:", err);
+      }
+    },
+
+    clearCompletedUploads: async () => {
+      try {
+        await invoke("clear_upload_queue");
+        set({ uploads: [] });
+      } catch (err) {
+        console.error("[recording] clearCompletedUploads failed:", err);
       }
     },
 

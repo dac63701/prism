@@ -23,7 +23,6 @@ use crate::encoder::macos::vt_encoder::VtH264Encoder;
 #[cfg(target_os = "windows")]
 use crate::encoder::windows::mf_encoder::MfH264Encoder;
 use crate::settings::config::AppSettings;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 use crate::settings::config::{is_native_resolution, resolution_dimensions};
 
 /// Polling interval as a fraction of the frame duration,

@@ -20,6 +20,7 @@ pub struct AuthUser {
     pub role: String,
 }
 
+#[allow(dead_code)]
 pub struct AdminUser(pub AuthUser);
 
 impl<S> FromRequestParts<S> for AuthUser
@@ -102,6 +103,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 pub struct ApiKeyOrJwtAuth(pub AuthUser);
 
 impl<S> FromRequestParts<S> for ApiKeyOrJwtAuth

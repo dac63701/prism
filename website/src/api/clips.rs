@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::auth::AuthUser;
 use crate::config::Config;
 use crate::db;
+use crate::db::tags;
 use crate::errors::AppError;
 use crate::storage::local::LocalStorage;
 use crate::storage::StorageBackend;
@@ -52,9 +53,11 @@ pub async fn upload_clip(
     let mut codec = String::new();
     let mut visibility = "unlisted".to_string();
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        AppError::BadRequest(format!("Multipart error: {e}"))
-    })? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Multipart error: {e}")))?
+    {
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
             "file" => {
@@ -62,14 +65,21 @@ pub async fn upload_clip(
                     .file_name()
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "clip.mp4".to_string());
-                file_data = field.bytes().await.map_err(|e| {
-                    AppError::BadRequest(format!("Failed to read file: {e}"))
-                })?.to_vec();
+                file_data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read file: {e}")))?
+                    .to_vec();
             }
             "title" => title = field.text().await.unwrap_or_default(),
             "game" => game = field.text().await.unwrap_or_default(),
             "duration_secs" => {
-                duration_secs = field.text().await.unwrap_or_default().parse().unwrap_or(0.0)
+                duration_secs = field
+                    .text()
+                    .await
+                    .unwrap_or_default()
+                    .parse()
+                    .unwrap_or(0.0)
             }
             "width" => width = field.text().await.unwrap_or_default().parse().unwrap_or(0),
             "height" => height = field.text().await.unwrap_or_default().parse().unwrap_or(0),
@@ -199,10 +209,13 @@ pub async fn get_clip(
         return Err(AppError::NotFound("Clip not found".into()));
     }
 
+    let tags_list = tags::get_tags_for_clip(&pool, clip_id).await?;
+
     Ok(Json(serde_json::json!({
         "id": clip.id,
         "title": clip.title,
         "game": clip.game,
+        "tags": tags_list,
         "duration_secs": clip.duration_secs,
         "size_bytes": clip.size_bytes,
         "width": clip.width,

@@ -85,7 +85,10 @@ pub async fn get_clip(pool: &PgPool, id: Uuid) -> Result<Option<Clip>, sqlx::Err
     .await
 }
 
-pub async fn get_clip_by_share_id(pool: &PgPool, share_id: &str) -> Result<Option<Clip>, sqlx::Error> {
+pub async fn get_clip_by_share_id(
+    pool: &PgPool,
+    share_id: &str,
+) -> Result<Option<Clip>, sqlx::Error> {
     sqlx::query_as::<_, Clip>(
         r#"SELECT id, user_id, original_filename, storage_path, thumbnail_path,
                   share_id, title, game, duration_secs, size_bytes,
@@ -111,7 +114,11 @@ pub async fn list_clips(
 ) -> Result<(Vec<ClipListItem>, i64), sqlx::Error> {
     let offset = (page - 1) * per_page;
     let search_pattern = format!("%{}%", search);
-    let game_pattern = if game.is_empty() { "%".into() } else { format!("%{}%", game) };
+    let game_pattern = if game.is_empty() {
+        "%".into()
+    } else {
+        format!("%{}%", game)
+    };
 
     let order_col = match sort_by {
         "size" => "c.size_bytes",
@@ -119,18 +126,24 @@ pub async fn list_clips(
         "title" => "c.title",
         _ => "c.created_at",
     };
-    let order_dir = if sort_dir.eq_ignore_ascii_case("asc") { "ASC" } else { "DESC" };
+    let order_dir = if sort_dir.eq_ignore_ascii_case("asc") {
+        "ASC"
+    } else {
+        "DESC"
+    };
     let order_clause = format!("{} {}", order_col, order_dir);
 
     let total_sql = if let Some(_uid) = user_id {
         r#"SELECT COUNT(*) FROM clips c
            WHERE c.user_id = $1
              AND (c.title ILIKE $2 OR c.original_filename ILIKE $2)
-             AND c.game ILIKE $3"#.to_string()
+             AND c.game ILIKE $3"#
+            .to_string()
     } else {
         r#"SELECT COUNT(*) FROM clips c
            WHERE (c.title ILIKE $1 OR c.original_filename ILIKE $1)
-             AND c.game ILIKE $2"#.to_string()
+             AND c.game ILIKE $2"#
+            .to_string()
     };
 
     let list_sql = if let Some(_uid) = user_id {
@@ -200,16 +213,19 @@ pub async fn list_clips(
     Ok((clips, total))
 }
 
+#[allow(dead_code)]
 pub async fn update_clip_visibility(
     pool: &PgPool,
     id: Uuid,
     visibility: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE clips SET visibility = $1::clip_visibility, updated_at = NOW() WHERE id = $2")
-        .bind(visibility)
-        .bind(id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE clips SET visibility = $1::clip_visibility, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(visibility)
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -273,9 +289,7 @@ pub async fn increment_download_count(pool: &PgPool, id: Uuid) -> Result<(), sql
     Ok(())
 }
 
-pub async fn get_server_stats(
-    pool: &PgPool,
-) -> Result<(i64, i64, i64, i64, i64), sqlx::Error> {
+pub async fn get_server_stats(pool: &PgPool) -> Result<(i64, i64, i64, i64, i64), sqlx::Error> {
     let row = sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"SELECT
                (SELECT COUNT(*) FROM users) as total_users,

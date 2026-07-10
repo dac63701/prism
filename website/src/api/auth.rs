@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::auth::{api_key as api_key_auth, jwt, AdminUser, AuthUser};
+use crate::auth::{jwt, AuthUser};
 use crate::config::Config;
 use crate::db;
 use crate::errors::AppError;
@@ -114,10 +114,7 @@ fn user_to_response(user: &db::users::User) -> UserResponse {
     }
 }
 
-fn make_auth_response(
-    user: &db::users::User,
-    config: &Config,
-) -> Result<AuthResponse, AppError> {
+fn make_auth_response(user: &db::users::User, config: &Config) -> Result<AuthResponse, AppError> {
     let access_token = jwt::create_access_token(user.id, &user.role, &config.jwt_secret)?;
     let refresh_token = jwt::create_refresh_token(user.id, &config.jwt_secret)?;
 
@@ -149,9 +146,9 @@ pub async fn register(
         return Err(AppError::Conflict("Email already registered".into()));
     }
 
-    let display_name = body.display_name.unwrap_or_else(|| {
-        body.email.split('@').next().unwrap_or("User").to_string()
-    });
+    let display_name = body
+        .display_name
+        .unwrap_or_else(|| body.email.split('@').next().unwrap_or("User").to_string());
 
     let password_hash = hash_password(&body.password)?;
     let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
@@ -273,8 +270,7 @@ pub async fn delete_account(
 
     tokio::task::spawn_blocking(move || {
         let path = format!("clips/{}", user_id);
-        let full_path = std::path::PathBuf::from(".")
-            .join(&path);
+        let full_path = std::path::PathBuf::from(".").join(&path);
         let _ = std::fs::remove_dir_all(&full_path);
     });
 
@@ -351,6 +347,7 @@ pub async fn log_activity(
     }
 }
 
+#[allow(dead_code)]
 pub async fn log_activity_with_ip(
     pool: &PgPool,
     user_id: Uuid,

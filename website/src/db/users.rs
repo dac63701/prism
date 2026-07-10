@@ -18,6 +18,7 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct UserWithStats {
     pub id: Uuid,
@@ -115,11 +116,7 @@ pub async fn update_user_profile(
     Ok(())
 }
 
-pub async fn update_user_role(
-    pool: &PgPool,
-    id: Uuid,
-    role: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn update_user_role(pool: &PgPool, id: Uuid, role: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE users SET role = $1::user_role, updated_at = NOW() WHERE id = $2")
         .bind(role)
         .bind(id)

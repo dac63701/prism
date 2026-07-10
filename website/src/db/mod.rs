@@ -3,6 +3,8 @@ use sqlx::PgPool;
 
 pub mod api_keys;
 pub mod clips;
+pub mod config;
+pub mod tags;
 pub mod users;
 
 pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {

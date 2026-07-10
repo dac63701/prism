@@ -9,6 +9,7 @@ pub struct AppSettings {
     pub hotkeys: HotkeySettings,
     pub general: GeneralSettings,
     pub storage: StorageSettings,
+    pub upload: UploadSettings,
 }
 
 // ── Recording ──────────────────────────────────────────────────────────────
@@ -147,4 +148,26 @@ pub fn resolution_dimensions(label: &str) -> (u32, u32) {
 /// Returns `true` when the resolution label is set to native capture.
 pub fn is_native_resolution(label: &str) -> bool {
     label.eq_ignore_ascii_case("native")
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadSettings {
+    /// Prism server URL (e.g. "https://goprism.studio")
+    pub server_url: String,
+    /// API key for authentication
+    pub api_key: String,
+    /// Auto-upload clips after saving
+    pub auto_upload: bool,
+}
+
+impl Default for UploadSettings {
+    fn default() -> Self {
+        Self {
+            server_url: String::new(),
+            api_key: String::new(),
+            auto_upload: true,
+        }
+    }
 }

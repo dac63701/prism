@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
@@ -84,11 +86,12 @@ pub async fn list_api_keys(
 }
 
 pub async fn revoke_api_key(pool: &PgPool, id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE api_keys SET is_revoked = true WHERE id = $1 AND user_id = $2")
-        .bind(id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+    let result =
+        sqlx::query("UPDATE api_keys SET is_revoked = true WHERE id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(user_id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 

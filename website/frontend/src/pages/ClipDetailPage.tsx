@@ -15,6 +15,7 @@ interface ClipDetail {
   id: string;
   title: string;
   game: string;
+  tags: string[];
   duration_secs: number;
   size_bytes: number;
   width: number;
@@ -67,6 +68,8 @@ export default function ClipDetailPage() {
   const [game, setGame] = useState("");
   const [visibility, setVisibility] = useState("unlisted");
   const [saving, setSaving] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -78,25 +81,11 @@ export default function ClipDetailPage() {
         setTitle(data.title);
         setGame(data.game);
         setVisibility(data.visibility);
+        setTags(data.tags || []);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
-
-  const handleSave = async () => {
-    if (!id) return;
-    setSaving(true);
-    try {
-      await api.patch(`/api/clips/${id}`, { title, game, visibility });
-      setClip((prev) =>
-        prev ? { ...prev, title, game, visibility } : prev
-      );
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleDelete = async () => {
     if (!id || !confirm("Delete this clip permanently?")) return;
@@ -228,8 +217,65 @@ export default function ClipDetailPage() {
               </select>
             </div>
 
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1">Tags</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {tags.map((tag) => (
+                  <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-800 text-xs text-zinc-300">
+                    {tag}
+                    <button
+                      onClick={() => setTags(tags.filter((t) => t !== tag))}
+                      className="text-zinc-600 hover:text-zinc-300"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const trimmed = tagInput.trim().toLowerCase();
+                  if (trimmed && !tags.includes(trimmed)) {
+                    setTags([...tags, trimmed]);
+                  }
+                  setTagInput("");
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="text"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  placeholder="Add tag..."
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                />
+                <button
+                  type="submit"
+                  className="px-2 py-1 rounded bg-zinc-800 text-xs text-zinc-300 hover:bg-zinc-700"
+                >
+                  +
+                </button>
+              </form>
+            </div>
+
             <button
-              onClick={handleSave}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await Promise.all([
+                    api.patch(`/api/clips/${id}`, { title, game, visibility }),
+                    api.put(`/api/clips/${id}/tags`, { tags }),
+                  ]);
+                  setClip((prev) =>
+                    prev ? { ...prev, title, game, visibility, tags } : prev
+                  );
+                } catch (err: any) {
+                  alert(err.message);
+                } finally {
+                  setSaving(false);
+                }
+              }}
               disabled={saving}
               className="w-full bg-zinc-100 text-zinc-950 rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-zinc-200 transition-colors disabled:opacity-50"
             >
