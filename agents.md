@@ -78,3 +78,7 @@ Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wir
 - **Part A (thumbnails)**: ✅ DONE — server-side JPEG thumbnails at clip save.
 - **Part B (monitor switching)**: ✅ DONE — encoder reset on stop (Win + Mac), emit on error,
   frontend error surfacing.
+
+### Website render cleanup ✅ DONE
+- Removed the remaining expensive blur and layered-gradient effects from `website/frontend/components/ui.tsx`, `website/frontend/app/page.tsx`, and `website/frontend/app/globals.css`.
+- Verified the website frontend and Rust backend with `npm run build`, `cargo check`, and `npm run tauri build`.
