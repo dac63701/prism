@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD: prism
+      POSTGRES_DB: prism
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build: .
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://prism:prism@postgres:5432/prism
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-64-char-string}
+      STORAGE_PATH: /data
+      RUST_LOG: ${RUST_LOG:-info}
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8080"
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+    volumes:
+      - server-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  server-data:
