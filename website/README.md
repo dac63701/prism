@@ -50,7 +50,7 @@ docker compose exec postgres psql -U prism -d prism -c "UPDATE users SET role = 
 ```bash
 # Portainer should use the prebuilt Docker Hub images from docker-compose.prod.yml.
 # Set Docker Hub secrets in GitHub Actions:
-#   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#   DOCKER_USERNAME, DOCKER_PASSWORD
 # Set runtime env vars in Portainer:
 #   JWT_SECRET, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, DATABASE_URL,
 #   SERVER_HOST, SERVER_PORT, STORAGE_PATH, SITE_URL, API_ORIGIN,
