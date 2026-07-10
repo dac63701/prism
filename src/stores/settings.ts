@@ -38,11 +38,6 @@ export function getDefaultSettings(): AppSettings {
       max_clips_gb: 50,
       auto_prune_days: null,
     },
-    upload: {
-      server_url: "",
-      api_key: "",
-      auto_upload: true,
-    },
   };
 }
 

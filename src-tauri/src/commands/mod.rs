@@ -3,4 +3,3 @@
 pub mod library;
 pub mod recording;
 pub mod settings;
-pub mod upload;

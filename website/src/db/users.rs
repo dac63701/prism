@@ -59,9 +59,9 @@ pub async fn create_user(
     sqlx::query_as::<_, User>(
         r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes, google_id, avatar_url)
            VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id, email, password_hash, google_id, avatar_url, display_name, role,
-                     storage_used_bytes, max_storage_bytes, is_banned,
-                     created_at, updated_at"#,
+           RETURNING id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
+                      storage_used_bytes, max_storage_bytes, is_banned,
+                      created_at, updated_at"#,
     )
     .bind(email)
     .bind(password_hash)
@@ -99,9 +99,9 @@ pub async fn get_user_by_google_id(
     google_id: &str,
 ) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
-                  storage_used_bytes, max_storage_bytes, is_banned,
-                  created_at, updated_at
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
+                   storage_used_bytes, max_storage_bytes, is_banned,
+                   created_at, updated_at
            FROM users WHERE google_id = $1"#,
     )
     .bind(google_id)
@@ -111,7 +111,7 @@ pub async fn get_user_by_google_id(
 
 pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
                    storage_used_bytes, max_storage_bytes, is_banned,
                    created_at, updated_at
            FROM users WHERE email = $1"#,
@@ -123,7 +123,7 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
 
 pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
                    storage_used_bytes, max_storage_bytes, is_banned,
                    created_at, updated_at
            FROM users WHERE id = $1"#,
@@ -138,9 +138,9 @@ pub async fn get_user_by_display_name(
     display_name: &str,
 ) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
-                  storage_used_bytes, max_storage_bytes, is_banned,
-                  created_at, updated_at
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
+                   storage_used_bytes, max_storage_bytes, is_banned,
+                   created_at, updated_at
            FROM users WHERE display_name = $1"#,
     )
     .bind(display_name)
@@ -232,7 +232,7 @@ pub async fn list_users(
     .await?;
 
     let users = sqlx::query_as::<_, UserListItem>(
-        r#"SELECT u.id, u.email, u.display_name, u.avatar_url, u.role,
+        r#"SELECT u.id, u.email, u.display_name, u.avatar_url, u.role::text as role,
                    COALESCE(c.clip_count, 0) as clip_count,
                    u.storage_used_bytes, u.created_at, u.is_banned
            FROM users u

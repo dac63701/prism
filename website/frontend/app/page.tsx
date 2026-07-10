@@ -56,9 +56,8 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <Card className="relative overflow-hidden p-5">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(79,140,255,0.18),transparent_45%)]" />
-            <div className="relative space-y-4">
+          <Card className="overflow-hidden p-5">
+            <div className="space-y-4">
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                 <div>
                   <div className="text-sm text-zinc-400">Shared clip</div>

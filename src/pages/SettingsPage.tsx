@@ -310,53 +310,6 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Upload Section */}
-        <section className="mb-8">
-          <SectionHeading>Upload</SectionHeading>
-          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
-            <FieldRow label="Server URL">
-              <input
-                type="text"
-                key={`server-url-${loadedKey}`}
-                defaultValue={s.upload.server_url}
-                onChange={(e) =>
-                  debouncedSave({
-                    ...settings,
-                    upload: { ...settings.upload, server_url: e.target.value },
-                  })
-                }
-                placeholder="https://goprism.studio"
-                className="w-64 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
-              />
-            </FieldRow>
-
-            <FieldRow label="API Key">
-              <input
-                type="password"
-                key={`api-key-${loadedKey}`}
-                defaultValue={s.upload.api_key}
-                onChange={(e) =>
-                  debouncedSave({
-                    ...settings,
-                    upload: { ...settings.upload, api_key: e.target.value },
-                  })
-                }
-                placeholder="prism_..."
-                className="w-64 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600 font-mono"
-              />
-            </FieldRow>
-
-            <FieldRow label="Auto-upload after save">
-              <ToggleSwitch
-                checked={s.upload.auto_upload}
-                onChange={(checked) =>
-                  void setField("upload", "auto_upload", checked as never)
-                }
-              />
-            </FieldRow>
-          </div>
-        </section>
-
         {/* Storage Section */}
         <section className="mb-8">
           <SectionHeading>Storage</SectionHeading>

@@ -26,16 +26,9 @@ export interface StorageSettings {
   auto_prune_days: number | null;
 }
 
-export interface UploadSettings {
-  server_url: string;
-  api_key: string;
-  auto_upload: boolean;
-}
-
 export interface AppSettings {
   recording: RecordingSettings;
   hotkeys: HotkeySettings;
   general: GeneralSettings;
   storage: StorageSettings;
-  upload: UploadSettings;
 }

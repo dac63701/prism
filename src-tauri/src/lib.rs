@@ -80,9 +80,6 @@ pub fn run() {
             commands::settings::update_settings,
             commands::settings::reset_settings,
             commands::settings::validate_hotkey,
-            commands::upload::upload_clip_to_server,
-            commands::upload::get_upload_queue,
-            commands::upload::clear_upload_queue,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

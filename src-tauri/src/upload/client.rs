@@ -1,15 +1,14 @@
+//! HTTP upload client for sending clips to remote servers using reqwest.
+
 use std::path::Path;
 
-#[allow(clippy::too_many_arguments)]
+/// Upload a clip file to the given URL via multipart POST.
+///
+/// Returns the server response body on success.
 pub async fn upload_clip(
-    server_url: &str,
-    api_key: &str,
+    url: &str,
     file_path: &Path,
-    title: &str,
-    game: &str,
-    duration_secs: f64,
-    width: u32,
-    height: u32,
+    api_token: Option<&str>,
 ) -> Result<String, UploadError> {
     let file_bytes = tokio::fs::read(file_path)
         .await
@@ -21,32 +20,16 @@ pub async fn upload_clip(
         .unwrap_or("clip.mp4")
         .to_string();
 
-    let url = format!("{}/api/clips/upload", server_url.trim_end_matches('/'));
+    let file_part = reqwest::multipart::Part::bytes(file_bytes).file_name(filename);
 
-    let file_part = reqwest::multipart::Part::bytes(file_bytes)
-        .file_name(filename)
-        .mime_str("video/mp4")
-        .map_err(|e| UploadError::Http(format!("Mime error: {e}")))?;
+    let form = reqwest::multipart::Form::new().part("clip", file_part);
 
-    let form = reqwest::multipart::Form::new()
-        .part("file", file_part)
-        .text("title", title.to_string())
-        .text("game", game.to_string())
-        .text("duration_secs", duration_secs.to_string())
-        .text("width", width.to_string())
-        .text("height", height.to_string())
-        .text("codec", "h264".to_string())
-        .text("visibility", "unlisted".to_string());
+    let client = reqwest::Client::new();
+    let mut req = client.post(url).multipart(form);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| UploadError::Http(format!("Client error: {e}")))?;
-
-    let req = client
-        .post(&url)
-        .multipart(form)
-        .header("Authorization", format!("Bearer {api_key}"));
+    if let Some(token) = api_token {
+        req = req.header("Authorization", format!("Bearer {token}"));
+    }
 
     let resp = req
         .send()
