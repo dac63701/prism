@@ -42,11 +42,17 @@ impl FrontendStatic {
                 let headers = [(header::CONTENT_TYPE, mime.to_string())];
                 (headers, content).into_response()
             }
-            Err(_) => (
-                StatusCode::NOT_FOUND,
-                "Frontend not built. Run `cd frontend && npm run build` first.",
-            )
-                .into_response(),
+            Err(e) => {
+                tracing::warn!(
+                    "Frontend index.html not found at {:?}: {e}",
+                    self.dir.join("index.html")
+                );
+                (
+                    StatusCode::NOT_FOUND,
+                    "Frontend not built. Run `cd frontend && npm run build` first.",
+                )
+                    .into_response()
+            }
         }
     }
 }

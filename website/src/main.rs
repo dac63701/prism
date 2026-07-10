@@ -92,7 +92,13 @@ async fn main() {
         let _ = tokio::fs::create_dir_all(&thumb_dir).await;
     }
 
-    let frontend = frontend::FrontendStatic::new("frontend/dist");
+    let frontend_dir = "frontend/dist";
+    tracing::info!(
+        "Frontend directory: {} (exists: {})",
+        frontend_dir,
+        std::path::Path::new(frontend_dir).exists()
+    );
+    let frontend = frontend::FrontendStatic::new(frontend_dir);
     let rate_limiter = middleware::rate_limit::RateLimiter::new(config.rate_limit_per_min);
 
     let state = AppState {
