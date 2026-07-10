@@ -27,6 +27,7 @@ RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 COPY --from=backend /app/target/release/prism-server ./
+COPY --from=backend /app/frontend/dist ./frontend/dist
 
 EXPOSE 8080
 
