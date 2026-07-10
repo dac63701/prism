@@ -20,7 +20,7 @@ CREATE TABLE clips (
     original_filename TEXT NOT NULL,
     storage_path      TEXT NOT NULL,
     thumbnail_path    TEXT,
-    share_id          TEXT NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(6), 'hex'),
+    share_id          TEXT NOT NULL UNIQUE DEFAULT substr(replace(gen_random_uuid()::text, '-', ''), 1, 12),
     title             TEXT NOT NULL DEFAULT '',
     game              TEXT NOT NULL DEFAULT '',
     duration_secs     REAL NOT NULL DEFAULT 0,
