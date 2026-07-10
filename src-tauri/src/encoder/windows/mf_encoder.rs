@@ -244,7 +244,7 @@ impl MfH264Encoder {
             let mut packets: Vec<EncodedPacket> = Vec::new();
 
             loop {
-                let mut output = MFT_OUTPUT_DATA_BUFFER {
+                let output = MFT_OUTPUT_DATA_BUFFER {
                     dwStreamID: 0,
                     ..Default::default()
                 };
