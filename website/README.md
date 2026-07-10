@@ -1,6 +1,6 @@
 # Prism Cloud Server
 
-Cloud sharing backend for the Prism game clipping app. Serves a React dashboard + public player page from a single Rust binary.
+Cloud sharing backend for the Prism game clipping app. Serves a Next.js dashboard + public player page with an Axum API.
 
 ## Quick Start
 
@@ -8,11 +8,11 @@ Cloud sharing backend for the Prism game clipping app. Serves a React dashboard 
 # Edit .env with your JWT_SECRET
 cp .env.example .env
 
-# Start Postgres + server with a freshly built frontend bundle
+# Start Postgres + API + web with a freshly built frontend bundle
 docker compose up --build -d
 
 # Open dashboard
-open http://localhost:8080
+open http://localhost:3000
 ```
 
 For a bundled local run without Docker, use:
@@ -24,7 +24,7 @@ make serve
 The first registered user is **not** automatically admin. To promote a user:
 
 ```bash
-docker exec -it prism-server-1 psql -U prism -d prism -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+docker compose exec postgres psql -U prism -d prism -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
 ```
 
 ## Configuration
@@ -39,17 +39,24 @@ docker exec -it prism-server-1 psql -U prism -d prism -c "UPDATE users SET role 
 | `MAX_UPLOAD_SIZE_MB` | `500` | Per-file upload limit |
 | `DEFAULT_MAX_STORAGE_GB` | `10` | Default per-user storage quota |
 | `RATE_LIMIT_REQUESTS_PER_MIN` | `100` | Global rate limit |
-| `FRONTEND_URL` | — | Public URL for OG meta tags |
+| `SITE_URL` | `http://localhost:3000` | Public URL for OG meta tags |
+| `GOOGLE_CLIENT_ID` | — | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | `http://localhost:8080/api/auth/google/callback` | Google OAuth callback |
+| `DESKTOP_SCHEME_URL` | `prism://auth/callback` | Desktop app callback scheme |
 
 ## Production Deployment (Portainer)
 
 ```bash
-# Copy and edit
-cp docker-compose.prod.yml docker-compose.portainer.yml
-# Set required env vars in Portainer:
-#   JWT_SECRET, POSTGRES_PASSWORD, FRONTEND_URL
-# Uses external network "nginx-network" for reverse proxy
-docker compose -f docker-compose.prod.yml up -d
+# Portainer should use the prebuilt Docker Hub images from docker-compose.prod.yml.
+# Set Docker Hub secrets in GitHub Actions:
+#   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+# Set runtime env vars in Portainer:
+#   JWT_SECRET, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, DATABASE_URL,
+#   SERVER_HOST, SERVER_PORT, STORAGE_PATH, SITE_URL, API_ORIGIN,
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
+#   DESKTOP_SCHEME_URL, MAX_UPLOAD_SIZE_MB, DEFAULT_MAX_STORAGE_GB,
+#   RATE_LIMIT_REQUESTS_PER_MIN, RUST_LOG, API_PORT, WEB_PORT
 ```
 
 Nginx config:
