@@ -1,7 +1,7 @@
-name: Docker Publish
+name: Docker Validate
 
 on:
-  push:
+  pull_request:
     branches: [main]
     paths:
       - "website/Cargo.toml"
@@ -17,11 +17,11 @@ on:
       - "website/frontend/**"
       - "website/.env.example"
       - ".dockerignore"
-      - ".github/workflows/docker-publish.yml"
+      - ".github/workflows/docker-validate.yml"
   workflow_dispatch:
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,42 +30,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push API image
+      - name: Validate API image
         uses: docker/build-push-action@v6
         with:
           context: ./website
           file: ./website/Dockerfile.api
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           pull: true
-          push: true
-          tags: |
-            dac63701/prism-server:latest
-            dac63701/prism-server:${{ github.sha }}
+          push: false
           cache-from: type=gha,scope=prism-api
           cache-to: type=gha,mode=max,scope=prism-api
 
-      - name: Build and push Web image
+      - name: Validate Web image
         uses: docker/build-push-action@v6
         with:
           context: ./website
           file: ./website/Dockerfile.web
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           pull: true
-          push: true
-          tags: |
-            dac63701/prism-web:latest
-            dac63701/prism-web:${{ github.sha }}
+          push: false
           cache-from: type=gha,scope=prism-web
           cache-to: type=gha,mode=max,scope=prism-web
