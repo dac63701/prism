@@ -37,7 +37,7 @@ impl Clone for AppState {
             pool: self.pool.clone(),
             config: self.config.clone(),
             storage: self.storage.clone(),
-            frontend: frontend::FrontendStatic::new(&self.config.storage_path),
+            frontend: self.frontend.clone(),
             rate_limiter: middleware::rate_limit::RateLimiter::new(self.config.rate_limit_per_min),
         }
     }
@@ -64,7 +64,7 @@ impl axum::extract::FromRef<AppState> for storage::local::LocalStorage {
 
 impl axum::extract::FromRef<AppState> for Arc<frontend::FrontendStatic> {
     fn from_ref(state: &AppState) -> Self {
-        Arc::new(frontend::FrontendStatic::new(&state.config.storage_path))
+        Arc::new(state.frontend.clone())
     }
 }
 

@@ -8,11 +8,17 @@ Cloud sharing backend for the Prism game clipping app. Serves a React dashboard 
 # Edit .env with your JWT_SECRET
 cp .env.example .env
 
-# Start Postgres + server
-docker compose up -d
+# Start Postgres + server with a freshly built frontend bundle
+docker compose up --build -d
 
 # Open dashboard
 open http://localhost:8080
+```
+
+For a bundled local run without Docker, use:
+
+```bash
+make serve
 ```
 
 The first registered user is **not** automatically admin. To promote a user:
@@ -69,13 +75,13 @@ server {
 ## Development
 
 ```bash
-# Terminal 1: Postgres
-make db
+# Bundled local server (starts Postgres, builds frontend, runs backend)
+make serve
 
-# Terminal 2: Backend (auto-reload on file change)
+# Hot-reload backend only
 cargo run
 
-# Terminal 3: Frontend (hot-reload Vite dev server)
+# Hot-reload frontend only
 cd frontend && npm run dev
 ```
 

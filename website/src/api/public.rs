@@ -6,10 +6,10 @@ use axum::{
 };
 use sqlx::PgPool;
 
-use crate::config::Config;
 use crate::db;
 use crate::db::tags;
 use crate::errors::AppError;
+use crate::AppState;
 use crate::storage::local::LocalStorage;
 use crate::storage::StorageBackend;
 
@@ -45,11 +45,10 @@ pub async fn share_meta(
 }
 
 pub async fn serve_share_page(
-    State(pool): State<PgPool>,
-    State(config): State<Config>,
+    State(state): State<AppState>,
     Path(share_id): Path<String>,
 ) -> Result<Response, AppError> {
-    let clip = db::clips::get_clip_by_share_id(&pool, &share_id)
+    let clip = db::clips::get_clip_by_share_id(&state.pool, &share_id)
         .await?
         .ok_or(AppError::NotFound("Clip not found".into()))?;
 
@@ -77,46 +76,36 @@ pub async fn serve_share_page(
     let og_image = clip
         .thumbnail_path
         .as_ref()
-        .map(|p| format!("{}/api/media/{}", config.public_url(), p))
+        .map(|p| format!("{}/api/media/{}", state.config.public_url(), p))
         .unwrap_or_default();
 
-    let html = format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{} — Prism Clip</title>
+    let index_html = state.frontend.read_index_html().await.map_err(|e| {
+        AppError::Internal(format!(
+            "Frontend index.html not found at {:?}: {e}",
+            state.frontend.index_html_path()
+        ))
+    })?;
 
-    <!-- Open Graph -->
-    <meta property="og:title" content="{}">
-    <meta property="og:description" content="{}">
+    let title = escape_html(&title);
+    let description = escape_html(&description);
+    let og_image = escape_html(&og_image);
+    let public_url = escape_html(&state.config.public_url());
+    let share_id = escape_html(&share_id);
+    let html = replace_title(index_html, &format!("{title} — Prism Clip"));
+
+    let head_snippet = format!(
+        r#"<meta property="og:title" content="{title}">
+    <meta property="og:description" content="{description}">
     <meta property="og:type" content="video.other">
-    <meta property="og:image" content="{}">
-    <meta property="og:url" content="{}/s/{}">
+    <meta property="og:image" content="{og_image}">
+    <meta property="og:url" content="{public_url}/s/{share_id}">
     <meta name="twitter:card" content="player">
-    <meta name="twitter:title" content="{}">
-    <meta name="twitter:description" content="{}">
-    <meta name="twitter:image" content="{}">
-
-    <link rel="stylesheet" href="/assets/index.css">
-    <script type="module" src="/assets/index.js"></script>
-</head>
-<body>
-    <div id="root" data-share-id="{}"></div>
-</body>
-</html>"#,
-        title,
-        title,
-        description,
-        og_image,
-        config.public_url(),
-        share_id,
-        title,
-        description,
-        og_image,
-        share_id,
+    <meta name="twitter:title" content="{title}">
+    <meta name="twitter:description" content="{description}">
+    <meta name="twitter:image" content="{og_image}">"#
     );
+
+    let html = inject_into_head(html, &head_snippet);
 
     Ok(Html(html).into_response())
 }
@@ -131,4 +120,31 @@ pub async fn serve_media(
     let headers = [(header::CONTENT_TYPE, mime.to_string())];
 
     Ok((headers, data).into_response())
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn inject_into_head(html: String, snippet: &str) -> String {
+    html.replacen("</head>", &format!("\n    {snippet}\n</head>"), 1)
+}
+
+fn replace_title(html: String, title: &str) -> String {
+    if let (Some(start), Some(end)) = (html.find("<title>"), html.find("</title>")) {
+        let mut updated = String::with_capacity(html.len() + title.len());
+        updated.push_str(&html[..start]);
+        updated.push_str("<title>");
+        updated.push_str(title);
+        updated.push_str("</title>");
+        updated.push_str(&html[end + "</title>".len()..]);
+        updated
+    } else {
+        html
+    }
 }

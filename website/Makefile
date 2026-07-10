@@ -1,10 +1,13 @@
-.PHONY: all dev db backend frontend clean docker-build
+.PHONY: all dev serve db backend frontend clean docker-build docker-up docker-down frontend-build
 
 all: dev
 
 # ── Local Development ───────────────────────────────────────────────
 
 dev: db backend frontend-dev
+
+serve: db frontend-build
+	cargo run
 
 db:
 	docker compose up -d postgres

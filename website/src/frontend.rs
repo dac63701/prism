@@ -10,6 +10,7 @@ use tower_http::services::ServeDir;
 
 /// Serve the built React frontend.
 /// Falls back to index.html for SPA routing (non-file routes).
+#[derive(Clone)]
 pub struct FrontendStatic {
     dir: PathBuf,
 }
@@ -19,6 +20,14 @@ impl FrontendStatic {
         Self {
             dir: PathBuf::from(dir),
         }
+    }
+
+    pub fn index_html_path(&self) -> PathBuf {
+        self.dir.join("index.html")
+    }
+
+    pub async fn read_index_html(&self) -> std::io::Result<String> {
+        tokio::fs::read_to_string(self.index_html_path()).await
     }
 
     pub async fn serve(&self, request: Request) -> Response {
@@ -36,7 +45,7 @@ impl FrontendStatic {
             };
         }
 
-        match tokio::fs::read(self.dir.join("index.html")).await {
+        match tokio::fs::read(self.index_html_path()).await {
             Ok(content) => {
                 let mime = mime_guess::from_path("index.html").first_or_octet_stream();
                 let headers = [(header::CONTENT_TYPE, mime.to_string())];
@@ -45,7 +54,7 @@ impl FrontendStatic {
             Err(e) => {
                 tracing::warn!(
                     "Frontend index.html not found at {:?}: {e}",
-                    self.dir.join("index.html")
+                    self.index_html_path()
                 );
                 (
                     StatusCode::NOT_FOUND,
