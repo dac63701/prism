@@ -11,9 +11,13 @@ pub mod tags;
 pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
     router
         .route("/api/health", routing::get(admin::health))
+        .route("/api/auth/google", routing::get(auth::google_start))
+        .route("/api/auth/google/callback", routing::get(auth::google_callback))
         .route("/api/auth/register", routing::post(auth::register))
         .route("/api/auth/login", routing::post(auth::login))
         .route("/api/auth/refresh", routing::post(auth::refresh))
+        .route("/api/auth/logout", routing::post(auth::logout))
+        .route("/api/auth/desktop/exchange", routing::post(auth::desktop_exchange))
         .route("/api/auth/me", routing::get(auth::me))
         .route("/api/auth/me", routing::delete(auth::delete_account))
         .route(
@@ -40,6 +44,7 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
             routing::post(clips::regenerate_share),
         )
         .route("/api/s/{share_id}/meta", routing::get(public::share_meta))
+        .route("/api/u/{username}", routing::get(public::profile_meta))
         .route("/api/media/{*path}", routing::get(public::serve_media))
         .route("/api/admin/users", routing::get(admin::list_users))
         .route("/api/admin/users/{id}", routing::get(admin::get_user))

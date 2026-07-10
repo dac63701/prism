@@ -32,10 +32,10 @@ where
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let token = jwt::extract_bearer_token(parts).ok_or_else(|| {
+        let token = jwt::extract_session_token(parts).ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "Missing authorization header"})),
+                Json(json!({"error": "Missing authorization token"})),
             )
                 .into_response()
         })?;
@@ -117,7 +117,7 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let pool = PgPool::from_ref(state);
 
-        if let Some(key) = jwt::extract_bearer_token(parts) {
+        if let Some(key) = jwt::extract_session_token(parts) {
             if key.starts_with("prism_") {
                 match api_key::verify_api_key(&pool, &key).await {
                     Ok(user_id) => {

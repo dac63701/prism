@@ -227,6 +227,8 @@ pub async fn get_clip(
         "download_count": clip.download_count,
         "created_at": clip.created_at.to_rfc3339(),
         "updated_at": clip.updated_at.to_rfc3339(),
+        "video_url": format!("/api/media/{}", clip.storage_path),
+        "thumbnail_url": clip.thumbnail_path.as_ref().map(|p| format!("/api/media/{}", p)),
     })))
 }
 

@@ -2,7 +2,12 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::{Query, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::Redirect,
+    Json,
+};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,6 +18,7 @@ use crate::auth::{jwt, AuthUser};
 use crate::config::Config;
 use crate::db;
 use crate::errors::AppError;
+use crate::storage::StorageBackend;
 
 #[derive(Deserialize)]
 pub struct RegisterRequest {
@@ -29,7 +35,7 @@ pub struct LoginRequest {
 
 #[derive(Deserialize)]
 pub struct RefreshRequest {
-    refresh_token: String,
+    refresh_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -48,6 +54,24 @@ pub struct CreateApiKeyRequest {
     name: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct GoogleStartQuery {
+    next: Option<String>,
+    desktop: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct GoogleCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DesktopExchangeRequest {
+    code: String,
+}
+
 #[derive(Serialize)]
 pub struct AuthResponse {
     user: UserResponse,
@@ -60,6 +84,8 @@ pub struct UserResponse {
     id: Uuid,
     email: String,
     display_name: String,
+    avatar_url: Option<String>,
+    google_connected: bool,
     role: String,
     storage_used_bytes: i64,
     max_storage_bytes: i64,
@@ -72,6 +98,27 @@ pub struct ApiKeyCreatedResponse {
     key_id: Uuid,
 }
 
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    #[allow(dead_code)]
+    expires_in: Option<i64>,
+    #[allow(dead_code)]
+    refresh_token: Option<String>,
+    #[allow(dead_code)]
+    scope: Option<String>,
+    #[allow(dead_code)]
+    token_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GoogleUserInfo {
+    sub: String,
+    email: String,
+    name: Option<String>,
+    picture: Option<String>,
+}
+
 fn hash_password(password: &str) -> Result<String, AppError> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -82,8 +129,10 @@ fn hash_password(password: &str) -> Result<String, AppError> {
 }
 
 fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
-    let parsed = PasswordHash::new(hash)
-        .map_err(|e| AppError::Internal(format!("Invalid password hash: {e}")))?;
+    let parsed = match PasswordHash::new(hash) {
+        Ok(hash) => hash,
+        Err(_) => return Ok(false),
+    };
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())
@@ -107,6 +156,8 @@ fn user_to_response(user: &db::users::User) -> UserResponse {
         id: user.id,
         email: user.email.clone(),
         display_name: user.display_name.clone(),
+        avatar_url: user.avatar_url.clone(),
+        google_connected: user.google_id.is_some(),
         role: user.role.clone(),
         storage_used_bytes: user.storage_used_bytes,
         max_storage_bytes: user.max_storage_bytes,
@@ -125,13 +176,248 @@ fn make_auth_response(user: &db::users::User, config: &Config) -> Result<AuthRes
     })
 }
 
-// ── Endpoints ──────────────────────────────────────────────────────
+fn cookie_secure(config: &Config) -> bool {
+    config.public_url().starts_with("https://")
+}
+
+fn auth_cookie_headers(access: &str, refresh: &str, config: &Config) -> HeaderMap {
+    let secure = cookie_secure(config);
+    let mut headers = HeaderMap::new();
+
+    let access_cookie = format!(
+        "prism_session={access}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900{}",
+        if secure { "; Secure" } else { "" }
+    );
+    let refresh_cookie = format!(
+        "prism_refresh={refresh}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000{}",
+        if secure { "; Secure" } else { "" }
+    );
+
+    headers.append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&access_cookie).expect("valid access cookie"),
+    );
+    headers.append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&refresh_cookie).expect("valid refresh cookie"),
+    );
+    headers
+}
+
+fn clear_cookie_headers(config: &Config) -> HeaderMap {
+    let secure = cookie_secure(config);
+    let mut headers = HeaderMap::new();
+    for name in ["prism_session", "prism_refresh"] {
+        let cookie = format!(
+            "{name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{}",
+            if secure { "; Secure" } else { "" }
+        );
+        headers.append(
+            header::SET_COOKIE,
+            HeaderValue::from_str(&cookie).expect("valid cookie"),
+        );
+    }
+    headers
+}
+
+fn extract_cookie_from_headers(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    for pair in cookie_header.split(';') {
+        let mut pieces = pair.trim().splitn(2, '=');
+        let key = pieces.next()?.trim();
+        let value = pieces.next()?.trim();
+        if key == cookie_name {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+async fn issue_user_auth(user: &db::users::User, config: &Config) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
+    let response = make_auth_response(user, config)?;
+    Ok((
+        auth_cookie_headers(&response.access_token, &response.refresh_token, config),
+        Json(response),
+    ))
+}
+
+fn default_display_name(email: &str, fallback: &str) -> String {
+    email
+        .split('@')
+        .next()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+async fn sync_google_user(
+    pool: &PgPool,
+    config: &Config,
+    google: &GoogleUserInfo,
+) -> Result<db::users::User, AppError> {
+    let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
+    let display_name = google
+        .name
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| default_display_name(&google.email, "Prism User"));
+
+    if let Some(existing) = db::users::get_user_by_google_id(pool, &google.sub).await? {
+        if existing.avatar_url.as_deref() != google.picture.as_deref() {
+            db::users::update_user_avatar(pool, existing.id, google.picture.as_deref()).await?;
+        }
+        if existing.display_name != display_name {
+            db::users::update_user_profile(pool, existing.id, &display_name).await?;
+        }
+        return Ok(db::users::get_user_by_id(pool, existing.id)
+            .await?
+            .ok_or(AppError::Unauthorized)?);
+    }
+
+    if let Some(existing_email_user) = db::users::get_user_by_email(pool, &google.email).await? {
+        db::users::link_google_account(
+            pool,
+            existing_email_user.id,
+            &google.sub,
+            google.picture.as_deref(),
+        )
+        .await?;
+        if existing_email_user.display_name != display_name {
+            db::users::update_user_profile(pool, existing_email_user.id, &display_name).await?;
+        }
+        return Ok(db::users::get_user_by_id(pool, existing_email_user.id)
+            .await?
+            .ok_or(AppError::Unauthorized)?);
+    }
+
+    let user = db::users::create_google_user(
+        pool,
+        &google.email,
+        &display_name,
+        max_bytes,
+        &google.sub,
+        google.picture.as_deref(),
+    )
+    .await?;
+
+    Ok(user)
+}
+
+pub async fn google_start(
+    State(config): State<Config>,
+    Query(query): Query<GoogleStartQuery>,
+) -> Result<Redirect, AppError> {
+    if config.google_client_id.is_empty()
+        || config.google_client_secret.is_empty()
+        || config.google_redirect_uri.is_empty()
+    {
+        return Err(AppError::BadRequest(
+            "Google OAuth is not configured".into(),
+        ));
+    }
+
+    let redirect_to = query.next.unwrap_or_else(|| "/dashboard".into());
+    let desktop = query.desktop.unwrap_or(false);
+    let state = jwt::create_oauth_state(&redirect_to, desktop, &config.jwt_secret)?;
+
+    let url = format!(
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent%20select_account&state={}",
+        urlencoding::encode(&config.google_client_id),
+        urlencoding::encode(&config.google_redirect_uri),
+        urlencoding::encode("openid email profile"),
+        urlencoding::encode(&state)
+    );
+
+    Ok(Redirect::temporary(&url))
+}
+
+pub async fn google_callback(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Query(query): Query<GoogleCallbackQuery>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    if let Some(error) = query.error {
+        return Err(AppError::BadRequest(format!("Google login failed: {error}")));
+    }
+
+    let code = query
+        .code
+        .ok_or_else(|| AppError::BadRequest("Missing Google code".into()))?;
+    let state = query
+        .state
+        .ok_or_else(|| AppError::BadRequest("Missing state".into()))?;
+
+    let claims = jwt::verify_oauth_state(&state, &config.jwt_secret)?;
+
+    let client = reqwest::Client::new();
+    let token = client
+        .post("https://oauth2.googleapis.com/token")
+        .form(&[
+            ("code", code.as_str()),
+            ("client_id", config.google_client_id.as_str()),
+            ("client_secret", config.google_client_secret.as_str()),
+            ("redirect_uri", config.google_redirect_uri.as_str()),
+            ("grant_type", "authorization_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Google token request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::Internal(format!("Google token response error: {e}")))?
+        .json::<TokenResponse>()
+        .await
+        .map_err(|e| AppError::Internal(format!("Google token decode failed: {e}")))?;
+
+    let google_user = client
+        .get("https://www.googleapis.com/oauth2/v3/userinfo")
+        .bearer_auth(&token.access_token)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Google userinfo request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::Internal(format!("Google userinfo response error: {e}")))?
+        .json::<GoogleUserInfo>()
+        .await
+        .map_err(|e| AppError::Internal(format!("Google userinfo decode failed: {e}")))?;
+
+    let user = sync_google_user(&pool, &config, &google_user).await?;
+    let auth = make_auth_response(&user, &config)?;
+    let cookies = auth_cookie_headers(&auth.access_token, &auth.refresh_token, &config);
+
+    if claims.desktop {
+        let desktop_code = jwt::create_desktop_code(user.id, &user.role, &config.jwt_secret)?;
+        let target = format!("{}?code={}", config.desktop_scheme_url, urlencoding::encode(&desktop_code));
+        return Ok((cookies, Redirect::temporary(&target)));
+    }
+
+    let redirect_to = if claims.redirect_to.is_empty() {
+        "/dashboard".to_string()
+    } else {
+        claims.redirect_to
+    };
+
+    Ok((cookies, Redirect::temporary(&redirect_to)))
+}
+
+pub async fn desktop_exchange(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Json(body): Json<DesktopExchangeRequest>,
+) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+    let claims = jwt::verify_desktop_code(&body.code, &config.jwt_secret)?;
+    let user = db::users::get_user_by_id(&pool, claims.sub)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    let auth = make_auth_response(&user, &config)?;
+    Ok((StatusCode::OK, Json(auth)))
+}
 
 pub async fn register(
     State(pool): State<PgPool>,
     State(config): State<Config>,
     Json(body): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
     if body.email.is_empty() || !body.email.contains('@') {
         return Err(AppError::BadRequest("Invalid email address".into()));
     }
@@ -148,27 +434,30 @@ pub async fn register(
 
     let display_name = body
         .display_name
-        .unwrap_or_else(|| body.email.split('@').next().unwrap_or("User").to_string());
-
+        .unwrap_or_else(|| default_display_name(&body.email, "Prism User"));
     let password_hash = hash_password(&body.password)?;
     let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
 
-    let user = db::users::create_user(&pool, &body.email, &password_hash, &display_name, max_bytes)
-        .await?;
-
-    let response = make_auth_response(&user, &config)?;
+    let user = db::users::create_user(
+        &pool,
+        &body.email,
+        &password_hash,
+        &display_name,
+        max_bytes,
+        None,
+        None,
+    )
+    .await?;
 
     tracing::info!(user_id = %user.id, "user_registered");
-    log_activity(&pool, user.id, "user_registered", None).await;
-
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok(issue_user_auth(&user, &config).await?)
 }
 
 pub async fn login(
     State(pool): State<PgPool>,
     State(config): State<Config>,
     Json(body): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
     let user = db::users::get_user_by_email(&pool, &body.email)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -181,19 +470,22 @@ pub async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    let response = make_auth_response(&user, &config)?;
-
-    log_activity(&pool, user.id, "user_logged_in", None).await;
-
-    Ok(Json(response))
+    tracing::info!(user_id = %user.id, "user_logged_in");
+    Ok(issue_user_auth(&user, &config).await?)
 }
 
 pub async fn refresh(
     State(pool): State<PgPool>,
     State(config): State<Config>,
+    headers: HeaderMap,
     Json(body): Json<RefreshRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
-    let claims = jwt::verify_refresh_token(&body.refresh_token, &config.jwt_secret)?;
+) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
+    let refresh_token = body
+        .refresh_token
+        .or_else(|| extract_cookie_from_headers(&headers, "prism_refresh"))
+        .ok_or(AppError::Unauthorized)?;
+
+    let claims = jwt::verify_refresh_token(&refresh_token, &config.jwt_secret)?;
 
     let user = db::users::get_user_by_id(&pool, claims.sub)
         .await?
@@ -203,14 +495,17 @@ pub async fn refresh(
         return Err(AppError::Forbidden);
     }
 
-    let response = make_auth_response(&user, &config)?;
-    Ok(Json(response))
+    Ok(issue_user_auth(&user, &config).await?)
 }
 
-pub async fn me(
-    State(pool): State<PgPool>,
-    auth: AuthUser,
-) -> Result<Json<UserResponse>, AppError> {
+pub async fn logout(State(config): State<Config>) -> Result<(HeaderMap, Json<serde_json::Value>), AppError> {
+    Ok((
+        clear_cookie_headers(&config),
+        Json(serde_json::json!({"status": "ok"})),
+    ))
+}
+
+pub async fn me(State(pool): State<PgPool>, auth: AuthUser) -> Result<Json<UserResponse>, AppError> {
     let user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -259,29 +554,30 @@ pub async fn update_profile(
 
 pub async fn delete_account(
     State(pool): State<PgPool>,
-    _storage: State<crate::storage::local::LocalStorage>,
+    State(storage): State<crate::storage::local::LocalStorage>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    let user_id = user.id;
+    let (clips, _) = db::clips::list_clips(&pool, Some(user.id), "", "", "", "created_at", "desc", 1, 1000)
+        .await?;
+    for clip in clips {
+        if let Some(stored) = db::clips::get_clip(&pool, clip.id).await? {
+            let _ = storage.delete(&stored.storage_path).await;
+            if let Some(thumb) = &stored.thumbnail_path {
+                let _ = storage.delete(thumb).await;
+            }
+            let _ = db::clips::delete_clip(&pool, stored.id).await;
+        }
+    }
 
-    tokio::task::spawn_blocking(move || {
-        let path = format!("clips/{}", user_id);
-        let full_path = std::path::PathBuf::from(".").join(&path);
-        let _ = std::fs::remove_dir_all(&full_path);
-    });
-
-    db::users::delete_user(&pool, user_id).await?;
-
-    tracing::info!(user_id = %user_id, "user_deleted");
+    db::users::delete_user(&pool, user.id).await?;
+    tracing::info!(user_id = %user.id, "user_deleted");
 
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
-
-// ── API Keys ───────────────────────────────────────────────────────
 
 pub async fn list_api_keys(
     State(pool): State<PgPool>,
@@ -324,8 +620,6 @@ pub async fn revoke_api_key(
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
-// ── Activity Logging ───────────────────────────────────────────────
-
 pub async fn log_activity(
     pool: &PgPool,
     user_id: Uuid,
@@ -338,30 +632,6 @@ pub async fn log_activity(
     )
     .bind(user_id)
     .bind(action)
-    .bind(details.map(|v| v.to_string()))
-    .execute(pool)
-    .await;
-
-    if let Err(e) = result {
-        tracing::warn!(%user_id, %action, error = %e, "Failed to log activity");
-    }
-}
-
-#[allow(dead_code)]
-pub async fn log_activity_with_ip(
-    pool: &PgPool,
-    user_id: Uuid,
-    action: &str,
-    ip_address: &str,
-    details: Option<&serde_json::Value>,
-) {
-    let result = sqlx::query(
-        r#"INSERT INTO activity_logs (user_id, action, ip_address, details)
-           VALUES ($1, $2::log_action, $3, $4::jsonb)"#,
-    )
-    .bind(user_id)
-    .bind(action)
-    .bind(ip_address)
     .bind(details.map(|v| v.to_string()))
     .execute(pool)
     .await;

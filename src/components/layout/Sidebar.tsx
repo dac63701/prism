@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { Home, Film, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import RecordingIndicator from "@/components/common/RecordingIndicator";
+import PrismLogo from "@/components/common/PrismLogo";
 
 const navItems = [
   { to: "/", label: "Home", icon: Home },
@@ -13,10 +14,13 @@ export default function Sidebar() {
   return (
     <aside className="w-56 h-screen flex flex-col bg-zinc-950 border-r border-zinc-800/50">
       <div className="px-5 pt-6 pb-5">
-        <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">
-          Prism
-        </h1>
-        <p className="text-[11px] text-zinc-500 mt-0.5">Game clipping</p>
+        <div className="flex items-center gap-3">
+          <PrismLogo className="h-10 w-10" />
+          <div>
+            <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Prism</h1>
+            <p className="text-[11px] text-zinc-500 mt-0.5">Game clipping</p>
+          </div>
+        </div>
       </div>
 
       <nav className="flex-1 px-3 space-y-1">

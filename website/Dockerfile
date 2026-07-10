@@ -8,6 +8,8 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 COPY frontend/ ./
+ARG API_ORIGIN=http://api:8080
+ENV API_ORIGIN=${API_ORIGIN}
 RUN --mount=type=cache,target=/root/.npm \
     --mount=type=cache,target=/app/frontend/.next/cache \
     npm run build

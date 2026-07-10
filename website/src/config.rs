@@ -10,7 +10,11 @@ pub struct Config {
     pub max_upload_size_mb: u64,
     pub default_max_storage_gb: u64,
     pub rate_limit_per_min: u64,
-    pub frontend_url: String,
+    pub site_url: String,
+    pub google_client_id: String,
+    pub google_client_secret: String,
+    pub google_redirect_uri: String,
+    pub desktop_scheme_url: String,
 }
 
 impl Config {
@@ -41,14 +45,17 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(100),
-            frontend_url: env::var("FRONTEND_URL").unwrap_or_default(),
+            site_url: env::var("SITE_URL").unwrap_or_else(|_| "http://localhost:3000".into()),
+            google_client_id: env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+            google_client_secret: env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+            google_redirect_uri: env::var("GOOGLE_REDIRECT_URI")
+                .unwrap_or_else(|_| "http://localhost:8080/api/auth/google/callback".into()),
+            desktop_scheme_url: env::var("DESKTOP_SCHEME_URL")
+                .unwrap_or_else(|_| "prism://auth/callback".into()),
         }
     }
 
     pub fn public_url(&self) -> String {
-        if !self.frontend_url.is_empty() {
-            return self.frontend_url.clone();
-        }
-        format!("http://{}:{}", self.server_host, self.server_port)
+        self.site_url.clone()
     }
 }

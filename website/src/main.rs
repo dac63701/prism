@@ -3,12 +3,9 @@ mod auth;
 mod config;
 mod db;
 mod errors;
-mod frontend;
 mod middleware;
 mod storage;
 mod thumbnail;
-
-use std::sync::Arc;
 
 use axum::{
     extract::{ConnectInfo, Request},
@@ -27,7 +24,6 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: config::Config,
     pub storage: storage::local::LocalStorage,
-    pub frontend: frontend::FrontendStatic,
     pub rate_limiter: middleware::rate_limit::RateLimiter,
 }
 
@@ -37,7 +33,6 @@ impl Clone for AppState {
             pool: self.pool.clone(),
             config: self.config.clone(),
             storage: self.storage.clone(),
-            frontend: self.frontend.clone(),
             rate_limiter: middleware::rate_limit::RateLimiter::new(self.config.rate_limit_per_min),
         }
     }
@@ -57,14 +52,7 @@ impl axum::extract::FromRef<AppState> for config::Config {
 
 impl axum::extract::FromRef<AppState> for storage::local::LocalStorage {
     fn from_ref(state: &AppState) -> Self {
-        // HACK: storage doesn't support Clone directly; rebuild from config path
         storage::local::LocalStorage::new(&state.config.storage_path)
-    }
-}
-
-impl axum::extract::FromRef<AppState> for Arc<frontend::FrontendStatic> {
-    fn from_ref(state: &AppState) -> Self {
-        Arc::new(state.frontend.clone())
     }
 }
 
@@ -92,27 +80,19 @@ async fn main() {
         let _ = tokio::fs::create_dir_all(&thumb_dir).await;
     }
 
-    let frontend_dir = "frontend/dist";
-    tracing::info!(
-        "Frontend directory: {} (exists: {})",
-        frontend_dir,
-        std::path::Path::new(frontend_dir).exists()
-    );
-    let frontend = frontend::FrontendStatic::new(frontend_dir);
     let rate_limiter = middleware::rate_limit::RateLimiter::new(config.rate_limit_per_min);
 
     let state = AppState {
         pool,
         config,
         storage,
-        frontend,
         rate_limiter,
     };
 
     let cors = CorsLayer::new()
         .allow_origin([
-            "https://goprism.studio".parse::<HeaderValue>().unwrap(),
-            "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+            "http://localhost:3000".parse::<HeaderValue>().unwrap(),
+            "http://127.0.0.1:3000".parse::<HeaderValue>().unwrap(),
             "http://localhost:1420".parse::<HeaderValue>().unwrap(),
         ])
         .allow_methods([
@@ -123,12 +103,12 @@ async fn main() {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::COOKIE])
         .allow_credentials(true);
 
     let app = api::add_api_routes(Router::<AppState>::new())
         .route("/s/{share_id}", get(api::public::serve_share_page))
-        .fallback(handle_frontend)
+        .route("/u/{username}", get(api::public::serve_profile_page))
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
@@ -148,13 +128,7 @@ async fn main() {
         .layer(SetResponseHeaderLayer::overriding(
             header::HeaderName::from_static("content-security-policy"),
             HeaderValue::from_static(
-                "default-src 'self'; \
-                 script-src 'self'; \
-                 style-src 'self' 'unsafe-inline'; \
-                 img-src 'self' data:; \
-                 media-src 'self'; \
-                 connect-src 'self' https://goprism.studio; \
-                 frame-ancestors 'none'",
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' data: https:; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
             ),
         ))
         .layer(cors)
@@ -180,13 +154,6 @@ async fn main() {
     )
     .await
     .unwrap();
-}
-
-async fn handle_frontend(
-    axum::extract::State(state): axum::extract::State<AppState>,
-    request: Request,
-) -> impl axum::response::IntoResponse {
-    state.frontend.serve(request).await
 }
 
 async fn rate_limit_middleware(

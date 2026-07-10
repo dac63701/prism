@@ -2,37 +2,54 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
+      POSTGRES_DB: prism
       POSTGRES_USER: prism
       POSTGRES_PASSWORD: prism
-      POSTGRES_DB: prism
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prism"]
       interval: 5s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 10
 
-  server:
-    build: .
-    ports:
-      - "${SERVER_PORT:-8080}:8080"
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     environment:
       DATABASE_URL: postgres://prism:prism@postgres:5432/prism
-      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-64-char-string}
+      JWT_SECRET: change-me-to-a-random-64-char-string
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
       STORAGE_PATH: /data
-      RUST_LOG: ${RUST_LOG:-info}
-      SERVER_HOST: "0.0.0.0"
-      SERVER_PORT: "8080"
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      SITE_URL: http://localhost:3000
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: http://localhost:8080/api/auth/google/callback
+      DESKTOP_SCHEME_URL: prism://auth/callback
+      RUST_LOG: info
+    ports:
+      - "8080:8080"
     volumes:
-      - server-data:/data
+      - clipdata:/data
     depends_on:
       postgres:
         condition: service_healthy
 
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      SITE_URL: http://localhost:3000
+      API_ORIGIN: http://api:8080
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
 volumes:
   pgdata:
-  server-data:
+  clipdata:

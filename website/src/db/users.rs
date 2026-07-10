@@ -9,6 +9,8 @@ pub struct User {
     pub email: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
+    pub google_id: Option<String>,
+    pub avatar_url: Option<String>,
     pub display_name: String,
     pub role: String,
     pub storage_used_bytes: i64,
@@ -37,6 +39,7 @@ pub struct UserListItem {
     pub id: Uuid,
     pub email: String,
     pub display_name: String,
+    pub avatar_url: Option<String>,
     pub role: String,
     pub clip_count: i64,
     pub storage_used_bytes: i64,
@@ -50,11 +53,13 @@ pub async fn create_user(
     password_hash: &str,
     display_name: &str,
     max_storage_bytes: i64,
+    google_id: Option<&str>,
+    avatar_url: Option<&str>,
 ) -> Result<User, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id, email, password_hash, display_name, role,
+        r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes, google_id, avatar_url)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, email, password_hash, google_id, avatar_url, display_name, role,
                      storage_used_bytes, max_storage_bytes, is_banned,
                      created_at, updated_at"#,
     )
@@ -62,15 +67,53 @@ pub async fn create_user(
     .bind(password_hash)
     .bind(display_name)
     .bind(max_storage_bytes)
+    .bind(google_id)
+    .bind(avatar_url)
     .fetch_one(pool)
+    .await
+}
+
+pub async fn create_google_user(
+    pool: &PgPool,
+    email: &str,
+    display_name: &str,
+    max_storage_bytes: i64,
+    google_id: &str,
+    avatar_url: Option<&str>,
+) -> Result<User, sqlx::Error> {
+    let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$ZGVtby1zYWx0$ZGVtby1oYXNo";
+    create_user(
+        pool,
+        email,
+        password_hash,
+        display_name,
+        max_storage_bytes,
+        Some(google_id),
+        avatar_url,
+    )
+    .await
+}
+
+pub async fn get_user_by_google_id(
+    pool: &PgPool,
+    google_id: &str,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
+                  storage_used_bytes, max_storage_bytes, is_banned,
+                  created_at, updated_at
+           FROM users WHERE google_id = $1"#,
+    )
+    .bind(google_id)
+    .fetch_optional(pool)
     .await
 }
 
 pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, display_name, role,
-                  storage_used_bytes, max_storage_bytes, is_banned,
-                  created_at, updated_at
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
+                   storage_used_bytes, max_storage_bytes, is_banned,
+                   created_at, updated_at
            FROM users WHERE email = $1"#,
     )
     .bind(email)
@@ -80,12 +123,27 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
 
 pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, display_name, role,
-                  storage_used_bytes, max_storage_bytes, is_banned,
-                  created_at, updated_at
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
+                   storage_used_bytes, max_storage_bytes, is_banned,
+                   created_at, updated_at
            FROM users WHERE id = $1"#,
     )
     .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_user_by_display_name(
+    pool: &PgPool,
+    display_name: &str,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role,
+                  storage_used_bytes, max_storage_bytes, is_banned,
+                  created_at, updated_at
+           FROM users WHERE display_name = $1"#,
+    )
+    .bind(display_name)
     .fetch_optional(pool)
     .await
 }
@@ -174,9 +232,9 @@ pub async fn list_users(
     .await?;
 
     let users = sqlx::query_as::<_, UserListItem>(
-        r#"SELECT u.id, u.email, u.display_name, u.role,
-                  COALESCE(c.clip_count, 0) as clip_count,
-                  u.storage_used_bytes, u.created_at, u.is_banned
+        r#"SELECT u.id, u.email, u.display_name, u.avatar_url, u.role,
+                   COALESCE(c.clip_count, 0) as clip_count,
+                   u.storage_used_bytes, u.created_at, u.is_banned
            FROM users u
            LEFT JOIN (SELECT user_id, COUNT(*) as clip_count FROM clips GROUP BY user_id) c
              ON c.user_id = u.id
@@ -195,6 +253,34 @@ pub async fn list_users(
 
 pub async fn delete_user(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_user_avatar(
+    pool: &PgPool,
+    id: Uuid,
+    avatar_url: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2")
+        .bind(avatar_url)
+        .bind(id)
+    .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn link_google_account(
+    pool: &PgPool,
+    id: Uuid,
+    google_id: &str,
+    avatar_url: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET google_id = $1, avatar_url = $2, updated_at = NOW() WHERE id = $3")
+        .bind(google_id)
+        .bind(avatar_url)
         .bind(id)
         .execute(pool)
         .await?;
