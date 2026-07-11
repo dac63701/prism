@@ -38,6 +38,14 @@ export function getDefaultSettings(): AppSettings {
       max_clips_gb: 50,
       auto_prune_days: null,
     },
+    cloud: {
+      server_url: "",
+      api_key: "",
+      auto_upload: false,
+      max_concurrent_uploads: 1,
+      account_display_name: "",
+      account_email: "",
+    },
   };
 }
 

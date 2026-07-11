@@ -9,6 +9,7 @@ pub struct AppSettings {
     pub hotkeys: HotkeySettings,
     pub general: GeneralSettings,
     pub storage: StorageSettings,
+    pub cloud: CloudSettings,
 }
 
 // ── Recording ──────────────────────────────────────────────────────────────
@@ -109,6 +110,37 @@ impl Default for StorageSettings {
         Self {
             max_clips_gb: 50,
             auto_prune_days: None,
+        }
+    }
+}
+
+// ── Cloud ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudSettings {
+    /// Self-hosted Prism server URL (e.g. "https://clips.example.com")
+    pub server_url: String,
+    /// API key for authenticating upload requests
+    pub api_key: String,
+    /// Auto-upload clips immediately after saving
+    pub auto_upload: bool,
+    /// Max concurrent uploads (0 = sequential)
+    pub max_concurrent_uploads: u32,
+    /// Display name of the connected account (if any)
+    pub account_display_name: String,
+    /// Email of the connected account (if any)
+    pub account_email: String,
+}
+
+impl Default for CloudSettings {
+    fn default() -> Self {
+        Self {
+            server_url: String::new(),
+            api_key: String::new(),
+            auto_upload: false,
+            max_concurrent_uploads: 1,
+            account_display_name: String::new(),
+            account_email: String::new(),
         }
     }
 }

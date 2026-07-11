@@ -4,9 +4,15 @@ import { listen } from "@tauri-apps/api/event";
 import Sidebar from "./Sidebar";
 import ClipNotification from "@/components/common/ClipNotification";
 import { useRecordingStore } from "@/stores/recording";
+import { useCloudStore } from "@/stores/cloud";
 
 export default function AppLayout() {
   const saveClip = useRecordingStore((s) => s.saveClip);
+  const checkCloudStatus = useCloudStore((s) => s.checkStatus);
+
+  useEffect(() => {
+    checkCloudStatus();
+  }, [checkCloudStatus]);
 
   useEffect(() => {
     const unlistenMenu = listen<string>("menu-action", (event) => {

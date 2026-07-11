@@ -310,6 +310,94 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Cloud Section */}
+        <section className="mb-8">
+          <SectionHeading>Cloud Upload</SectionHeading>
+          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
+            <FieldRow label="Server URL">
+              <input
+                type="text"
+                key={`server-url-${loadedKey}`}
+                defaultValue={s.cloud.server_url}
+                onChange={(e) =>
+                  debouncedSave({
+                    ...settings,
+                    cloud: { ...settings.cloud, server_url: e.target.value },
+                  })
+                }
+                placeholder="https://clips.example.com"
+                className="w-64 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              />
+            </FieldRow>
+
+            <FieldRow label="Account">
+              {s.cloud.api_key ? (
+                <div className="flex items-center gap-3">
+                  <div className="text-sm text-zinc-300">
+                    {s.cloud.account_display_name || "Connected"}
+                    {s.cloud.account_email ? (
+                      <span className="text-zinc-500 ml-2 text-xs">
+                        {s.cloud.account_email}
+                      </span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const { useCloudStore } = await import("@/stores/cloud");
+                      useCloudStore.getState().logout();
+                    }}
+                    className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-zinc-600">Not signed in</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const { useCloudStore } = await import("@/stores/cloud");
+                      useCloudStore.getState().login();
+                    }}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Sign in with Google
+                  </button>
+                </div>
+              )}
+            </FieldRow>
+
+            <FieldRow label="Auto-upload">
+              <ToggleSwitch
+                checked={s.cloud.auto_upload}
+                onChange={(checked) =>
+                  void setField("cloud", "auto_upload", checked as never)
+                }
+              />
+            </FieldRow>
+
+            <FieldRow label="Concurrent uploads">
+              <select
+                value={s.cloud.max_concurrent_uploads}
+                onChange={(e) =>
+                  void setField(
+                    "cloud",
+                    "max_concurrent_uploads",
+                    (parseInt(e.target.value, 10) || 1) as never,
+                  )
+                }
+                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              >
+                <option value={1}>1 (sequential)</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+              </select>
+            </FieldRow>
+          </div>
+        </section>
+
         {/* Storage Section */}
         <section className="mb-8">
           <SectionHeading>Storage</SectionHeading>

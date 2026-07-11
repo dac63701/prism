@@ -26,9 +26,19 @@ export interface StorageSettings {
   auto_prune_days: number | null;
 }
 
+export interface CloudSettings {
+  server_url: string;
+  api_key: string;
+  auto_upload: boolean;
+  max_concurrent_uploads: number;
+  account_display_name: string;
+  account_email: string;
+}
+
 export interface AppSettings {
   recording: RecordingSettings;
   hotkeys: HotkeySettings;
   general: GeneralSettings;
   storage: StorageSettings;
+  cloud: CloudSettings;
 }

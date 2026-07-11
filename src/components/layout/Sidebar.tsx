@@ -1,14 +1,39 @@
 import { NavLink } from "react-router-dom";
-import { Home, Film, Settings } from "lucide-react";
+import { Home, Film, Settings, Cloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import RecordingIndicator from "@/components/common/RecordingIndicator";
 import PrismLogo from "@/components/common/PrismLogo";
+import { useCloudStore } from "@/stores/cloud";
 
 const navItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/library", label: "Library", icon: Film },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
+
+function CloudStatus() {
+  const authenticated = useCloudStore((s) => s.authenticated);
+  const email = useCloudStore((s) => s.email);
+  const uploads = useCloudStore((s) => s.uploads);
+  const pendingCount = uploads.filter((t) => t.status === "Uploading" || t.status === "Pending").length;
+
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <Cloud
+        className={cn(
+          "size-3 shrink-0",
+          authenticated ? "text-emerald-500" : "text-zinc-600",
+        )}
+      />
+      <span className={authenticated ? "text-zinc-400" : "text-zinc-600"}>
+        {authenticated ? (email || "Connected") : "Cloud off"}
+      </span>
+      {pendingCount > 0 ? (
+        <span className="ml-auto text-blue-400 font-medium">{pendingCount}</span>
+      ) : null}
+    </div>
+  );
+}
 
 export default function Sidebar() {
   return (
@@ -48,7 +73,8 @@ export default function Sidebar() {
         <RecordingIndicator />
       </div>
 
-      <div className="px-5 py-3 border-t border-zinc-800/50">
+      <div className="px-5 py-3 border-t border-zinc-800/50 space-y-1">
+        <CloudStatus />
         <p className="text-[11px] text-zinc-600">Prism v0.1.0</p>
       </div>
     </aside>
