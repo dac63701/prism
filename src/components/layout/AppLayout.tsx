@@ -5,6 +5,7 @@ import Sidebar from "./Sidebar";
 import ClipNotification from "@/components/common/ClipNotification";
 import { useRecordingStore } from "@/stores/recording";
 import { useCloudStore } from "@/stores/cloud";
+import { useSettingsStore } from "@/stores/settings";
 
 export default function AppLayout() {
   // Suppress the default browser right-click context menu
@@ -15,9 +16,17 @@ export default function AppLayout() {
   }, []);
   const saveClip = useRecordingStore((s) => s.saveClip);
   const checkCloudStatus = useCloudStore((s) => s.checkStatus);
+  const settings = useSettingsStore((s) => s.settings);
 
   const isRecording = useRecordingStore((s) => s.isRecording);
   const checkRecordingStatus = useRecordingStore((s) => s.checkStatus);
+
+  // Re-derive cloud auth state whenever settings load or change.
+  // This avoids a race where checkCloudStatus() reads default
+  // settings (api_key = "") before loadSettings() finishes.
+  useEffect(() => {
+    checkCloudStatus();
+  }, [settings, checkCloudStatus]);
 
   // Poll recording status every 1s while recording (keeps timer live on all pages)
   useEffect(() => {
@@ -30,10 +39,6 @@ export default function AppLayout() {
       if (interval) clearInterval(interval);
     };
   }, [isRecording, checkRecordingStatus]);
-
-  useEffect(() => {
-    checkCloudStatus();
-  }, [checkCloudStatus]);
 
   useEffect(() => {
     const unlistenMenu = listen<string>("menu-action", (event) => {

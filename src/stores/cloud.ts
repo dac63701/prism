@@ -102,11 +102,20 @@ export const useCloudStore = create<CloudState>((set, get) => {
     checkStatus: async () => {
       try {
         const settings = useSettingsStore.getState().settings;
+        const hasKey = !!settings.cloud.api_key;
+        let valid = false;
+        if (hasKey) {
+          try {
+            valid = await invoke<boolean>("cloud_verify_auth");
+          } catch {
+            valid = false;
+          }
+        }
         set({
           serverUrl: settings.cloud.server_url,
-          authenticated: !!settings.cloud.api_key,
-          displayName: settings.cloud.account_display_name,
-          email: settings.cloud.account_email,
+          authenticated: valid,
+          displayName: valid ? settings.cloud.account_display_name : "",
+          email: valid ? settings.cloud.account_email : "",
         });
       } catch (err) {
         console.error("[cloud] checkStatus failed:", err);
