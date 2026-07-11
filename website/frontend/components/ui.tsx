@@ -34,7 +34,9 @@ export function Button({
     <button
       className={classes}
       {...props}
-    />
+    >
+      {children}
+    </button>
   );
 }
 

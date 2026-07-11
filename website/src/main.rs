@@ -94,6 +94,7 @@ async fn main() {
         let _ = tokio::fs::create_dir_all(&thumb_dir).await;
     }
 
+    let site_origin: HeaderValue = config.site_url.parse().expect("Invalid SITE_URL");
     let rate_limiter = middleware::rate_limit::RateLimiter::new(config.rate_limit_per_min);
 
     let state = AppState {
@@ -102,13 +103,16 @@ async fn main() {
         storage,
         rate_limiter,
     };
-
+    let mut allowed_origins = vec![
+        "http://localhost:3000".parse::<HeaderValue>().unwrap(),
+        "http://127.0.0.1:3000".parse::<HeaderValue>().unwrap(),
+        "http://localhost:1420".parse::<HeaderValue>().unwrap(),
+    ];
+    if !allowed_origins.contains(&site_origin) {
+        allowed_origins.push(site_origin);
+    }
     let cors = CorsLayer::new()
-        .allow_origin([
-            "http://localhost:3000".parse::<HeaderValue>().unwrap(),
-            "http://127.0.0.1:3000".parse::<HeaderValue>().unwrap(),
-            "http://localhost:1420".parse::<HeaderValue>().unwrap(),
-        ])
+        .allow_origin(allowed_origins)
         .allow_methods([
             Method::GET,
             Method::POST,
