@@ -3,19 +3,11 @@ import { LOGO_SVG_PATH } from "@/lib/brand";
 
 export function PrismLogo({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(79,140,255,0.22),rgba(119,168,255,0.08))] text-blue-200 shadow-lg shadow-blue-500/10",
-        className
-      )}
-      aria-hidden="true"
-    >
-      <img
-        src={LOGO_SVG_PATH}
-        alt=""
-        className="h-5 w-5"
-      />
-    </span>
+    <img
+      src={LOGO_SVG_PATH}
+      alt=""
+      className={cn("h-14 w-14 shrink-0", className)}
+    />
   );
 }
 

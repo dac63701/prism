@@ -35,7 +35,10 @@ export const metadata: Metadata = {
     images: ["/og-image.jpg"],
   },
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/brand/logo.svg", type: "image/svg+xml" },
+    ],
   },
   robots: {
     index: true,
