@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { LOGO_SVG } from "@/lib/brand";
 
 export function PrismLogo({ className }: { className?: string }) {
   return (
@@ -9,11 +10,10 @@ export function PrismLogo({ className }: { className?: string }) {
       )}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3 5 7.2v9.6L12 21l7-4.2V7.2L12 3Z" />
-        <path d="M12 7.2v13.8" />
-        <path d="M5 7.2 12 12l7-4.8" />
-      </svg>
+      <span
+        className="h-5 w-5"
+        dangerouslySetInnerHTML={{ __html: LOGO_SVG }}
+      />
     </span>
   );
 }

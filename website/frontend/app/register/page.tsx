@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { AuthCard } from "@/components/auth-card";
-import { SiteShell } from "@/components/site-shell";
-import { Badge, Panel, StatCard } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Register",
@@ -13,30 +11,21 @@ export const metadata: Metadata = {
 
 export default function RegisterPage() {
   return (
-    <SiteShell>
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 lg:grid-cols-[1fr_0.95fr] lg:px-8 lg:py-24">
-        <div className="space-y-6">
-          <Badge>Get started</Badge>
-          <h1 className="max-w-xl text-5xl font-semibold tracking-tight text-white">Create a Prism account</h1>
-          <p className="max-w-xl text-lg leading-8 text-zinc-400">
-            Use Google or email/password to create your account and start saving clips to the cloud.
+    <div className="relative flex min-h-screen items-center justify-center bg-[#050816] px-5">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-blue-500/10 blur-[120px]" />
+        <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-blue-600/8 blur-[120px]" />
+        <div className="absolute left-1/2 top-1/3 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-blue-400/5 blur-[100px]" />
+      </div>
+      <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
+        <div className="text-center">
+          <div className="text-xs uppercase tracking-[0.3em] text-blue-300/50">Join Prism</div>
+          <p className="mt-2 text-sm text-zinc-500">
+            Create an account and start saving clips to the cloud
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <StatCard label="Login" value="Google" hint="Fast, low-friction sign-in" />
-            <StatCard label="Storage" value="Cloud" hint="Keep clips organized" />
-            <StatCard label="Flow" value="Desktop" hint="Return to the app automatically" />
-          </div>
-          <Panel className="space-y-3 p-5">
-            <div className="text-sm font-medium text-white">What you get</div>
-            <ul className="space-y-2 text-sm leading-6 text-zinc-400">
-              <li>• A clean dashboard for clips, tags, and settings.</li>
-              <li>• Public share pages with good previews for social sites.</li>
-              <li>• A desktop login flow that hands you back to Prism.</li>
-            </ul>
-          </Panel>
         </div>
         <AuthCard mode="register" />
       </div>
-    </SiteShell>
+    </div>
   );
 }

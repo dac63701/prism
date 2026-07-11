@@ -458,20 +458,38 @@ pub async fn login(
     State(config): State<Config>,
     Json(body): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
-    let user = db::users::get_user_by_email(&pool, &body.email)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
+    let user = match db::users::get_user_by_email(&pool, &body.email).await {
+        Ok(Some(u)) => u,
+        Ok(None) => return Err(AppError::Unauthorized),
+        Err(e) => {
+            tracing::error!(error = %e, "login_db_error");
+            return Err(AppError::Internal("Database error during login".into()));
+        }
+    };
 
     if user.is_banned {
         return Err(AppError::Forbidden);
     }
 
-    if !verify_password(&body.password, &user.password_hash)? {
-        return Err(AppError::Unauthorized);
+    match verify_password(&body.password, &user.password_hash) {
+        Ok(true) => {}
+        Ok(false) => return Err(AppError::Unauthorized),
+        Err(e) => {
+            tracing::error!(error = %e, "login_password_verify_error");
+            return Err(AppError::Internal("Password verification failed".into()));
+        }
     }
 
-    tracing::info!(user_id = %user.id, "user_logged_in");
-    Ok(issue_user_auth(&user, &config).await?)
+    match issue_user_auth(&user, &config).await {
+        Ok(response) => {
+            tracing::info!(user_id = %user.id, "user_logged_in");
+            Ok(response)
+        }
+        Err(e) => {
+            tracing::error!(user_id = %user.id, error = %e, "login_token_issuance_error");
+            Err(AppError::Internal("Failed to issue authentication tokens".into()))
+        }
+    }
 }
 
 pub async fn refresh(
