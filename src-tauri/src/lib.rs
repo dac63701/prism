@@ -59,6 +59,11 @@ pub fn run() {
             // Initialize game registry
             let game_registry = games::database::GameRegistry::new();
             app.manage(game_registry);
+            app.manage(games::GameDetector::new());
+            app.manage(games::trigger::AutoClipTrigger::new());
+            app.manage(games::cs2::Cs2GsiListener::new());
+            #[cfg(target_os = "windows")]
+            app.manage(games::rust::RustAudioEngine::new());
 
             // Initialize upload queue with persistence
             let app_data = app
@@ -120,6 +125,7 @@ pub fn run() {
             commands::library::rename_clip,
             commands::library::update_clip_metadata,
             commands::library::open_clip_location,
+            commands::games::get_detected_game,
             commands::recording::start_recording,
             commands::recording::stop_recording,
             commands::recording::is_recording,
@@ -165,6 +171,26 @@ pub fn run() {
                 // Start background upload processor
                 upload::start_upload_processor(app_handle.clone());
 
+                // Both services remain external to game processes. Game
+                // detection decides when Rust's audio worker is active; CS2
+                // posts to its official localhost Game State Integration API.
+                app_handle
+                    .state::<games::cs2::Cs2GsiListener>()
+                    .start(app_handle.clone());
+                let gsi_port = app_handle
+                    .state::<SettingsManager>()
+                    .get()
+                    .general
+                    .cs2_gsi_port;
+                match games::cs2::ensure_gsi_config(gsi_port) {
+                    Ok(Some(path)) => eprintln!("[cs2-gsi] configuration ready at {}", path.display()),
+                    Ok(None) => eprintln!("[cs2-gsi] CS2 installation was not found in a standard Steam library"),
+                    Err(error) => eprintln!("[cs2-gsi] failed to install configuration: {error}"),
+                }
+                app_handle
+                    .state::<games::GameDetector>()
+                    .start_polling(app_handle.clone());
+
                 // Auto-start recording if enabled
                 let rec_state = app_handle.state::<Mutex<Recorder>>();
                 if let Some(settings) = app_handle.try_state::<SettingsManager>() {
@@ -197,9 +223,17 @@ fn handle_deep_link(app: &tauri::AppHandle, url: &str) {
     if let Some(code) = extract_auth_code(url) {
         let handle = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = AuthManager::handle_callback(&handle, code).await {
-                eprintln!("[auth] callback error: {e}");
-                let _ = handle.emit("auth-error", e);
+            match AuthManager::handle_callback(&handle, code).await {
+                Ok(()) => {
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[auth] callback error: {e}");
+                    let _ = handle.emit("auth-error", e);
+                }
             }
         });
     }
