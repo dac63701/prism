@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AuthCard } from "@/components/auth-card";
+import { PrismLogo } from "@/components/brand-icons";
 
 export const metadata: Metadata = {
   title: "Login",
@@ -25,9 +26,9 @@ export default async function LoginPage({
         <div className="absolute left-1/2 top-1/3 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-blue-400/5 blur-[100px]" />
       </div>
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
-        <div className="text-center">
-          <div className="text-sm uppercase tracking-[0.3em] text-blue-300/50">Prism</div>
-          <p className="mt-2 text-sm text-zinc-500">Clip-based screen recording</p>
+        <div className="flex items-center gap-3">
+          <PrismLogo className="h-10 w-10" />
+          <span className="text-3xl font-bold tracking-tight text-white">PRISM</span>
         </div>
         <AuthCard desktop={desktop} mode="login" />
       </div>

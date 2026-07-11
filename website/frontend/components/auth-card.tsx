@@ -73,7 +73,7 @@ export function AuthCard({
           {isRegister ? "Get started" : "Welcome back"}
         </div>
         <h1 className="text-3xl font-semibold tracking-tight text-white">
-          {isRegister ? "Create your account" : "Sign in to Prism"}
+          {isRegister ? "Create your account" : "Sign in"}
         </h1>
         <p className="text-sm leading-6 text-zinc-400">
           {isRegister
