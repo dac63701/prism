@@ -1,9 +1,143 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, Film, Trash2, FolderOpen, Play, Upload, Check, Link2, Loader2 } from "lucide-react";
-import { useClipsStore, formatSize, formatDuration, formatDate } from "@/stores/clips";
+import { useClipsStore, formatSize, formatDuration, formatDate, type Clip } from "@/stores/clips";
 import { useCloudStore } from "@/stores/cloud";
 import ClipThumbnail from "@/components/common/ClipThumbnail";
+
+function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete, onUpload, onNavigate, onCopyShare, onShowConfirm, onHideConfirm, cloudAuthed }: {
+  clip: Clip;
+  task: { status: string; progress: number; share_url?: string; clip_path: string } | undefined;
+  showConfirm: string | null;
+  confirming: boolean;
+  uploadingClip: string | null;
+  onDelete: (filename: string) => void;
+  onUpload: (path: string, filename: string, game: string) => void;
+  onNavigate: (filename: string) => void;
+  onCopyShare: (url: string) => void;
+  onShowConfirm: (filename: string) => void;
+  onHideConfirm: () => void;
+  cloudAuthed: boolean;
+}) {
+  const isUploaded = task?.status === "Completed";
+  const isUploading = task?.status === "Uploading" || uploadingClip === clip.filename;
+  const isFailed = task?.status?.startsWith("Failed");
+  const shareUrl = task?.share_url;
+  const displayName = clip.title || clip.filename.replace(/\.mp4$/, "");
+
+  return (
+    <div
+      onClick={() => onNavigate(clip.filename)}
+      className="group aspect-video bg-surface rounded-2xl border border-white/10 overflow-hidden relative cursor-pointer"
+    >
+      <ClipThumbnail path={clip.path} filename={clip.filename} />
+
+      {isUploaded ? (
+        <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/80 text-[10px] text-white font-medium">
+          <Check className="size-3" />
+          Uploaded
+        </div>
+      ) : isFailed ? (
+        <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600/80 text-[10px] text-white font-medium">
+          Failed
+        </div>
+      ) : isUploading ? (
+        <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/80 text-[10px] text-white font-medium">
+          <Loader2 className="size-3 animate-spin" />
+          Uploading
+        </div>
+      ) : null}
+
+      {isUploading && task && (
+        <div className="absolute bottom-9 left-2 right-2 h-1 rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full bg-accent transition-all duration-300"
+            style={{ width: `${task.progress * 100}%` }}
+          />
+        </div>
+      )}
+
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-6">
+        <p className="truncate text-xs font-medium text-white">{displayName}</p>
+        {clip.game && <p className="truncate text-[11px] text-blue-200/80 mt-0.5">{clip.game}</p>}
+        <div className="flex items-center justify-between text-[11px] text-zinc-400">
+          <span>{formatDuration(clip.duration_secs)}</span>
+          <span>{formatSize(clip.size_bytes)}</span>
+        </div>
+        <p className="text-[11px] text-zinc-500 mt-0.5">
+          {formatDate(clip.created_at)}
+        </p>
+      </div>
+
+      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+        <button
+          onClick={(e) => { e.stopPropagation(); onNavigate(clip.filename); }}
+          className="p-3 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
+          title="Play in app"
+        >
+          <Play className="size-5 fill-white ml-0.5" />
+        </button>
+
+        {isUploaded && shareUrl ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onCopyShare(shareUrl); }}
+            className="p-3 rounded-full bg-emerald-600/40 hover:bg-emerald-600/60 text-white transition-colors"
+            title="Copy share link"
+          >
+            <Link2 className="size-5" />
+          </button>
+        ) : cloudAuthed ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onUpload(clip.path, clip.filename, clip.game); }}
+            disabled={isUploading}
+            className="p-3 rounded-full bg-accent/40 hover:bg-accent/60 text-white transition-colors disabled:opacity-40"
+            title={isUploading ? "Uploading..." : "Upload to cloud"}
+          >
+            {isUploading ? (
+              <Loader2 className="size-5 animate-spin" />
+            ) : (
+              <Upload className="size-5" />
+            )}
+          </button>
+        ) : null}
+
+        <button
+          onClick={(e) => { e.stopPropagation(); onShowConfirm(clip.filename); }}
+          className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-900/60 text-zinc-300 hover:text-red-300 transition-colors absolute top-2 right-2"
+          title="Delete clip"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+
+      {showConfirm === clip.filename && (
+        <div
+          className="absolute inset-0 bg-[#050816]/90 flex flex-col items-center justify-center p-4 gap-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="text-sm text-zinc-300 text-center">Delete this clip?</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onDelete(clip.filename)}
+              disabled={confirming}
+              className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 text-white rounded-md transition-colors disabled:opacity-50"
+            >
+              {confirming ? "Deleting..." : "Delete"}
+            </button>
+            <button
+              onClick={onHideConfirm}
+              className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-md transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MemoClipCard = React.memo(ClipCard);
 
 export default function LibraryPage() {
   const navigate = useNavigate();
@@ -29,8 +163,17 @@ export default function LibraryPage() {
   }, [loadClips]);
 
   const filtered = useMemo(
-    () => clips.filter((c) => c.filename.toLowerCase().includes(search.toLowerCase())),
+    () => clips.filter((clip) => {
+      const query = search.toLowerCase();
+      return [clip.filename, clip.title, clip.description, clip.game]
+        .some((value) => value.toLowerCase().includes(query));
+    }),
     [clips, search],
+  );
+
+  const uploadMap = useMemo(
+    () => new Map(uploads.map((t) => [t.clip_path, t])),
+    [uploads],
   );
 
   const handleDelete = useCallback(async (filename: string) => {
@@ -43,18 +186,14 @@ export default function LibraryPage() {
     }
   }, [deleteClip]);
 
-  const handleUpload = useCallback(async (path: string, filename: string) => {
+  const handleUpload = useCallback(async (path: string, filename: string, game: string) => {
     setUploadingClip(filename);
     try {
-      await uploadClip(path, filename);
+      await uploadClip(path, filename, game || undefined);
     } finally {
       setUploadingClip(null);
     }
   }, [uploadClip]);
-
-  const taskForClip = useCallback((path: string) => {
-    return uploads.find((t: { clip_path: string }) => t.clip_path === path);
-  }, [uploads]);
 
   return (
     <div className="h-full flex flex-col">
@@ -110,128 +249,23 @@ export default function LibraryPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((clip) => {
-              const task = taskForClip(clip.path);
-              const isUploaded = task?.status === "Completed";
-              const isUploading = task?.status === "Uploading" || uploadingClip === clip.filename;
-              const isFailed = task?.status?.startsWith("Failed");
-              const shareUrl = task?.share_url;
-
-              return (
-                <div
-                  key={clip.id}
-                  onClick={() => navigate(`/clip/${clip.filename}`, { state: { clip } })}
-                  className="group aspect-video bg-surface rounded-2xl border border-white/10 overflow-hidden relative cursor-pointer"
-                >
-                  <ClipThumbnail path={clip.path} filename={clip.filename} />
-
-                  {/* Upload status badge */}
-                  {isUploaded ? (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600/80 text-[10px] text-white font-medium">
-                      <Check className="size-3" />
-                      Uploaded
-                    </div>
-                  ) : isFailed ? (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600/80 text-[10px] text-white font-medium">
-                      Failed
-                    </div>
-                  ) : isUploading ? (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/80 text-[10px] text-white font-medium">
-                      <Loader2 className="size-3 animate-spin" />
-                      Uploading
-                    </div>
-                  ) : null}
-
-                  {/* Progress bar for uploading */}
-                  {isUploading && task && (
-                    <div className="absolute bottom-9 left-2 right-2 h-1 rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        className="h-full bg-accent transition-all duration-300"
-                        style={{ width: `${task.progress * 100}%` }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Metadata overlay at bottom */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-6">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                      <span>{formatDuration(clip.duration_secs)}</span>
-                      <span>{formatSize(clip.size_bytes)}</span>
-                    </div>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">
-                      {formatDate(clip.created_at)}
-                    </p>
-                  </div>
-
-                  {/* Hover actions */}
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/clip/${clip.filename}`, { state: { clip } }); }}
-                      className="p-3 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
-                      title="Play in app"
-                    >
-                      <Play className="size-5 fill-white ml-0.5" />
-                    </button>
-
-                    {isUploaded && shareUrl ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); copyShareUrl(shareUrl); }}
-                        className="p-3 rounded-full bg-emerald-600/40 hover:bg-emerald-600/60 text-white transition-colors"
-                        title="Copy share link"
-                      >
-                        <Link2 className="size-5" />
-                      </button>
-                    ) : cloudAuthed ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleUpload(clip.path, clip.filename); }}
-                      disabled={isUploading}
-                      className="p-3 rounded-full bg-accent/40 hover:bg-accent/60 text-white transition-colors disabled:opacity-40"
-                        title={isUploading ? "Uploading..." : "Upload to cloud"}
-                      >
-                        {isUploading ? (
-                          <Loader2 className="size-5 animate-spin" />
-                        ) : (
-                          <Upload className="size-5" />
-                        )}
-                      </button>
-                    ) : null}
-
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShowConfirm(clip.filename); }}
-                      className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-900/60 text-zinc-300 hover:text-red-300 transition-colors absolute top-2 right-2"
-                      title="Delete clip"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-
-                  {/* Delete confirmation overlay */}
-                  {showConfirm === clip.filename && (
-                    <div
-                      className="absolute inset-0 bg-[#050816]/90 flex flex-col items-center justify-center p-4 gap-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <p className="text-sm text-zinc-300 text-center">Delete this clip?</p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleDelete(clip.filename)}
-                          disabled={confirming}
-                          className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 text-white rounded-md transition-colors disabled:opacity-50"
-                        >
-                          {confirming ? "Deleting..." : "Delete"}
-                        </button>
-                        <button
-                          onClick={() => setShowConfirm(null)}
-                          className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-md transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {filtered.map((clip) => (
+              <MemoClipCard
+                key={clip.id}
+                clip={clip}
+                task={uploadMap.get(clip.path)}
+                showConfirm={showConfirm}
+                confirming={confirming}
+                uploadingClip={uploadingClip}
+                onDelete={handleDelete}
+                onUpload={handleUpload}
+                onNavigate={(filename) => navigate(`/clip/${filename}`, { state: { clip } })}
+                onCopyShare={copyShareUrl}
+                onShowConfirm={setShowConfirm}
+                onHideConfirm={() => setShowConfirm(null)}
+                cloudAuthed={cloudAuthed}
+              />
+            ))}
           </div>
         )}
       </div>

@@ -10,7 +10,7 @@ use crate::capture::{enumerate_capture_sources, CaptureSources, CaptureTarget, P
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::create_encoder;
 use crate::recording::{chrono_now_formatted, Recorder};
-use crate::settings::config::{is_native_resolution, resolution_dimensions};
+use crate::settings::config::resolution_dimensions;
 use crate::settings::SettingsManager;
 
 /// Start the ring-buffer recording and spawn the polling task.
@@ -100,10 +100,11 @@ pub async fn save_clip(
     // Step 2: Build encoder config from settings
     let rs = &settings.recording;
     let first = &clip_data.frames[0];
-    let (target_width, target_height) = if is_native_resolution(&rs.resolution) {
+    let dims = resolution_dimensions(&rs.resolution);
+    let (target_width, target_height) = if dims == (0, 0) {
         (first.width, first.height)
     } else {
-        resolution_dimensions(&rs.resolution)
+        dims
     };
     let enc_config = EncoderConfig {
         codec: Codec::H264,
@@ -123,34 +124,16 @@ pub async fn save_clip(
     std::fs::create_dir_all(&clip_data.output_dir)
         .map_err(|e| format!("Failed to create output directory: {e}"))?;
 
-    // Step 4: If SPS/PPS were cached from the encoder, prepend them so
-    // extract_sps_pps can find NAL type 7/8 without needing the original
-    // keyframe (which may have been evicted from the ring buffer).
+    // Step 4: Keep only a decodable H.264 sequence. Raw fallback frames cannot
+    // be mixed into an H.264 MP4 track, and decoding must begin at a sync frame.
     eprintln!(
         "[recording] save_clip: {} frames, sps={} pps={}",
         clip_data.frames.len(),
         clip_data.sps.len(),
         clip_data.pps.len()
     );
-    let frames_with_sps = if !clip_data.sps.is_empty() && !clip_data.pps.is_empty() {
-        let mut augmented = clip_data.frames;
-        if let Some(first) = augmented.first_mut() {
-            // Prepend SPS + PPS to the first frame's data so extract_sps_pps
-            // finds them. The first frame may not be a keyframe, but MP4 requires
-            // SPS/PPS at the stream level regardless.
-            let mut combined = clip_data.sps.clone();
-            combined.extend_from_slice(&clip_data.pps);
-            combined.extend_from_slice(&first.data);
-            let total = combined.len();
-            first.data = std::sync::Arc::new(combined);
-            first.is_sync = true;
-            eprintln!("[recording] prepended SPS/PPS to frame 0 ({total} bytes total)");
-        }
-        augmented
-    } else {
-        eprintln!("[recording] no SPS/PPS cached — will scan frames directly");
-        clip_data.frames
-    };
+    let frames_with_sps =
+        prepare_h264_clip_frames(clip_data.frames, &clip_data.sps, &clip_data.pps)?;
 
     // Step 5: Encode (NO lock held — polling continues)
     eprintln!(
@@ -176,9 +159,49 @@ pub async fn save_clip(
         }
     }
 
-    let _ = app.emit("clip-saved", &output_path.to_string_lossy().to_string());
+    let output_str = output_path.to_string_lossy().to_string();
+    let _ = app.emit("clip-saved", &output_str);
 
-    Ok(output_path.to_string_lossy().to_string())
+    Ok(output_str)
+}
+
+/// Select a decodable H.264 sequence for MP4 muxing.
+///
+/// Raw NV12 frames are a capture fallback and cannot be written to an AVC
+/// track. Starting at a sync frame prevents clips that begin with undecodable
+/// P-frames. Cached parameter sets are AVCC-formatted and are attached to that
+/// sync sample so the muxer can build the AVC configuration.
+fn prepare_h264_clip_frames(
+    frames: Vec<crate::buffer::StoredFrame>,
+    sps: &[u8],
+    pps: &[u8],
+) -> Result<Vec<crate::buffer::StoredFrame>, String> {
+    let first_sync = frames
+        .iter()
+        .position(|frame| frame.pixel_format == PixelFormat::H264 && frame.is_sync)
+        .ok_or_else(|| {
+            "No H.264 keyframe is available yet. Keep recording for a moment and try again."
+                .to_string()
+        })?;
+
+    let mut h264_frames: Vec<_> = frames
+        .into_iter()
+        .skip(first_sync)
+        .filter(|frame| frame.pixel_format == PixelFormat::H264)
+        .collect();
+
+    if !sps.is_empty() && !pps.is_empty() {
+        let first = h264_frames
+            .first_mut()
+            .expect("the selected sync frame is H.264");
+        let mut data = Vec::with_capacity(sps.len() + pps.len() + first.data.len());
+        data.extend_from_slice(sps);
+        data.extend_from_slice(pps);
+        data.extend_from_slice(&first.data);
+        first.data = std::sync::Arc::new(data);
+    }
+
+    Ok(h264_frames)
 }
 
 /// Get a live preview frame as a JPEG base64 data URL.
@@ -189,6 +212,63 @@ pub async fn get_preview_frame(
 ) -> Result<Option<String>, String> {
     let rec = recorder.lock().map_err(|e| e.to_string())?;
     Ok(rec.get_preview_frame())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    fn frame(
+        pixel_format: PixelFormat,
+        is_sync: bool,
+        data: Vec<u8>,
+    ) -> crate::buffer::StoredFrame {
+        crate::buffer::StoredFrame {
+            data: Arc::new(data),
+            width: 1920,
+            height: 1080,
+            stride: 0,
+            pixel_format,
+            timestamp: Instant::now(),
+            is_sync,
+        }
+    }
+
+    #[test]
+    fn clip_preparation_attaches_parameters_to_first_h264_sync_frame() {
+        let sps = [0, 0, 0, 2, 0x67, 0x42];
+        let pps = [0, 0, 0, 2, 0x68, 0xCE];
+        let sync_sample = vec![0, 0, 0, 2, 0x65, 0x88];
+        let next_sample = vec![0, 0, 0, 2, 0x41, 0x9A];
+        let frames = vec![
+            frame(PixelFormat::Nv12, true, vec![0; 8]),
+            frame(PixelFormat::H264, false, next_sample.clone()),
+            frame(PixelFormat::H264, true, sync_sample.clone()),
+            frame(PixelFormat::H264, false, next_sample.clone()),
+        ];
+
+        let prepared = prepare_h264_clip_frames(frames, &sps, &pps).unwrap();
+
+        assert_eq!(prepared.len(), 2);
+        assert!(prepared[0].is_sync);
+        let expected = [sps.as_slice(), pps.as_slice(), sync_sample.as_slice()].concat();
+        assert_eq!(prepared[0].data.as_slice(), expected);
+        assert_eq!(prepared[1].data.as_slice(), next_sample);
+    }
+
+    #[test]
+    fn clip_preparation_requires_an_h264_sync_frame() {
+        let frames = vec![
+            frame(PixelFormat::Nv12, true, vec![0; 8]),
+            frame(PixelFormat::H264, false, vec![0, 0, 0, 2, 0x41, 0x9A]),
+        ];
+
+        let error = prepare_h264_clip_frames(frames, &[], &[]).unwrap_err();
+
+        assert!(error.contains("keyframe"));
+    }
 }
 
 /// Get the current frame count in the ring buffer.
@@ -265,8 +345,9 @@ pub async fn set_capture_target(
     Ok(())
 }
 
-/// Generate a JPEG thumbnail from a captured frame and save it alongside the MP4.
-/// Downscales to 320px wide while preserving aspect ratio.
+/// Generate a high-quality JPEG thumbnail from a captured frame and save it
+/// alongside the MP4. The image fits within a 1280×720 box for crisp library
+/// cards and a useful poster in the clip editor.
 fn generate_thumbnail(
     frame: &crate::capture::CapturedFrame,
     thumb_path: &Path,
@@ -275,9 +356,7 @@ fn generate_thumbnail(
 
     let w = frame.width;
     let h = frame.height;
-    let max_w = 320u32;
-    let thumb_w = max_w.min(w).max(1);
-    let thumb_h = (h as f64 * (thumb_w as f64 / w as f64)).round().max(1.0) as u32;
+    let (thumb_w, thumb_h) = thumbnail_dimensions(w, h);
 
     let rgb = match frame.pixel_format {
         PixelFormat::Nv12 => crate::capture::nv12_to_rgb(&frame.data, w, h),
@@ -303,10 +382,42 @@ fn generate_thumbnail(
 
     let file = std::fs::File::create(thumb_path)
         .map_err(|e| format!("Failed to create thumbnail file: {e}"))?;
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, 75);
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, 90);
     encoder
         .encode(&resized, thumb_w, thumb_h, image::ExtendedColorType::Rgb8)
         .map_err(|e| format!("JPEG encode failed: {e}"))?;
 
     Ok(())
+}
+
+fn thumbnail_dimensions(width: u32, height: u32) -> (u32, u32) {
+    const MAX_WIDTH: u32 = 1280;
+    const MAX_HEIGHT: u32 = 720;
+
+    if width == 0 || height == 0 {
+        return (1, 1);
+    }
+
+    let scale = (MAX_WIDTH as f64 / width as f64)
+        .min(MAX_HEIGHT as f64 / height as f64)
+        .min(1.0);
+    (
+        (width as f64 * scale).round().max(1.0) as u32,
+        (height as f64 * scale).round().max(1.0) as u32,
+    )
+}
+
+#[cfg(test)]
+mod thumbnail_tests {
+    use super::thumbnail_dimensions;
+
+    #[test]
+    fn thumbnail_dimensions_preserve_720p_landscape() {
+        assert_eq!(thumbnail_dimensions(1920, 1080), (1280, 720));
+    }
+
+    #[test]
+    fn thumbnail_dimensions_fit_tall_sources() {
+        assert_eq!(thumbnail_dimensions(1080, 1920), (405, 720));
+    }
 }

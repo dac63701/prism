@@ -3,10 +3,8 @@
 //! The [`BufferManager`] orchestrates frame ingestion from a capture backend
 //! and enables saving clips on demand (hotkey trigger, moment detection).
 
-pub mod pool;
 pub mod ring;
 
-pub use pool::FramePool;
 pub use ring::{RingBuffer, StoredFrame};
 use std::time::Duration;
 
@@ -49,7 +47,6 @@ impl BufferConfig {
 /// Manages the ring buffer and frame pool for continuous recording.
 pub struct BufferManager {
     buffer: RingBuffer,
-    pool: FramePool,
     config: BufferConfig,
 }
 
@@ -65,19 +62,13 @@ impl BufferManager {
     const MAX_FRAME_CAPACITY: usize = 30_000;
 
     /// Create a new buffer manager with the given config and estimated resolution.
-    pub fn new(config: BufferConfig, width: u32, height: u32) -> Self {
-        let frame_size = config.frame_size(width, height);
-        let pool = FramePool::new(frame_size);
+    pub fn new(config: BufferConfig, _width: u32, _height: u32) -> Self {
         // Frame-capacity ceiling: at most MAX_FRAME_CAPACITY or config capacity,
         // whichever is smaller.
         let capacity = config.capacity().clamp(60, Self::MAX_FRAME_CAPACITY);
         let buffer = RingBuffer::with_byte_budget(capacity, Self::SHADOW_BUFFER_BYTES);
 
-        Self {
-            buffer,
-            pool,
-            config,
-        }
+        Self { buffer, config }
     }
 
     /// Push a frame into the ring buffer.

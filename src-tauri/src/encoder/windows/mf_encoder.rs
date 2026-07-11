@@ -19,6 +19,12 @@ use crate::encoder::EncodeError;
 
 static MF_INITIALIZED: OnceLock<Result<(), windows::core::Error>> = OnceLock::new();
 
+/// Pack Media Foundation size and ratio attributes: the first value occupies
+/// the high 32 bits and the second value occupies the low 32 bits.
+fn pack_mf_attribute_pair(first: u32, second: u32) -> u64 {
+    ((first as u64) << 32) | second as u64
+}
+
 fn ensure_mf() -> Result<(), EncodeError> {
     let result =
         MF_INITIALIZED.get_or_init(|| unsafe { MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET) });
@@ -101,14 +107,12 @@ impl MfH264Encoder {
                 .SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)
                 .map_err(|e| EncodeError::InitFailed(format!("SetUINT32 interlace: {e}")))?;
 
-            // Frame size packed as: height << 32 | width
-            let frame_size: u64 = (height as u64) << 32 | width as u64;
+            let frame_size = pack_mf_attribute_pair(width, height);
             input_type
                 .SetUINT64(&MF_MT_FRAME_SIZE, frame_size)
                 .map_err(|e| EncodeError::InitFailed(format!("SetUINT64 frame size: {e}")))?;
 
-            // Frame rate packed as: denominator << 32 | numerator
-            let frame_rate: u64 = (1u64) << 32 | fps as u64;
+            let frame_rate = pack_mf_attribute_pair(fps, 1);
             input_type
                 .SetUINT64(&MF_MT_FRAME_RATE, frame_rate)
                 .map_err(|e| EncodeError::InitFailed(format!("SetUINT64 frame rate: {e}")))?;
@@ -118,11 +122,9 @@ impl MfH264Encoder {
                 .SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, pixel_aspect)
                 .ok();
 
-            transform
-                .SetInputType(0, &input_type, 0)
-                .map_err(|e| EncodeError::InitFailed(format!("SetInputType: {e}")))?;
-
             // ------ Set output type: H.264 ------
+            // The Microsoft encoder requires these attributes to configure its
+            // H.264 output; the advertised type omits them until after setup.
             let output_type: IMFMediaType = MFCreateMediaType()
                 .map_err(|e| EncodeError::InitFailed(format!("MFCreateMediaType output: {e}")))?;
 
@@ -133,35 +135,41 @@ impl MfH264Encoder {
                 .SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)
                 .map_err(|e| EncodeError::InitFailed(format!("SetGUID subtype out: {e}")))?;
             output_type
+                .SetUINT32(&MF_MT_AVG_BITRATE, bitrate_kbps.saturating_mul(1_000))
+                .map_err(|e| EncodeError::InitFailed(format!("SetUINT32 bitrate: {e}")))?;
+            output_type
+                .SetUINT64(&MF_MT_FRAME_SIZE, frame_size)
+                .map_err(|e| EncodeError::InitFailed(format!("SetUINT64 frame size out: {e}")))?;
+            output_type
+                .SetUINT64(&MF_MT_FRAME_RATE, frame_rate)
+                .map_err(|e| EncodeError::InitFailed(format!("SetUINT64 frame rate out: {e}")))?;
+            output_type
                 .SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)
                 .map_err(|e| EncodeError::InitFailed(format!("SetUINT32 interlace out: {e}")))?;
-
-            // Average bitrate in bps
             output_type
-                .SetUINT32(&MF_MT_AVG_BITRATE, bitrate_kbps * 1000)
-                .map_err(|e| EncodeError::InitFailed(format!("SetUINT32 bitrate: {e}")))?;
-
-            // Frame size on output (must match input)
-            output_type.SetUINT64(&MF_MT_FRAME_SIZE, frame_size).ok();
-
-            // Frame rate on output
-            output_type.SetUINT64(&MF_MT_FRAME_RATE, frame_rate).ok();
-
-            // Set Baseline profile (no B-frames) for simple PTS/DTS
-            // eAVEncH264VProfile_Base = 66
-            output_type.SetUINT32(&MF_MT_MPEG2_PROFILE, 66).ok();
+                .SetUINT32(&MF_MT_MPEG2_PROFILE, 66)
+                .map_err(|e| EncodeError::InitFailed(format!("SetUINT32 profile: {e}")))?;
+            output_type
+                .SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, pixel_aspect)
+                .map_err(|e| EncodeError::InitFailed(format!("SetUINT64 pixel aspect out: {e}")))?;
 
             transform
                 .SetOutputType(0, &output_type, 0)
                 .map_err(|e| EncodeError::InitFailed(format!("SetOutputType: {e}")))?;
 
-            // Set Baseline profile (MF_MT_MPEG2_PROFILE=66) disables B-frames
-            // on most MFT implementations, keeping PTS == DTS for simple muxing.
-            // ICodecAPI configuration is optional but adds complexity — skip it.
+            // The Windows H.264 encoder declares the input stream dependent on
+            // the output stream. Negotiate H.264 output first; otherwise it
+            // returns MF_E_TRANSFORM_TYPE_NOT_SET from SetInputType.
+            transform
+                .SetInputType(0, &input_type, 0)
+                .map_err(|e| EncodeError::InitFailed(format!("SetInputType: {e}")))?;
 
             transform
                 .ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)
                 .map_err(|e| EncodeError::InitFailed(format!("Begin streaming: {e}")))?;
+            transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)
+                .map_err(|e| EncodeError::InitFailed(format!("Start stream: {e}")))?;
 
             Ok(Self {
                 transform,
@@ -244,50 +252,88 @@ impl MfH264Encoder {
             let mut packets: Vec<EncodedPacket> = Vec::new();
 
             loop {
-                let output = MFT_OUTPUT_DATA_BUFFER {
-                    dwStreamID: 0,
-                    ..Default::default()
-                };
-
+                let mut output = self.create_output_buffer()?;
                 let mut status: u32 = 0;
 
-                let result = self
-                    .transform
-                    .ProcessOutput(0, &mut [output.clone()], &mut status);
+                let result =
+                    self.transform
+                        .ProcessOutput(0, std::slice::from_mut(&mut output), &mut status);
 
                 if result.is_ok() {
-                    if let Some(ref out_sample) = *output.pSample {
+                    let packet_result = (|| -> Result<Option<EncodedPacket>, EncodeError> {
+                        let Some(ref out_sample) = *output.pSample else {
+                            return Ok(None);
+                        };
                         let raw = collect_sample_bytes(out_sample)?;
-                        let is_key = is_keyframe(out_sample);
+                        let avcc = h264_to_avcc(&raw)?;
+                        let clean_point = is_keyframe(out_sample);
+                        let has_idr = avcc_contains_idr(&avcc);
+                        let is_key = clean_point || has_idr;
 
-                        // Capture SPS/PPS from raw Annex B output if not yet ready
+                        if has_idr && !clean_point {
+                            eprintln!(
+                                "[prism] marked H.264 packet as sync from its IDR NAL (MFT omitted CleanPoint)"
+                            );
+                        }
+
+                        // MFTs may return either Annex B or AVCC samples. Normalize
+                        // first so both packet storage and parameter-set parsing use
+                        // the AVCC format required by the MP4 muxer.
                         if !self.sps_pps_ready {
-                            capture_sps_pps_from_annex_b(&raw, &mut self.sps, &mut self.pps);
+                            capture_sps_pps_from_avcc(&avcc, &mut self.sps, &mut self.pps);
                             if !self.sps.is_empty() && !self.pps.is_empty() {
                                 self.sps_pps_ready = true;
                             }
                         }
 
-                        let avcc = annex_b_to_avcc(&raw);
-                        packets.push(EncodedPacket {
+                        Ok(Some(EncodedPacket {
                             data: avcc,
                             is_sync: is_key,
-                        });
+                        }))
+                    })();
+                    release_output_buffer(&mut output);
+                    if let Some(packet) = packet_result? {
+                        packets.push(packet);
                     }
                 } else if let Err(err) = &result {
-                    let code = err.code().0;
-                    if code as u32 == 0xC00D3704u32 {
-                        // MF_E_TRANSFORM_NEED_MORE_INPUT
+                    if err.code() == MF_E_TRANSFORM_NEED_MORE_INPUT {
+                        // Normal encoder latency: retain input internally until
+                        // enough samples are available to produce output.
+                        release_output_buffer(&mut output);
                         break;
                     }
-                    if code as u32 == 0xC00D370Eu32 {
-                        // MF_E_TRANSFORM_STREAM_CHANGE — get new output type
+                    if err.code() == MF_E_TRANSFORM_STREAM_CHANGE {
+                        // Renegotiate the output type requested by the MFT.
                         if let Ok(new_type) = self.transform.GetOutputAvailableType(0, 0) {
                             self.transform.SetOutputType(0, &new_type, 0).ok();
                         }
+                        release_output_buffer(&mut output);
                         continue;
                     }
+                    release_output_buffer(&mut output);
                     return Err(EncodeError::EncodeFailed(format!("ProcessOutput: {err}")));
+                }
+                if result.is_ok() {
+                    continue;
+                }
+            }
+
+            // Fallback: if SPS/PPS still not found in the bitstream, try
+            // extracting them from the output media type. Some MFT
+            // implementations (certain GPU drivers) omit SPS/PPS from the
+            // encoded bitstream but provide them via MF_MT_MPEG_SEQUENCE_HEADER.
+            if !self.sps_pps_ready {
+                if let Ok(()) =
+                    capture_sps_pps_from_media_type(&self.transform, &mut self.sps, &mut self.pps)
+                {
+                    if !self.sps.is_empty() && !self.pps.is_empty() {
+                        self.sps_pps_ready = true;
+                        eprintln!(
+                            "[prism] captured SPS({}) PPS({}) from output media type",
+                            self.sps.len(),
+                            self.pps.len()
+                        );
+                    }
                 }
             }
 
@@ -295,6 +341,45 @@ impl MfH264Encoder {
             Ok(packets)
         }
     }
+
+    /// Create the output descriptor required by this MFT. Some encoders provide
+    /// their own samples; others require a caller-allocated media buffer.
+    unsafe fn create_output_buffer(&self) -> Result<MFT_OUTPUT_DATA_BUFFER, EncodeError> {
+        let info = self
+            .transform
+            .GetOutputStreamInfo(0)
+            .map_err(|e| EncodeError::EncodeFailed(format!("GetOutputStreamInfo: {e}")))?;
+        let provider_flags =
+            (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0) as u32;
+
+        if info.dwFlags & provider_flags != 0 {
+            return Ok(MFT_OUTPUT_DATA_BUFFER {
+                dwStreamID: 0,
+                ..Default::default()
+            });
+        }
+
+        let sample: IMFSample = MFCreateSample()
+            .map_err(|e| EncodeError::EncodeFailed(format!("Create output sample: {e}")))?;
+        let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(info.cbSize.max(1))
+            .map_err(|e| EncodeError::EncodeFailed(format!("Create output buffer: {e}")))?;
+        sample
+            .AddBuffer(&buffer)
+            .map_err(|e| EncodeError::EncodeFailed(format!("Add output buffer: {e}")))?;
+
+        Ok(MFT_OUTPUT_DATA_BUFFER {
+            dwStreamID: 0,
+            pSample: std::mem::ManuallyDrop::new(Some(sample)),
+            ..Default::default()
+        })
+    }
+}
+
+/// The generated bindings use `ManuallyDrop` for COM pointers in this FFI
+/// struct, so release them explicitly after every `ProcessOutput` call.
+unsafe fn release_output_buffer(output: &mut MFT_OUTPUT_DATA_BUFFER) {
+    std::mem::ManuallyDrop::drop(&mut output.pSample);
+    std::mem::ManuallyDrop::drop(&mut output.pEvents);
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +485,62 @@ fn annex_b_to_avcc(annex_b: &[u8]) -> Vec<u8> {
     avcc
 }
 
+/// Normalize a Media Foundation H.264 packet to AVCC. Hardware MFTs may emit
+/// either Annex B or AVCC depending on the driver and negotiated output type.
+fn h264_to_avcc(data: &[u8]) -> Result<Vec<u8>, EncodeError> {
+    if is_valid_avcc(data) {
+        return Ok(data.to_vec());
+    }
+
+    let avcc = annex_b_to_avcc(data);
+    if is_valid_avcc(&avcc) {
+        Ok(avcc)
+    } else {
+        Err(EncodeError::EncodeFailed(
+            "MFT returned an invalid H.264 packet".into(),
+        ))
+    }
+}
+
+fn is_valid_avcc(data: &[u8]) -> bool {
+    let mut offset = 0;
+    let mut nal_count = 0;
+
+    while offset + 4 <= data.len() {
+        let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+        offset += 4;
+        if nal_len == 0 || offset + nal_len > data.len() {
+            return false;
+        }
+        offset += nal_len;
+        nal_count += 1;
+    }
+
+    nal_count > 0 && offset == data.len()
+}
+
+/// H.264 IDR slices (NAL type 5) are independently decodable keyframes.
+/// Some Media Foundation encoders omit `MFSampleExtension_CleanPoint` on their
+/// output sample, so relying on that metadata alone loses valid keyframes.
+fn avcc_contains_idr(data: &[u8]) -> bool {
+    let mut offset = 0;
+
+    while offset + 4 <= data.len() {
+        let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+        let nal_start = offset + 4;
+        let nal_end = nal_start + nal_len;
+        if nal_len == 0 || nal_end > data.len() {
+            return false;
+        }
+        if data[nal_start] & 0x1F == 5 {
+            return true;
+        }
+        offset = nal_end;
+    }
+
+    false
+}
+
 // ---------------------------------------------------------------------------
 // SPS/PPS access
 // ---------------------------------------------------------------------------
@@ -421,60 +562,202 @@ impl MfH264Encoder {
     }
 }
 
-/// Scan raw Annex B data for SPS (NAL type 7) and PPS (NAL type 8) and
-/// store them in AVCC format (4-byte length prefix) into the output vectors.
-fn capture_sps_pps_from_annex_b(data: &[u8], sps_out: &mut Vec<u8>, pps_out: &mut Vec<u8>) {
-    let mut i = 0;
-    while i < data.len() {
-        // Find start code
-        if i + 4 <= data.len()
-            && data[i] == 0
-            && data[i + 1] == 0
-            && data[i + 2] == 0
-            && data[i + 3] == 1
-        {
-            i += 4;
-        } else if i + 3 <= data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
-            i += 3;
-        } else {
-            i += 1;
-            continue;
-        }
-
-        if i >= data.len() {
+/// Scan AVCC data for SPS (NAL type 7) and PPS (NAL type 8), preserving their
+/// AVCC length prefixes for use by the clip-preparation path.
+fn capture_sps_pps_from_avcc(data: &[u8], sps_out: &mut Vec<u8>, pps_out: &mut Vec<u8>) {
+    let mut offset = 0;
+    while offset + 4 <= data.len() {
+        let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+        let nal_start = offset + 4;
+        let nal_end = nal_start + nal_len;
+        if nal_len == 0 || nal_end > data.len() {
             break;
         }
 
-        let nal_type = data[i] & 0x1F;
+        match data[nal_start] & 0x1F {
+            7 => *sps_out = data[offset..nal_end].to_vec(),
+            8 => *pps_out = data[offset..nal_end].to_vec(),
+            _ => {}
+        }
+        offset = nal_end;
+    }
+}
 
-        // Find the next start code (or end of data)
-        let nal_start = i;
-        while i < data.len() {
-            if i + 4 <= data.len()
-                && data[i] == 0
-                && data[i + 1] == 0
-                && data[i + 2] == 0
-                && data[i + 3] == 1
-            {
-                break;
-            }
-            if i + 3 <= data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
-                break;
-            }
-            i += 1;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn avcc(nals: &[&[u8]]) -> Vec<u8> {
+        let mut data = Vec::new();
+        for nal in nals {
+            data.extend_from_slice(&(nal.len() as u32).to_be_bytes());
+            data.extend_from_slice(nal);
+        }
+        data
+    }
+
+    #[test]
+    fn packs_media_foundation_size_and_rate_in_api_order() {
+        assert_eq!(pack_mf_attribute_pair(1920, 1080), 0x0000_0780_0000_0438);
+        assert_eq!(pack_mf_attribute_pair(60, 1), 0x0000_003C_0000_0001);
+    }
+
+    #[test]
+    fn preserves_avcc_samples_and_captures_parameter_sets() {
+        let sps = [0x67, 0x42, 0x00, 0x1E];
+        let pps = [0x68, 0xCE, 0x06, 0xE2];
+        let idr = [0x65, 0x88, 0x84];
+        let packet = avcc(&[&sps, &pps, &idr]);
+
+        let normalized = h264_to_avcc(&packet).unwrap();
+        let mut found_sps = Vec::new();
+        let mut found_pps = Vec::new();
+        capture_sps_pps_from_avcc(&normalized, &mut found_sps, &mut found_pps);
+
+        assert_eq!(normalized, packet);
+        assert_eq!(found_sps, avcc(&[&sps]));
+        assert_eq!(found_pps, avcc(&[&pps]));
+    }
+
+    #[test]
+    fn converts_annex_b_samples_and_captures_parameter_sets() {
+        let sps = [0x67, 0x42, 0x00, 0x1E];
+        let pps = [0x68, 0xCE, 0x06, 0xE2];
+        let idr = [0x65, 0x88, 0x84];
+        let mut annex_b = Vec::new();
+        for nal in [&sps[..], &pps[..], &idr[..]] {
+            annex_b.extend_from_slice(&[0, 0, 0, 1]);
+            annex_b.extend_from_slice(nal);
         }
 
-        let nal_data = &data[nal_start..i];
-        if !nal_data.is_empty() && (nal_type == 7 || nal_type == 8) {
-            let mut avcc = Vec::with_capacity(4 + nal_data.len());
-            avcc.extend_from_slice(&(nal_data.len() as u32).to_be_bytes());
-            avcc.extend_from_slice(nal_data);
-            if nal_type == 7 {
+        let normalized = h264_to_avcc(&annex_b).unwrap();
+        let mut found_sps = Vec::new();
+        let mut found_pps = Vec::new();
+        capture_sps_pps_from_avcc(&normalized, &mut found_sps, &mut found_pps);
+
+        assert_eq!(normalized, avcc(&[&sps, &pps, &idr]));
+        assert_eq!(found_sps, avcc(&[&sps]));
+        assert_eq!(found_pps, avcc(&[&pps]));
+    }
+
+    #[test]
+    fn rejects_malformed_h264_packets() {
+        let error = h264_to_avcc(&[0, 0, 0, 8, 0x65]).unwrap_err();
+
+        assert!(error.to_string().contains("invalid H.264 packet"));
+    }
+
+    #[test]
+    fn detects_idr_keyframes_without_clean_point_metadata() {
+        let p_slice = [0x41, 0x9A, 0x22];
+        let idr = [0x65, 0x88, 0x84];
+
+        assert!(!avcc_contains_idr(&avcc(&[&p_slice])));
+        assert!(avcc_contains_idr(&avcc(&[&p_slice, &idr])));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Fallback: SPS/PPS from output media type
+// ---------------------------------------------------------------------------
+
+/// Extract SPS/PPS from the MFT's output media type via
+/// `MF_MT_MPEG_SEQUENCE_HEADER`. This is a fallback for MFT implementations
+/// that don't include SPS/PPS in the encoded bitstream.
+///
+/// The blob is in AVCC extradata format:
+///   [1B version] [1B profile] [1B compat] [1B level]
+///   [1B: 0xFC | (nal_length_size-1)] [1B: 0xE0 | num_sps]
+///   for each SPS: [2B length][SPS NAL]
+///   [1B num_pps]
+///   for each PPS: [2B length][PPS NAL]
+fn capture_sps_pps_from_media_type(
+    transform: &IMFTransform,
+    sps_out: &mut Vec<u8>,
+    pps_out: &mut Vec<u8>,
+) -> Result<(), EncodeError> {
+    unsafe {
+        let current_type = transform
+            .GetOutputCurrentType(0)
+            .map_err(|e| EncodeError::EncodeFailed(format!("GetOutputCurrentType: {e}")))?;
+
+        let mut blob_size = current_type
+            .GetBlobSize(&MF_MT_MPEG_SEQUENCE_HEADER)
+            .map_err(|e| EncodeError::EncodeFailed(format!("GetBlobSize: {e}")))?;
+
+        if blob_size == 0 {
+            return Err(EncodeError::EncodeFailed("Empty sequence header".into()));
+        }
+
+        let mut blob = vec![0u8; blob_size as usize];
+        let p_blob_size: *mut u32 = &mut blob_size;
+        current_type
+            .GetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, &mut blob, Some(p_blob_size))
+            .map_err(|e| EncodeError::EncodeFailed(format!("GetBlob: {e}")))?;
+
+        if blob_size as usize > blob.len() {
+            blob.resize(blob_size as usize, 0);
+            current_type
+                .GetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, &mut blob, Some(p_blob_size))
+                .map_err(|e| EncodeError::EncodeFailed(format!("GetBlob retry: {e}")))?;
+        }
+
+        drop(current_type);
+
+        // Parse AVCC extradata
+        if blob.len() < 6 {
+            return Err(EncodeError::EncodeFailed(
+                "Sequence header too short".into(),
+            ));
+        }
+
+        let num_sps = (blob[5] & 0x1F) as usize;
+        let mut offset = 6usize;
+
+        for _ in 0..num_sps {
+            if offset + 2 > blob.len() {
+                break;
+            }
+            let sps_len = u16::from_be_bytes([blob[offset], blob[offset + 1]]) as usize;
+            offset += 2;
+            if offset + sps_len > blob.len() {
+                break;
+            }
+            if sps_out.is_empty() {
+                let mut avcc = Vec::with_capacity(4 + sps_len);
+                avcc.extend_from_slice(&(sps_len as u32).to_be_bytes());
+                avcc.extend_from_slice(&blob[offset..offset + sps_len]);
                 *sps_out = avcc;
-            } else {
+            }
+            offset += sps_len;
+        }
+
+        if offset >= blob.len() {
+            return Ok(());
+        }
+
+        let num_pps = blob[offset] as usize;
+        offset += 1;
+
+        for _ in 0..num_pps {
+            if offset + 2 > blob.len() {
+                break;
+            }
+            let pps_len = u16::from_be_bytes([blob[offset], blob[offset + 1]]) as usize;
+            offset += 2;
+            if offset + pps_len > blob.len() {
+                break;
+            }
+            if pps_out.is_empty() {
+                let mut avcc = Vec::with_capacity(4 + pps_len);
+                avcc.extend_from_slice(&(pps_len as u32).to_be_bytes());
+                avcc.extend_from_slice(&blob[offset..offset + pps_len]);
                 *pps_out = avcc;
             }
+            offset += pps_len;
         }
+
+        Ok(())
     }
 }
 

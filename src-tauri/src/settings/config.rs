@@ -135,7 +135,7 @@ pub struct CloudSettings {
 impl Default for CloudSettings {
     fn default() -> Self {
         Self {
-            server_url: String::new(),
+            server_url: String::from("https://goprism.studio"),
             api_key: String::new(),
             auto_upload: false,
             max_concurrent_uploads: 1,
@@ -161,17 +161,12 @@ pub fn default_bitrate_kbps() -> u32 {
 
 /// Map a user-facing resolution label to dimensions.
 /// Returns `(0, 0)` for "native" — callers should use capture-source dimensions.
-/// Performs a case-insensitive match without allocating.
 pub fn resolution_dimensions(label: &str) -> (u32, u32) {
-    // Labels are always lowercase in practice, but handle edge cases
-    if label.len() < 4 {
-        return (1920, 1080);
-    }
-    match label.as_bytes() {
-        b"native" | b"Native" | b"NATIVE" => (0, 0),
-        b"720p" | b"720P" => (1280, 720),
-        b"1440p" | b"1440P" => (2560, 1440),
-        b"2160p" | b"2160P" | b"4k" | b"4K" => (3840, 2160),
+    match label.to_ascii_lowercase().as_str() {
+        "native" => (0, 0),
+        "720p" => (1280, 720),
+        "1440p" => (2560, 1440),
+        "2160p" | "4k" => (3840, 2160),
         _ => (1920, 1080),
     }
 }

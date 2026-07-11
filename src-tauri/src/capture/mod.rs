@@ -229,19 +229,23 @@ pub fn bgra_to_nv12(bgra: &[u8], width: u32, height: u32, bgra_stride: u32) -> V
     let (y_plane, uv_plane) = nv12.split_at_mut(y_size);
 
     for y in 0..height {
+        let row_bgra = (y * bgra_stride) as usize;
+        let y_row = (y * width) as usize;
+        let uv_row = ((y / 2) * uv_width) as usize * 2;
+        let y_even = y % 2 == 0;
         for x in 0..width {
-            let bgra_off = (y * bgra_stride + x * 4) as usize;
+            let bgra_off = row_bgra + (x * 4) as usize;
             let b = bgra[bgra_off] as i32;
             let g = bgra[bgra_off + 1] as i32;
             let r = bgra[bgra_off + 2] as i32;
 
             let y_val = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
-            y_plane[(y * width + x) as usize] = y_val.clamp(0, 255) as u8;
+            y_plane[y_row + x as usize] = y_val.clamp(0, 255) as u8;
 
-            if y % 2 == 0 && x % 2 == 0 {
+            if y_even && x % 2 == 0 {
                 let u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
                 let v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
-                let uv_off = ((y / 2) * uv_width + (x / 2)) as usize * 2;
+                let uv_off = uv_row + (x / 2) as usize * 2;
                 uv_plane[uv_off] = u.clamp(0, 255) as u8;
                 uv_plane[uv_off + 1] = v.clamp(0, 255) as u8;
             }
@@ -261,22 +265,22 @@ pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
     let mut rgb = vec![0u8; (width * height * 3) as usize];
 
     for y in 0..height {
+        let y_row = (y * width) as usize;
+        let uv_row = ((y / 2) * uv_width) as usize * 2;
+        let rgb_row = y_row * 3;
         for x in 0..width {
-            let y_off = (y * width + x) as usize;
-            let uv_off = ((y / 2) * uv_width + (x / 2)) as usize * 2;
+            let y_off = y_row + x as usize;
+            let uv_off = uv_row + (x / 2) as usize * 2;
 
             let y_val = y_plane[y_off] as i32 - 16;
             let u_val = uv_plane[uv_off] as i32 - 128;
             let v_val = uv_plane[uv_off + 1] as i32 - 128;
 
-            // BT.601: R = clamp((298*C + 409*E + 128) >> 8)
-            //         G = clamp((298*C - 100*D - 208*E + 128) >> 8)
-            //         B = clamp((298*C + 516*D + 128) >> 8)
             let r = ((298 * y_val + 409 * v_val + 128) >> 8).clamp(0, 255) as u8;
             let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
             let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
 
-            let rgb_off = (y * width + x) as usize * 3;
+            let rgb_off = rgb_row + x as usize * 3;
             rgb[rgb_off] = r;
             rgb[rgb_off + 1] = g;
             rgb[rgb_off + 2] = b;
@@ -296,9 +300,12 @@ pub fn nv12_to_bgra(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
     let mut bgra = vec![0u8; (width * height * 4) as usize];
 
     for y in 0..height {
+        let y_row = (y * width) as usize;
+        let uv_row = ((y / 2) * uv_width) as usize * 2;
+        let bgra_row = y_row * 4;
         for x in 0..width {
-            let y_off = (y * width + x) as usize;
-            let uv_off = ((y / 2) * uv_width + (x / 2)) as usize * 2;
+            let y_off = y_row + x as usize;
+            let uv_off = uv_row + (x / 2) as usize * 2;
 
             let y_val = y_plane[y_off] as i32 - 16;
             let u_val = uv_plane[uv_off] as i32 - 128;
@@ -308,7 +315,7 @@ pub fn nv12_to_bgra(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
             let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
             let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
 
-            let bgra_off = (y * width + x) as usize * 4;
+            let bgra_off = bgra_row + x as usize * 4;
             bgra[bgra_off] = b;
             bgra[bgra_off + 1] = g;
             bgra[bgra_off + 2] = r;

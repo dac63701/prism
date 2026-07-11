@@ -118,6 +118,7 @@ pub fn run() {
             commands::library::list_clips,
             commands::library::delete_clip,
             commands::library::rename_clip,
+            commands::library::update_clip_metadata,
             commands::library::open_clip_location,
             commands::recording::start_recording,
             commands::recording::stop_recording,
@@ -209,9 +210,7 @@ fn extract_auth_code(url: &str) -> Option<String> {
     let query_start = url.find('?')?;
     let query = &url[query_start + 1..];
     for pair in query.split('&') {
-        let mut parts = pair.splitn(2, '=');
-        let key = parts.next()?;
-        let value = parts.next()?;
+        let (key, value) = pair.split_once('=')?;
         if key == "code" && !value.is_empty() {
             return Some(value.to_string());
         }

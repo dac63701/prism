@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import type { SyntheticEvent } from "react";
 import { Film } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -8,6 +9,8 @@ interface ClipThumbnailProps {
 }
 
 const PREVIEW_TIME = 0.15;
+const MAX_THUMBNAIL_WIDTH = 1280;
+const MAX_THUMBNAIL_HEIGHT = 720;
 const thumbnailCache = new Map<string, string>();
 
 export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
@@ -30,6 +33,12 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
     setMode("video");
   }, []);
 
+  const handleImgLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    // Existing clips may still have the previous 320px server thumbnail.
+    // Recreate those from the video once and keep the sharper result in memory.
+    if (event.currentTarget.naturalWidth < 960) setMode("video");
+  }, []);
+
   const captureFrame = useCallback(() => {
     const video = document.createElement("video");
     video.src = videoSrc;
@@ -49,14 +58,19 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
         setMode("failed");
         return;
       }
+      const scale = Math.min(
+        MAX_THUMBNAIL_WIDTH / video.videoWidth,
+        MAX_THUMBNAIL_HEIGHT / video.videoHeight,
+        1,
+      );
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
       const ctx = canvas.getContext("2d");
       if (!ctx) { setMode("failed"); return; }
       try {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
         thumbnailCache.set(cacheKey, dataUrl);
         setVideoThumb(dataUrl);
       } catch {
@@ -83,6 +97,7 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
           alt={`${filename} thumbnail`}
           className="h-full w-full object-cover"
           onError={handleImgError}
+          onLoad={handleImgLoad}
         />
       ) : mode === "video" ? (
         videoThumb ? (

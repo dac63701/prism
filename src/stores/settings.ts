@@ -39,7 +39,7 @@ export function getDefaultSettings(): AppSettings {
       auto_prune_days: null,
     },
     cloud: {
-      server_url: "",
+      server_url: "https://goprism.studio",
       api_key: "",
       auto_upload: false,
       max_concurrent_uploads: 1,

@@ -8,6 +8,9 @@ export interface Clip {
   duration_secs: number;
   created_at: string;
   size_bytes: number;
+  title: string;
+  description: string;
+  game: string;
 }
 
 interface ClipsState {
@@ -17,6 +20,7 @@ interface ClipsState {
   loadClips: () => Promise<void>;
   deleteClip: (filename: string) => Promise<void>;
   renameClip: (filename: string, newName: string) => Promise<void>;
+  updateClipMetadata: (filename: string, metadata: Pick<Clip, "title" | "description" | "game">) => Promise<void>;
   openClipLocation: () => Promise<void>;
 }
 
@@ -39,9 +43,9 @@ export const useClipsStore = create<ClipsState>((set) => ({
   deleteClip: async (filename: string) => {
     try {
       await invoke("delete_clip", { filename });
-      // Refresh list after deletion
-      const clips = await invoke<Clip[]>("list_clips");
-      set({ clips });
+      set((state) => ({
+        clips: state.clips.filter((c) => c.filename !== filename),
+      }));
     } catch (err) {
       console.error("Failed to delete clip:", err);
       throw err;
@@ -53,11 +57,23 @@ export const useClipsStore = create<ClipsState>((set) => ({
       const updated = await invoke<Clip>("rename_clip", { filename, newName });
       set((state) => ({
         clips: state.clips.map((c) =>
-          c.id === filename ? updated : c
+          c.filename === filename ? updated : c
         ),
       }));
     } catch (err) {
       console.error("Failed to rename clip:", err);
+      throw err;
+    }
+  },
+
+  updateClipMetadata: async (filename, metadata) => {
+    try {
+      const updated = await invoke<Clip>("update_clip_metadata", { filename, ...metadata });
+      set((state) => ({
+        clips: state.clips.map((clip) => clip.filename === filename ? updated : clip),
+      }));
+    } catch (err) {
+      console.error("Failed to update clip metadata:", err);
       throw err;
     }
   },

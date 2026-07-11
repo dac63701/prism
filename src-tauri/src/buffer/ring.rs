@@ -148,8 +148,10 @@ impl RingBuffer {
             let mut pps = None;
 
             while offset + 4 <= data.len() {
-                let nal_len =
-                    u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+                let nal_len = match data[offset..offset + 4].try_into() {
+                    Ok(b) => u32::from_be_bytes(b) as usize,
+                    Err(_) => break,
+                };
                 offset += 4;
                 if offset + nal_len > data.len() {
                     break;
@@ -160,8 +162,8 @@ impl RingBuffer {
                     8 => pps = Some(data[offset..offset + nal_len].to_vec()),
                     _ => {}
                 }
-                if sps.is_some() && pps.is_some() {
-                    return Some((sps.unwrap(), pps.unwrap()));
+                if let (Some(sps), Some(pps)) = (&sps, &pps) {
+                    return Some((sps.clone(), pps.clone()));
                 }
                 offset += nal_len;
             }
@@ -243,5 +245,87 @@ mod tests {
             buf.push(make_frame(now + Duration::from_secs(i)));
         }
         assert_eq!(buf.len(), 2);
+    }
+
+    fn make_h264_frame(sps: Option<&[u8]>, pps: Option<&[u8]>) -> StoredFrame {
+        let mut data = Vec::new();
+        if let Some(s) = sps {
+            data.extend_from_slice(&(s.len() as u32).to_be_bytes());
+            data.extend_from_slice(s);
+        }
+        if let Some(p) = pps {
+            data.extend_from_slice(&(p.len() as u32).to_be_bytes());
+            data.extend_from_slice(p);
+        }
+        // Add a dummy IDR slice
+        let idr = [0x65u8, 0x88, 0x01];
+        data.extend_from_slice(&(idr.len() as u32).to_be_bytes());
+        data.extend_from_slice(&idr);
+
+        StoredFrame {
+            data: Arc::new(data),
+            width: 1920,
+            height: 1080,
+            stride: 0,
+            pixel_format: PixelFormat::H264,
+            timestamp: Instant::now(),
+            is_sync: sps.is_some(), // has SPS = is keyframe
+        }
+    }
+
+    #[test]
+    fn test_find_sps_pps_anywhere_found() {
+        let mut buf = RingBuffer::with_byte_budget(10, usize::MAX);
+        let sps = [0x67, 0x64, 0x00, 0x1E, 0xAC];
+        let pps = [0x68, 0xEE, 0x3C, 0x80];
+
+        // Push a non-keyframe first (no SPS/PPS)
+        buf.push(make_h264_frame(None, None));
+        // Push a keyframe with SPS/PPS
+        buf.push(make_h264_frame(Some(&sps), Some(&pps)));
+
+        let result = buf.find_sps_pps_anywhere();
+        assert!(result.is_some(), "should find SPS/PPS in H.264 frames");
+        let (found_sps, found_pps) = result.unwrap();
+        assert_eq!(found_sps.as_slice(), sps);
+        assert_eq!(found_pps.as_slice(), pps);
+    }
+
+    #[test]
+    fn test_find_sps_pps_anywhere_none_when_no_h264() {
+        let mut buf = RingBuffer::new(10);
+        let now = Instant::now();
+        // Only NV12 frames
+        buf.push(make_frame(now));
+        buf.push(make_frame(now + Duration::from_secs(1)));
+
+        assert!(buf.find_sps_pps_anywhere().is_none());
+    }
+
+    #[test]
+    fn test_find_sps_pps_anywhere_only_sps() {
+        let mut buf = RingBuffer::with_byte_budget(10, usize::MAX);
+        let sps = [0x67, 0x64, 0x00, 0x1E, 0xAC];
+
+        // Only SPS, no PPS
+        buf.push(make_h264_frame(Some(&sps), None));
+
+        assert!(buf.find_sps_pps_anywhere().is_none());
+    }
+
+    #[test]
+    fn test_find_sps_pps_anywhere_spread() {
+        // SPS and PPS in different frames — should fail (both must be in same frame)
+        let mut buf = RingBuffer::with_byte_budget(10, usize::MAX);
+        let sps = [0x67, 0x64, 0x00, 0x1E, 0xAC];
+        let pps = [0x68, 0xEE, 0x3C, 0x80];
+
+        buf.push(make_h264_frame(Some(&sps), None));
+        buf.push(make_h264_frame(None, Some(&pps)));
+
+        assert!(
+            buf.find_sps_pps_anywhere().is_none(),
+            "SPS/PPS in different frames should not match"
+        );
     }
 }

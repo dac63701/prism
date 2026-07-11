@@ -1,37 +1,55 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
-import { ArrowLeft, Play, Pause, PictureInPicture2, Edit3, Check, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Edit3,
+  Gamepad2,
+  Pause,
+  PictureInPicture2,
+  Play,
+  Save,
+  SkipBack,
+  SkipForward,
+} from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useClipsStore, formatSize, formatDuration, formatDate } from "@/stores/clips";
+import { formatDate, formatDuration, formatSize, useClipsStore } from "@/stores/clips";
 import type { Clip } from "@/stores/clips";
+
+const SKIP_SECONDS = 5;
 
 export default function ClipDetailPage() {
   const { filename } = useParams<{ filename: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const clips = useClipsStore((s) => s.clips);
-  const renameClip = useClipsStore((s) => s.renameClip);
-  const loadClips = useClipsStore((s) => s.loadClips);
-  const loaded = useClipsStore((s) => s.loaded);
-  const loading = useClipsStore((s) => s.loading);
+  const clips = useClipsStore((state) => state.clips);
+  const updateClipMetadata = useClipsStore((state) => state.updateClipMetadata);
+  const loadClips = useClipsStore((state) => state.loadClips);
+  const loaded = useClipsStore((state) => state.loaded);
+  const loading = useClipsStore((state) => state.loading);
 
-  // Prefer clip from location state, fall back to store lookup
   const clip: Clip | undefined = useMemo(
-    () =>
-      (location.state as { clip?: Clip })?.clip ??
-      clips.find((c) => c.filename === filename),
-    [location.state, clips, filename],
+    () => clips.find((item) => item.filename === filename) ?? (location.state as { clip?: Clip })?.clip,
+    [clips, filename, location.state],
   );
 
   const [playing, setPlaying] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [renameError, setRenameError] = useState("");
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [game, setGame] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editorError, setEditorError] = useState("");
   const [videoError, setVideoError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (clip) setNewName(clip.filename.replace(/\.mp4$/, ""));
+    if (clip) {
+      setTitle(clip.title || clip.filename.replace(/\.mp4$/, ""));
+      setDescription(clip.description);
+      setGame(clip.game);
+    }
   }, [clip]);
 
   useEffect(() => {
@@ -42,20 +60,12 @@ export default function ClipDetailPage() {
 
   if (!clip) {
     if (loading || !loaded) {
-      return (
-        <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
-          Loading clip...
-        </div>
-      );
+      return <div className="h-full flex items-center justify-center text-zinc-500 text-sm">Loading clip...</div>;
     }
-
     return (
       <div className="h-full flex flex-col items-center justify-center text-zinc-500 gap-3">
         <p className="text-sm">Clip not found</p>
-        <button
-          onClick={() => navigate("/library")}
-          className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-        >
+        <button onClick={() => navigate("/library")} className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
           Back to library
         </button>
       </div>
@@ -64,194 +74,181 @@ export default function ClipDetailPage() {
 
   const videoSrc = convertFileSrc(clip.path);
   const posterSrc = convertFileSrc(clip.path.replace(/\.mp4$/, "_thumb.jpg"));
+  const totalDuration = videoDuration || clip.duration_secs;
+  const displayTitle = clip.title || clip.filename.replace(/\.mp4$/, "");
 
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-      setPlaying(true);
-    } else {
-      videoRef.current.pause();
-      setPlaying(false);
+  const togglePlay = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (video.paused) await video.play();
+      else video.pause();
+    } catch {
+      setVideoError("Playback could not be started for this clip.");
     }
+  };
+
+  const seekTo = (time: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const nextTime = Math.max(0, Math.min(time, Number.isFinite(video.duration) ? video.duration : totalDuration));
+    video.currentTime = nextTime;
+    setCurrentTime(nextTime);
   };
 
   const togglePip = async () => {
     if (!videoRef.current) return;
     try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else {
-        await videoRef.current.requestPictureInPicture();
-      }
-    } catch (err) {
-      console.error("PiP failed:", err);
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await videoRef.current.requestPictureInPicture();
+    } catch (error) {
+      console.error("Picture-in-Picture failed:", error);
     }
   };
 
-  const handleRename = async () => {
-    const trimmed = newName.trim();
-    if (!trimmed) {
-      setRenameError("Name cannot be empty");
+  const saveMetadata = async () => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setEditorError("A clip name is required.");
       return;
     }
-    if (trimmed.includes("/") || trimmed.includes("\\")) {
-      setRenameError("No path separators allowed");
-      return;
-    }
+    setSaving(true);
     try {
-      await renameClip(clip.filename, trimmed);
-      setRenaming(false);
-      setRenameError("");
-    } catch (err: any) {
-      setRenameError(typeof err === "string" ? err : "Rename failed");
+      await updateClipMetadata(clip.filename, {
+        title: trimmedTitle,
+        description: description.trim(),
+        game: game.trim(),
+      });
+      setEditing(false);
+      setEditorError("");
+    } catch (error) {
+      setEditorError(typeof error === "string" ? error : "Could not save clip details.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const cancelRename = () => {
-    setRenaming(false);
-    setNewName(clip.filename.replace(/\.mp4$/, ""));
-    setRenameError("");
+  const cancelEdit = () => {
+    setTitle(clip.title || clip.filename.replace(/\.mp4$/, ""));
+    setDescription(clip.description);
+    setGame(clip.game);
+    setEditorError("");
+    setEditing(false);
   };
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
+    <div className="h-full overflow-y-auto">
       <header className="flex items-center gap-3 px-6 pt-5 pb-3">
-        <button
-          onClick={() => navigate("/library")}
-          className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors"
-        >
+        <button onClick={() => navigate("/library")} className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors" aria-label="Back to library">
           <ArrowLeft className="size-5" />
         </button>
-        <div className="flex-1 min-w-0">
-          {renaming ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleRename();
-                  if (e.key === "Escape") cancelRename();
-                }}
-                autoFocus
-                className="bg-surface border border-white/10 rounded-xl px-3 py-1 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
-              />
-              <button
-                onClick={handleRename}
-                className="p-1 rounded text-emerald-400 hover:text-emerald-300 transition-colors"
-              >
-                <Check className="size-4" />
-              </button>
-              <button
-                onClick={cancelRename}
-                className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                <X className="size-4" />
-              </button>
-              {renameError && (
-                <span className="text-xs text-red-400">{renameError}</span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-medium text-white truncate">
-                {clip.filename.replace(/\.mp4$/, "")}
-              </h1>
-              <button
-                onClick={() => setRenaming(true)}
-                className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
-                title="Rename"
-              >
-                <Edit3 className="size-3.5" />
-              </button>
-            </div>
-          )}
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-base font-semibold text-white">{displayTitle}</h1>
+          <p className="mt-0.5 truncate text-xs text-zinc-500">{clip.filename}</p>
         </div>
         <span className="text-xs text-zinc-500">{formatSize(clip.size_bytes)}</span>
       </header>
 
-      {/* Video Player */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4">
-        <div className="relative w-full max-w-3xl aspect-video bg-black rounded-2xl overflow-hidden group">
-          {/* Poster thumbnail (shown until video plays) */}
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-6 pb-8">
+        <section className="relative aspect-video overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/30">
           {!playing && (
-            <img
-              src={posterSrc}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
+            <img src={posterSrc} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} />
           )}
-
           <video
             ref={videoRef}
             src={videoSrc}
-            className="w-full h-full"
-            onClick={togglePlay}
+            className="h-full w-full"
+            onClick={() => void togglePlay()}
             onEnded={() => setPlaying(false)}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
+            onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+            onLoadedMetadata={(event) => {
+              setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
+              setVideoError("");
+            }}
             onError={() => setVideoError("This clip could not be loaded in the app.")}
-            onLoadedData={() => setVideoError("")}
             controls={false}
             preload="metadata"
             playsInline
           />
 
-          {videoError && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-4 text-center">
-              <p className="text-sm text-zinc-200">{videoError}</p>
-            </div>
-          )}
+          {videoError && <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-4 text-center text-sm text-zinc-200">{videoError}</div>}
 
-          {/* Play overlay (hidden when playing) */}
-          {!playing && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <button
-                onClick={togglePlay}
-                className="size-16 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-colors"
-              >
-                <Play className="size-7 text-white fill-white ml-1" />
+          {!playing && !videoError && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <button onClick={() => void togglePlay()} className="pointer-events-auto flex size-16 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition-colors hover:bg-white/25" aria-label="Play clip">
+                <Play className="ml-1 size-7 fill-white" />
               </button>
             </div>
           )}
 
-          {/* Bottom controls bar */}
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-8 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={togglePlay}
-                  className="text-white/80 hover:text-white transition-colors"
-                >
-                  {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent px-4 pb-3 pt-12">
+            <input
+              aria-label="Clip timeline"
+              type="range"
+              min="0"
+              max={Math.max(totalDuration, 1)}
+              step="0.01"
+              value={Math.min(currentTime, totalDuration || 0)}
+              onChange={(event) => seekTo(Number(event.target.value))}
+              className="h-1.5 w-full cursor-pointer accent-white"
+            />
+            <div className="mt-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white">
+                <button onClick={() => void togglePlay()} className="rounded-lg p-1.5 transition-colors hover:bg-white/15" aria-label={playing ? "Pause clip" : "Play clip"}>
+                  {playing ? <Pause className="size-5" /> : <Play className="size-5 fill-white" />}
                 </button>
-                <button
-                  onClick={togglePip}
-                  className="text-white/60 hover:text-white transition-colors"
-                  title="Picture-in-Picture"
-                >
+                <button onClick={() => seekTo(currentTime - SKIP_SECONDS)} className="rounded-lg p-1.5 transition-colors hover:bg-white/15" aria-label="Skip back 5 seconds">
+                  <SkipBack className="size-5" />
+                </button>
+                <button onClick={() => seekTo(currentTime + SKIP_SECONDS)} className="rounded-lg p-1.5 transition-colors hover:bg-white/15" aria-label="Skip forward 5 seconds">
+                  <SkipForward className="size-5" />
+                </button>
+                <button onClick={() => void togglePip()} className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/15 hover:text-white" aria-label="Picture in picture">
                   <PictureInPicture2 className="size-4" />
                 </button>
               </div>
-              <span className="text-[11px] text-white/60 tabular-nums">
-                {formatDuration(clip.duration_secs)}
-              </span>
+              <span className="text-xs tabular-nums text-white/75">{formatDuration(Math.floor(currentTime))} / {formatDuration(Math.floor(totalDuration))}</span>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Metadata */}
-        <div className="mt-4 w-full max-w-3xl flex items-center gap-4 text-xs text-zinc-500">
-          <span>{formatDate(clip.created_at)}</span>
-          <span className="text-zinc-700">·</span>
-          <span>{formatDuration(clip.duration_secs)}</span>
-          <span className="text-zinc-700">·</span>
-          <span className="truncate">{clip.path}</span>
-        </div>
-      </div>
+        <section className="rounded-2xl border border-white/10 bg-surface/70 p-4 sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-white">Clip details</h2>
+              <p className="mt-1 text-xs text-zinc-500">Saved separately from the video, ready for future clip editing.</p>
+            </div>
+            {!editing && <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-white/10"><Edit3 className="size-3.5" /> Edit</button>}
+          </div>
+
+          {editing ? (
+            <div className="grid gap-4">
+              <label className="grid gap-1.5 text-xs font-medium text-zinc-400">Name
+                <input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium text-zinc-400">Game
+                <input value={game} maxLength={120} onChange={(event) => setGame(event.target.value)} placeholder="e.g. Counter-Strike 2" className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium text-zinc-400">Description
+                <textarea value={description} maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder="What happened in this clip?" rows={4} className="resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
+              </label>
+              {editorError && <p className="text-xs text-red-400">{editorError}</p>}
+              <div className="flex justify-end gap-2">
+                <button onClick={cancelEdit} disabled={saving} className="rounded-xl px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200">Cancel</button>
+                <button onClick={() => void saveMetadata()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-400 disabled:opacity-50"><Save className="size-3.5" /> {saving ? "Saving..." : "Save details"}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="min-w-0"><p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Game</p><p className="mt-1 flex items-center gap-1.5 text-zinc-200"><Gamepad2 className="size-4 text-blue-300" /> {clip.game || "Not set"}</p></div>
+              <div><p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Captured</p><p className="mt-1 text-zinc-200">{formatDate(clip.created_at)} · {formatDuration(clip.duration_secs)}</p></div>
+              <div className="sm:col-span-2"><p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Description</p><p className="mt-1 whitespace-pre-wrap leading-6 text-zinc-300">{clip.description || "No description yet."}</p></div>
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

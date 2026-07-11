@@ -57,6 +57,10 @@ struct RecorderInner {
     /// H.264 hardware encoder for the shadow buffer.
     #[cfg(target_os = "windows")]
     h264_encoder: Option<MfH264Encoder>,
+    /// Avoid retrying encoder creation for every captured frame after a
+    /// deterministic Media Foundation initialization failure.
+    #[cfg(target_os = "windows")]
+    h264_encoder_init_failed: bool,
     #[cfg(target_os = "macos")]
     h264_encoder: Option<VtH264Encoder>,
     /// Frame index for the H.264 encoder.
@@ -117,24 +121,10 @@ impl Recorder {
             resolution_dimensions(&rs.resolution)
         };
 
+        // Windows needs the captured frame dimensions for native resolution,
+        // so initialize the MFT lazily on the first frame for every setting.
         #[cfg(target_os = "windows")]
-        let h264_encoder = if native {
-            None
-        } else {
-            match MfH264Encoder::new(
-                target_w,
-                target_h,
-                rs.fps,
-                rs.bitrate_kbps,
-                rs.fps.saturating_mul(2),
-            ) {
-                Ok(enc) => Some(enc),
-                Err(e) => {
-                    eprintln!("[prism] H.264 encoder init failed — falling back to raw NV12: {e}");
-                    None
-                }
-            }
-        };
+        let h264_encoder = None;
 
         #[cfg(target_os = "macos")]
         let h264_encoder = if native {
@@ -167,6 +157,8 @@ impl Recorder {
                 latest_frame: None,
                 #[cfg(target_os = "windows")]
                 h264_encoder,
+                #[cfg(target_os = "windows")]
+                h264_encoder_init_failed: false,
                 #[cfg(target_os = "macos")]
                 h264_encoder,
                 #[cfg(target_os = "windows")]
@@ -229,6 +221,7 @@ impl Recorder {
                 inner.sps.clear();
                 inner.pps.clear();
                 inner.h264_encoder = None;
+                inner.h264_encoder_init_failed = false;
             }
             #[cfg(target_os = "macos")]
             {
@@ -298,6 +291,7 @@ impl Recorder {
                 inner.frame_index = 0;
                 inner.sps.clear();
                 inner.pps.clear();
+                inner.h264_encoder_init_failed = false;
             }
             #[cfg(target_os = "macos")]
             {
@@ -400,13 +394,13 @@ impl Recorder {
 
             #[cfg(target_os = "windows")]
             {
-                // Lazy encoder init — fires for ALL resolutions when the encoder
-                // was cleared (e.g. after stop_recording + source switch).
-                if inner.h264_encoder.is_none() {
+                let tw = inner.target_width.max(1);
+                let th = inner.target_height.max(1);
+                if inner.h264_encoder.is_none() && !inner.h264_encoder_init_failed {
                     let (enc_w, enc_h) = if inner.resolution_is_native {
                         (frame.width, frame.height)
                     } else {
-                        (inner.target_width.max(1), inner.target_height.max(1))
+                        (tw, th)
                     };
                     match MfH264Encoder::new(
                         enc_w,
@@ -419,7 +413,12 @@ impl Recorder {
                             inner.h264_encoder = Some(enc);
                             inner.frame_index = 0;
                         }
-                        Err(e) => eprintln!("[prism] Encoder init failed: {e}"),
+                        Err(e) => {
+                            eprintln!(
+                                "[prism] H.264 encoder init failed; using raw NV12 fallback: {e}"
+                            );
+                            inner.h264_encoder_init_failed = true;
+                        }
                     }
                 }
                 if let Some(ref mut encoder) = inner.h264_encoder {
@@ -464,12 +463,6 @@ impl Recorder {
 
             #[cfg(target_os = "macos")]
             {
-                // macOS captures BGRA; convert to NV12.
-                // If the capture resolution differs from the target encoder
-                // resolution, resize BGRA first so the ring buffer and encoder
-                // both work at the smaller dimensions (avoids ~100 MB/frame
-                // memory churn in the encoder's resize path at 4K).
-                // Diagnostic: log capture resolution once on first frame
                 if inner.frame_index == 0 {
                     eprintln!(
                         "[prism] macOS frame: capture={}x{} target={}x{} native={} fps={}",
@@ -481,6 +474,8 @@ impl Recorder {
                         inner.backend_config.fps,
                     );
                 }
+                let tw = inner.target_width.max(1);
+                let th = inner.target_height.max(1);
                 let (nv12, nv12_width, nv12_height): (Vec<u8>, u32, u32) =
                     if frame.pixel_format == crate::capture::PixelFormat::Bgra {
                         if !inner.resolution_is_native
@@ -491,18 +486,14 @@ impl Recorder {
                                 &frame.data,
                                 frame.width,
                                 frame.height,
-                                inner.target_width.max(1),
-                                inner.target_height.max(1),
+                                tw,
+                                th,
                                 frame.stride as usize,
                             ) {
                                 Ok(resized_bgra) => {
-                                    let nv12 = crate::capture::bgra_to_nv12(
-                                        &resized_bgra,
-                                        inner.target_width.max(1),
-                                        inner.target_height.max(1),
-                                        inner.target_width.max(1) * 4,
-                                    );
-                                    (nv12, inner.target_width.max(1), inner.target_height.max(1))
+                                    let nv12 =
+                                        crate::capture::bgra_to_nv12(&resized_bgra, tw, th, tw * 4);
+                                    (nv12, tw, th)
                                 }
                                 Err(e) => {
                                     eprintln!("[prism] BGRA resize failed (using original): {e}");
@@ -528,13 +519,11 @@ impl Recorder {
                         (frame.data.to_vec(), frame.width, frame.height)
                     };
 
-                // Lazy encoder init — fires for ALL resolutions when the encoder
-                // was cleared (e.g. after stop_recording + source switch).
                 if inner.h264_encoder.is_none() {
                     let (enc_w, enc_h) = if inner.resolution_is_native {
                         (nv12_width, nv12_height)
                     } else {
-                        (inner.target_width.max(1), inner.target_height.max(1))
+                        (tw, th)
                     };
                     match VtH264Encoder::new(
                         enc_w,
@@ -550,7 +539,7 @@ impl Recorder {
                         Err(e) => eprintln!("[prism] VT encoder init failed: {e}"),
                     }
                 }
-                // Encode NV12 → compressed H.264 packets → ring buffer
+                let mut store_raw = false;
                 if let Some(ref mut encoder) = inner.h264_encoder {
                     match encoder.encode_frame(&nv12, nv12_width, nv12_height) {
                         Ok(packets) => {
@@ -578,41 +567,26 @@ impl Recorder {
                                 }
                             } else {
                                 eprintln!("[prism] VT encoder skipped frame — storing raw NV12");
-                                let nv12_frame = CapturedFrame {
-                                    data: std::sync::Arc::new(nv12),
-                                    width: nv12_width,
-                                    height: nv12_height,
-                                    stride: nv12_width,
-                                    pixel_format: crate::capture::PixelFormat::Nv12,
-                                    timestamp: frame.timestamp,
-                                };
-                                inner.buffer.push_frame(nv12_frame);
+                                store_raw = true;
                             }
                         }
                         Err(e) => {
                             eprintln!("VT H.264 encode error (falling back to raw NV12): {e}");
-                            let nv12_frame = CapturedFrame {
-                                data: std::sync::Arc::new(nv12),
-                                width: nv12_width,
-                                height: nv12_height,
-                                stride: nv12_width,
-                                pixel_format: crate::capture::PixelFormat::Nv12,
-                                timestamp: frame.timestamp,
-                            };
-                            inner.buffer.push_frame(nv12_frame);
+                            store_raw = true;
                         }
                     }
                 } else {
-                    // No encoder available — store raw NV12
-                    let nv12_frame = CapturedFrame {
+                    store_raw = true;
+                }
+                if store_raw {
+                    inner.buffer.push_frame(CapturedFrame {
                         data: std::sync::Arc::new(nv12),
                         width: nv12_width,
                         height: nv12_height,
                         stride: nv12_width,
                         pixel_format: crate::capture::PixelFormat::Nv12,
                         timestamp: frame.timestamp,
-                    };
-                    inner.buffer.push_frame(nv12_frame);
+                    });
                 }
                 inner.frame_index += 1;
             }
@@ -840,22 +814,25 @@ impl Recorder {
         if frames.is_empty() {
             return Err("No frames available to clip".into());
         }
-        // If the cached SPS/PPS from the encoder are empty, try to find them
-        // by scanning all buffered H.264 frames (covers the case where the
-        // encoder hasn't output a keyframe within the clip window yet).
-        let cached_sps_pps = if inner.sps.is_empty() || inner.pps.is_empty() {
-            inner.buffer.find_sps_pps_anywhere().map(|(s, p)| {
-                eprintln!(
-                    "[prism] found SPS({}) PPS({}) from buffer scan",
-                    s.len(),
-                    p.len()
-                );
-                (s, p)
-            })
-        } else {
-            Some((inner.sps.clone(), inner.pps.clone()))
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        let (sps, pps) = {
+            // If the cached SPS/PPS from the encoder are empty, try to find them
+            // by scanning all buffered H.264 frames (covers the case where the
+            // encoder hasn't output a keyframe within the clip window yet).
+            let cached_sps_pps = if inner.sps.is_empty() || inner.pps.is_empty() {
+                inner.buffer.find_sps_pps_anywhere().map(|(s, p)| {
+                    eprintln!(
+                        "[prism] found SPS({}) PPS({}) from buffer scan",
+                        s.len(),
+                        p.len()
+                    );
+                    (s, p)
+                })
+            } else {
+                Some((inner.sps.clone(), inner.pps.clone()))
+            };
+            cached_sps_pps.unwrap_or_default()
         };
-        let (sps, pps) = cached_sps_pps.unwrap_or_default();
 
         Ok(ClipData {
             frames,

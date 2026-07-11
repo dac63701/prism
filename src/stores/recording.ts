@@ -8,7 +8,6 @@ const SAVE_CLIP_TIMEOUT_SECS = 15;
 
 interface RecordingState {
   isRecording: boolean;
-  frameCount: number;
   framesReceived: number;
   previewAvailable: boolean;
   saving: boolean;
@@ -53,7 +52,6 @@ export const useRecordingStore = create<RecordingState>((set) => {
 
   return {
     isRecording: false,
-    frameCount: 0,
     framesReceived: 0,
     previewAvailable: false,
     saving: false,
@@ -118,7 +116,6 @@ export const useRecordingStore = create<RecordingState>((set) => {
           recording_elapsed_seconds: number;
         }>("get_buffer_info");
         set({
-          frameCount: info.frame_count,
           isRecording: info.is_recording,
           framesReceived: info.frames_received,
           previewAvailable: info.preview_available,
