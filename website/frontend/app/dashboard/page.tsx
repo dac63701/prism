@@ -1,24 +1,29 @@
 import Link from "next/link";
-import { Activity, Clapperboard, Shield, Sparkles } from "lucide-react";
-import { getDashboardStats, listClips } from "@/lib/server-api";
+import { Activity, Sparkles } from "lucide-react";
+import { currentUser } from "@/lib/server";
+import { listClips } from "@/lib/server-api";
 import { Card, Panel, SectionHeading, StatCard } from "@/components/ui";
 
 export default async function DashboardPage() {
-  const [stats, clips] = await Promise.all([getDashboardStats(), listClips()]);
+  const [user, clipsData] = await Promise.all([currentUser(), listClips()]);
+  if (!user) return null;
+
+  const storageUsedGb = user.storage_used_bytes / 1_073_741_824;
+  const storageMaxGb = user.max_storage_bytes / 1_073_741_824;
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-5 py-8 lg:px-8 lg:py-10">
       <SectionHeading
         eyebrow="Dashboard"
         title="Welcome back"
-        description="Your clips, account, and server status at a glance."
+        description="Your clips, account, and storage usage at a glance."
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total clips" value={String(stats.total_clips)} hint="All visible and private clips" />
-        <StatCard label="Storage used" value={`${stats.total_storage_gb.toFixed(2)} GB`} hint="Across all clips" />
-        <StatCard label="Uploads today" value={String(stats.uploads_today)} hint="New clips added today" />
-        <StatCard label="Users" value={String(stats.total_users)} hint="Registered Prism accounts" />
+        <StatCard label="Your clips" value={String(clipsData.total)} hint="All your uploaded clips" />
+        <StatCard label="Storage used" value={`${storageUsedGb.toFixed(2)} GB`} hint="Total storage consumed" />
+        <StatCard label="Storage capacity" value={`${storageMaxGb.toFixed(2)} GB`} hint="Your max storage limit" />
+        <StatCard label="Free space" value={`${(storageMaxGb - storageUsedGb).toFixed(2)} GB`} hint="Remaining upload capacity" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -33,7 +38,7 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {clips.clips.slice(0, 4).map((clip) => (
+            {clipsData.clips.slice(0, 4).map((clip) => (
               <Panel key={clip.id} className="overflow-hidden">
                 <div className="aspect-video bg-[#09111f]">
                   {clip.thumbnail_path ? (
@@ -47,7 +52,7 @@ export default async function DashboardPage() {
                 </div>
               </Panel>
             ))}
-            {clips.clips.length === 0 ? <div className="text-sm text-zinc-500">No clips yet.</div> : null}
+            {clipsData.clips.length === 0 ? <div className="text-sm text-zinc-500">No clips yet.</div> : null}
           </div>
         </Card>
 
@@ -71,11 +76,13 @@ export default async function DashboardPage() {
             <div className="flex items-center gap-3">
               <Activity className="h-5 w-5 text-blue-300" />
               <div>
-                <div className="text-sm text-zinc-400">Upload activity</div>
-                <div className="text-lg font-semibold text-white">This week</div>
+                <div className="text-sm text-zinc-400">Storage</div>
+                <div className="text-lg font-semibold text-white">Usage</div>
               </div>
             </div>
-            <div className="mt-4 text-sm text-zinc-300">{stats.uploads_this_week} uploads in the last 7 days.</div>
+            <div className="mt-4 text-sm text-zinc-300">
+              {storageUsedGb.toFixed(2)} GB of {storageMaxGb.toFixed(2)} GB used.
+            </div>
           </Card>
         </div>
       </div>
