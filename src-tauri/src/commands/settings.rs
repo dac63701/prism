@@ -1,11 +1,8 @@
 //! Settings IPC commands — get, update, reset.
 
-use std::sync::Mutex;
-
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::hotkey;
-use crate::recording::Recorder;
 use crate::settings::config::AppSettings;
 use crate::settings::SettingsManager;
 
@@ -17,28 +14,17 @@ pub async fn get_settings(manager: State<'_, SettingsManager>) -> Result<AppSett
 
 /// Update settings with new values.
 /// Returns the updated settings on success.
+/// Recording state is never touched here — only the on/off button
+/// controls start/stop. New capture settings (resolution, FPS, etc.)
+/// take effect on the next recording session or app restart.
 #[tauri::command]
 pub async fn update_settings(
     app: tauri::AppHandle,
     manager: State<'_, SettingsManager>,
     settings: AppSettings,
-    recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<AppSettings, String> {
     let updated = manager.set(&app, settings).map_err(|e| e.to_string())?;
     hotkey::register_hotkeys(&app, &updated.hotkeys)?;
-
-    let rec = recorder.lock().map_err(|e| e.to_string())?;
-    let was_recording = rec.is_recording();
-    if was_recording {
-        rec.stop_recording().ok();
-    }
-    rec.reconfigure(&updated);
-    if was_recording {
-        rec.start_recording()?;
-        rec.start_polling(app.clone());
-        let _ = app.emit("recording-state-changed", true);
-    }
-
     Ok(updated)
 }
 
