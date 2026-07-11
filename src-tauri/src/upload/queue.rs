@@ -244,6 +244,18 @@ impl UploadQueue {
         }
     }
 
+    /// Mark a task as permanently failed (no retry).
+    pub fn mark_permanent_failure(&self, id: &str, error: String) {
+        if let Ok(mut queue) = self.inner.lock() {
+            if let Some(task) = queue.iter_mut().find(|t| t.id == id) {
+                task.status = UploadStatus::Failed(error.clone());
+                task.retry_count = 99;
+                task.error = Some(error);
+            }
+        }
+        self.persist();
+    }
+
     /// Cancel a pending or in-progress upload.
     pub fn cancel(&self, id: &str) {
         if let Ok(mut queue) = self.inner.lock() {
@@ -300,5 +312,238 @@ impl UploadQueue {
             });
         }
         self.persist();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_metadata() -> UploadMetadata {
+        UploadMetadata {
+            title: "test_clip".into(),
+            game: "TestGame".into(),
+            duration_secs: 30.0,
+            width: 1920,
+            height: 1080,
+            codec: "h264".into(),
+            size_bytes: 1_000_000,
+        }
+    }
+
+    fn make_queue() -> UploadQueue {
+        let q = UploadQueue::new();
+        q.enqueue_with_meta(
+            "task_1".into(),
+            "/clips/clip_1.mp4".into(),
+            "https://example.com".into(),
+            "prism_test_key".into(),
+            make_metadata(),
+        );
+        q
+    }
+
+    #[test]
+    fn test_enqueue_and_all() {
+        let q = make_queue();
+        let all = q.all();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, "task_1");
+        assert_eq!(all[0].status, UploadStatus::Pending);
+    }
+
+    #[test]
+    fn test_next_pending_marks_uploading() {
+        let q = make_queue();
+        let task = q.next_pending();
+        assert!(task.is_some());
+        assert_eq!(task.unwrap().id, "task_1");
+
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Uploading);
+        assert!(all[0].started_at_secs.is_some());
+    }
+
+    #[test]
+    fn test_next_pending_empty() {
+        let q = UploadQueue::new();
+        assert!(q.next_pending().is_none());
+    }
+
+    #[test]
+    fn test_next_pending_skips_non_pending() {
+        let q = UploadQueue::new();
+        q.enqueue_with_meta(
+            "task_1".into(),
+            "/clips/clip_1.mp4".into(),
+            "https://example.com".into(),
+            "key".into(),
+            make_metadata(),
+        );
+        q.mark_completed("task_1");
+        assert!(q.next_pending().is_none());
+    }
+
+    #[test]
+    fn test_mark_completed() {
+        let q = make_queue();
+        let _ = q.next_pending();
+        q.mark_completed("task_1");
+
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Completed);
+        assert!((all[0].progress - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_mark_failed_retries_then_permanent() {
+        let q = make_queue();
+        q.mark_failed("task_1", "error 1".into());
+
+        let all = q.all();
+        assert_eq!(
+            all[0].status,
+            UploadStatus::Pending,
+            "should retry on 1st failure"
+        );
+        assert_eq!(all[0].retry_count, 1);
+
+        q.mark_failed("task_1", "error 2".into());
+        let all = q.all();
+        assert_eq!(
+            all[0].status,
+            UploadStatus::Pending,
+            "should retry on 2nd failure"
+        );
+        assert_eq!(all[0].retry_count, 2);
+
+        q.mark_failed("task_1", "error 3".into());
+        let all = q.all();
+        assert_eq!(
+            all[0].status,
+            UploadStatus::Pending,
+            "should retry on 3rd failure"
+        );
+        assert_eq!(all[0].retry_count, 3);
+
+        q.mark_failed("task_1", "final error".into());
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Failed("final error".into()));
+        assert_eq!(all[0].error.as_deref(), Some("final error"));
+    }
+
+    #[test]
+    fn test_cancel() {
+        let q = make_queue();
+        q.cancel("task_1");
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_retry_resets_failed() {
+        let q = make_queue();
+        q.mark_failed("task_1", "err".into());
+        q.mark_failed("task_1", "err".into());
+        q.mark_failed("task_1", "err".into());
+        q.mark_failed("task_1", "permanent".into());
+
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Failed("permanent".into()));
+
+        q.retry("task_1");
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Pending);
+        assert_eq!(all[0].retry_count, 0);
+        assert!(all[0].error.is_none());
+    }
+
+    #[test]
+    fn test_set_share_url() {
+        let q = make_queue();
+        q.set_share_url("task_1", "/s/abc123".into());
+        let all = q.all();
+        assert_eq!(all[0].share_url.as_deref(), Some("/s/abc123"));
+    }
+
+    #[test]
+    fn test_update_progress() {
+        let q = make_queue();
+        q.update_progress("task_1", 0.5);
+        let all = q.all();
+        assert!((all[0].progress - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_persistence_roundtrip() {
+        let dir = std::env::temp_dir().join("prism_upload_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("upload_queue.json");
+
+        let q = UploadQueue::new();
+        q.enqueue_with_meta(
+            "persist_1".into(),
+            "/clips/persist.mp4".into(),
+            "https://example.com".into(),
+            "key".into(),
+            make_metadata(),
+        );
+
+        // Manually persist by calling persist with the path set
+        if let Ok(mut pp) = q.persist_path.lock() {
+            *pp = Some(path.clone());
+        }
+        q.persist();
+
+        // Load into a new queue
+        let q2 = UploadQueue::new();
+        q2.set_persist_path(dir.clone());
+
+        let all = q2.all();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, "persist_1");
+        assert_eq!(all[0].status, UploadStatus::Pending);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_cleanup_completed_removes_old() {
+        let q = UploadQueue::new();
+        q.enqueue_with_meta(
+            "old".into(),
+            "/clips/old.mp4".into(),
+            "https://example.com".into(),
+            "key".into(),
+            make_metadata(),
+        );
+        // Artificially set started_at to 2 days ago
+        let two_days_ago = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .saturating_sub(172800);
+        if let Ok(mut queue) = q.inner.lock() {
+            if let Some(task) = queue.iter_mut().find(|t| t.id == "old") {
+                task.status = UploadStatus::Completed;
+                task.started_at_secs = Some(two_days_ago);
+            }
+        }
+        q.cleanup_completed();
+        let all = q.all();
+        assert!(all.is_empty(), "old completed tasks should be cleaned up");
+    }
+
+    #[test]
+    fn test_cleanup_completed_keeps_recent() {
+        let q = make_queue();
+        if let Ok(mut queue) = q.inner.lock() {
+            if let Some(task) = queue.iter_mut().find(|t| t.id == "task_1") {
+                task.status = UploadStatus::Completed;
+            }
+        }
+        q.cleanup_completed();
+        let all = q.all();
+        assert_eq!(all.len(), 1, "recent completed tasks should be kept");
     }
 }

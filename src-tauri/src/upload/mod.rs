@@ -17,8 +17,8 @@ pub fn start_upload_processor(app: AppHandle) {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-            let queue = app.state::<UploadQueue>();
             let settings = app.state::<SettingsManager>().get();
+            let queue = app.state::<UploadQueue>();
 
             // Check concurrent upload limit
             let active = queue
@@ -35,14 +35,41 @@ pub fn start_upload_processor(app: AppHandle) {
                 None => continue,
             };
 
-            let base_url = match &task.server_url {
-                Some(u) => u.trim_end_matches('/').to_string(),
-                None => continue,
-            };
-            let upload_url = format!("{base_url}/api/clips/upload");
-            let api_key = task.api_key.clone().unwrap_or_default();
             let clip_path = PathBuf::from(&task.clip_path);
             let task_id = task.id.clone();
+
+            // Use live settings for auth — re-login updates the key without
+            // invalidating already-enqueued upload tasks.
+            let base_url = settings.cloud.server_url.trim_end_matches('/').to_string();
+            if base_url.is_empty() {
+                eprintln!("[upload] server_url not configured — skipping {}", task_id);
+                queue.mark_failed(&task_id, "Server URL not configured".into());
+                continue;
+            }
+            let upload_url = format!("{base_url}/api/clips/upload");
+            let api_key = settings.cloud.api_key.clone();
+            if api_key.is_empty() {
+                eprintln!("[upload] api_key is empty — skipping {}", task_id);
+                queue.mark_failed(&task_id, "Not authenticated — sign in first".into());
+                continue;
+            }
+            if !api_key.starts_with("prism_") {
+                eprintln!(
+                    "[upload] api_key has unexpected format (no prism_ prefix) — skipping {}",
+                    task_id
+                );
+                queue.mark_failed(&task_id, "Invalid API key format".into());
+                continue;
+            }
+
+            if !clip_path.exists() {
+                eprintln!(
+                    "[upload] clip file not found on disk: {} — permanent failure",
+                    clip_path.display()
+                );
+                queue.mark_permanent_failure(&task_id, "Clip file was deleted".into());
+                continue;
+            }
 
             eprintln!(
                 "[upload] uploading {} to {}",
