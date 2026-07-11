@@ -411,6 +411,7 @@ pub async fn desktop_success(
     State(config): State<Config>,
 ) -> Html<String> {
     let app_url = format!("{}?code={}", config.desktop_scheme_url, urlencoding::encode(&query.code));
+    let site_url = config.site_url.trim_end_matches('/');
 
     Html(format!(r##"<!DOCTYPE html>
 <html lang="en">
@@ -418,7 +419,6 @@ pub async fn desktop_success(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prism — Signed In</title>
-<meta http-equiv="refresh" content="2;url={app_url}">
 <style>
   * {{ margin:0; padding:0; box-sizing:border-box; }}
   body {{
@@ -437,8 +437,7 @@ pub async fn desktop_success(
     text-decoration:none; transition:background .15s;
   }}
   .btn:hover {{ background:#4f46e5; }}
-  .fallback {{ margin-top:20px; font-size:13px; color:#71717a; }}
-  .fallback a {{ color:#818cf8; }}
+  .redirecting {{ margin-top:20px; font-size:13px; color:#52525b; }}
 </style>
 </head>
 <body>
@@ -450,10 +449,47 @@ pub async fn desktop_success(
   <h1>Signed in to Prism</h1>
   <p>Your Google account is connected.<br>Return to the app to continue.</p>
   <a class="btn" href="{app_url}">Open Prism App</a>
-  <p class="fallback">
-    Not opening? <a href="{app_url}">Click here</a> or go back to the app and sign in again.
-  </p>
+  <p class="redirecting" id="redirectMsg">Redirecting to Prism&hellip;</p>
 </div>
+<script>
+  var deepLink = "{app_url}";
+  var successUrl = "{site_url}/signin/success";
+
+  // Attempt to open the deep link. If the page is still visible after
+  // a short delay, redirect the browser to the success page.
+  var opened = false;
+  function tryDeepLink() {{
+    window.location.href = deepLink;
+  }}
+
+  window.addEventListener("blur", function() {{
+    // Browser navigated away (deep link likely worked)
+    opened = true;
+  }});
+
+  // If deep link didn't navigate away, redirect to success page
+  setTimeout(function() {{
+    if (!opened) {{
+      window.location.replace(successUrl);
+    }}
+  }}, 3000);
+
+  // On click, try the deep link
+  var btn = document.querySelector(".btn");
+  if (btn) {{
+    btn.addEventListener("click", function(e) {{
+      e.preventDefault();
+      tryDeepLink();
+      // If clicked manually, redirect to success after a short delay
+      setTimeout(function() {{
+        window.location.replace(successUrl);
+      }}, 1000);
+    }});
+  }}
+
+  // Also try immediately (auto-open)
+  tryDeepLink();
+</script>
 </body>
 </html>"##))
 }

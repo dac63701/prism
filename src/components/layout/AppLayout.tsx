@@ -7,6 +7,12 @@ import { useRecordingStore } from "@/stores/recording";
 import { useCloudStore } from "@/stores/cloud";
 
 export default function AppLayout() {
+  // Suppress the default browser right-click context menu
+  useEffect(() => {
+    const handler = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener("contextmenu", handler);
+    return () => document.removeEventListener("contextmenu", handler);
+  }, []);
   const saveClip = useRecordingStore((s) => s.saveClip);
   const checkCloudStatus = useCloudStore((s) => s.checkStatus);
 
