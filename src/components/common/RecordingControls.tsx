@@ -43,9 +43,9 @@ export default function RecordingControls() {
           disabled={saving || !isRecording}
           className={cn(
             "size-11 rounded-full flex items-center justify-center transition-all duration-200",
-            "bg-zinc-800/60 border border-zinc-700/50 text-zinc-400",
-            "hover:bg-zinc-700/80 hover:text-zinc-200 hover:border-zinc-600/50",
-            "disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-zinc-800/60 disabled:hover:text-zinc-400",
+            "bg-surface border border-white/10 text-zinc-400",
+            "hover:bg-white/5 hover:text-zinc-200 hover:border-white/20",
+            "disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:text-zinc-400",
             !isRecording && "opacity-0 pointer-events-none scale-75"
           )}
           title="Save clip"
@@ -63,7 +63,7 @@ export default function RecordingControls() {
             starting && "opacity-70 cursor-wait",
             isRecording
               ? "bg-red-600 border-red-500 hover:bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35)]"
-              : "bg-zinc-800 border-zinc-700 hover:bg-zinc-700 hover:border-zinc-600"
+              : "bg-surface border-white/10 hover:bg-white/5 hover:border-white/20"
           )}
           title={
             starting

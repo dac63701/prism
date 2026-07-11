@@ -32,7 +32,7 @@ export default function ClipNotification() {
     <div
       className={cn(
         "fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl",
-        "bg-zinc-900/95 border border-zinc-800/50 backdrop-blur-sm",
+        "bg-surface/95 border border-white/10 backdrop-blur-sm",
         "shadow-2xl transition-all duration-300 ease-out",
         visible
           ? "translate-y-0 opacity-100"
@@ -41,7 +41,7 @@ export default function ClipNotification() {
     >
       <CheckCircle2 className="size-5 text-green-500 shrink-0" />
       <div className="flex flex-col">
-        <span className="text-sm font-medium text-zinc-100">Clip saved</span>
+        <span className="text-sm font-medium text-white">Clip saved</span>
         <span className="text-xs text-zinc-500 truncate max-w-[200px]">
           {filename}
         </span>

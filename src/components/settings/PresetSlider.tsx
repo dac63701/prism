@@ -39,7 +39,7 @@ export default function PresetSlider({
               const next = options[Number(e.target.value)];
               if (next) onChange(next.value);
             }}
-            className="w-full accent-zinc-100"
+            className="w-full accent-accent"
           />
           <span className="w-20 text-right text-sm text-zinc-100 tabular-nums">
             {current?.label ?? `${value} kbps`}
@@ -58,8 +58,8 @@ export default function PresetSlider({
               className={cn(
                 "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
                 active
-                  ? "border-zinc-100 bg-zinc-100 text-zinc-950"
-                  : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                  ? "border-accent bg-accent text-white"
+                  : "border-white/10 bg-surface text-zinc-400 hover:text-white hover:border-white/20"
               )}
             >
               {option.label}

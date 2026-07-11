@@ -120,7 +120,7 @@ export default function ClipDetailPage() {
       <header className="flex items-center gap-3 px-6 pt-5 pb-3">
         <button
           onClick={() => navigate("/library")}
-          className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors"
         >
           <ArrowLeft className="size-5" />
         </button>
@@ -136,7 +136,7 @@ export default function ClipDetailPage() {
                   if (e.key === "Escape") cancelRename();
                 }}
                 autoFocus
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1 text-sm text-zinc-100 font-mono focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="bg-surface border border-white/10 rounded-xl px-3 py-1 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               />
               <button
                 onClick={handleRename}
@@ -156,7 +156,7 @@ export default function ClipDetailPage() {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-medium text-zinc-100 truncate">
+              <h1 className="text-sm font-medium text-white truncate">
                 {clip.filename.replace(/\.mp4$/, "")}
               </h1>
               <button
@@ -174,7 +174,7 @@ export default function ClipDetailPage() {
 
       {/* Video Player */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4">
-        <div className="relative w-full max-w-3xl aspect-video bg-black rounded-xl overflow-hidden group">
+        <div className="relative w-full max-w-3xl aspect-video bg-black rounded-2xl overflow-hidden group">
           {/* Poster thumbnail (shown until video plays) */}
           {!playing && (
             <img

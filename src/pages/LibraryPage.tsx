@@ -61,14 +61,14 @@ export default function LibraryPage() {
       <header className="px-6 pt-6 pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-zinc-100">Clip Library</h1>
+                <h1 className="text-xl font-semibold text-white">Clip Library</h1>
             <p className="text-sm text-zinc-500 mt-1">
               {clips.length} clip{clips.length !== 1 ? "s" : ""}
             </p>
           </div>
           <button
             onClick={openClipLocation}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-lg hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 border border-white/10 bg-white/5 rounded-xl hover:text-zinc-200 hover:bg-white/10 transition-colors"
           >
             <FolderOpen className="size-4" />
             Open Folder
@@ -83,10 +83,10 @@ export default function LibraryPage() {
               placeholder="Search clips..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+              className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface border border-white/10 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
             />
           </div>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-lg hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+          <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 border border-white/10 bg-white/5 rounded-xl hover:text-zinc-200 hover:bg-white/10 transition-colors">
             <Filter className="size-4" />
             Filter
           </button>
@@ -121,7 +121,7 @@ export default function LibraryPage() {
                 <div
                   key={clip.id}
                   onClick={() => navigate(`/clip/${clip.filename}`, { state: { clip } })}
-                  className="group aspect-video bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden relative cursor-pointer"
+                  className="group aspect-video bg-surface rounded-2xl border border-white/10 overflow-hidden relative cursor-pointer"
                 >
                   <ClipThumbnail path={clip.path} filename={clip.filename} />
 
@@ -136,7 +136,7 @@ export default function LibraryPage() {
                       Failed
                     </div>
                   ) : isUploading ? (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600/80 text-[10px] text-white font-medium">
+                    <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/80 text-[10px] text-white font-medium">
                       <Loader2 className="size-3 animate-spin" />
                       Uploading
                     </div>
@@ -144,9 +144,9 @@ export default function LibraryPage() {
 
                   {/* Progress bar for uploading */}
                   {isUploading && task && (
-                    <div className="absolute bottom-9 left-2 right-2 h-1 rounded-full bg-zinc-700 overflow-hidden">
+                    <div className="absolute bottom-9 left-2 right-2 h-1 rounded-full bg-white/10 overflow-hidden">
                       <div
-                        className="h-full bg-blue-500 transition-all duration-300"
+                        className="h-full bg-accent transition-all duration-300"
                         style={{ width: `${task.progress * 100}%` }}
                       />
                     </div>
@@ -182,10 +182,10 @@ export default function LibraryPage() {
                         <Link2 className="size-5" />
                       </button>
                     ) : cloudAuthed ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleUpload(clip.path, clip.filename); }}
-                        disabled={isUploading}
-                        className="p-3 rounded-full bg-blue-600/40 hover:bg-blue-600/60 text-white transition-colors disabled:opacity-40"
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleUpload(clip.path, clip.filename); }}
+                      disabled={isUploading}
+                      className="p-3 rounded-full bg-accent/40 hover:bg-accent/60 text-white transition-colors disabled:opacity-40"
                         title={isUploading ? "Uploading..." : "Upload to cloud"}
                       >
                         {isUploading ? (
@@ -208,7 +208,7 @@ export default function LibraryPage() {
                   {/* Delete confirmation overlay */}
                   {showConfirm === clip.filename && (
                     <div
-                      className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center p-4 gap-3"
+                      className="absolute inset-0 bg-[#050816]/90 flex flex-col items-center justify-center p-4 gap-3"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <p className="text-sm text-zinc-300 text-center">Delete this clip?</p>

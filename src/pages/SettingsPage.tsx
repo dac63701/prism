@@ -38,12 +38,12 @@ function ToggleSwitch({
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-        checked ? "bg-zinc-100" : "bg-zinc-700"
+        checked ? "bg-accent" : "bg-surface-2"
       )}
     >
       <span
         className={cn(
-          "inline-block h-3.5 w-3.5 rounded-full bg-zinc-950 transition-transform",
+          "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
           checked ? "translate-x-[18px]" : "translate-x-[2px]"
         )}
       />
@@ -53,7 +53,7 @@ function ToggleSwitch({
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-sm font-semibold text-zinc-100 tracking-tight">
+    <h2 className="text-lg font-semibold tracking-tight text-white">
       {children}
     </h2>
   );
@@ -129,8 +129,11 @@ export default function SettingsPage() {
 
         {/* Recording Section */}
         <section className="mb-8">
-          <SectionHeading>Recording</SectionHeading>
-          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
+          <div className="space-y-1 mb-3">
+            <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">RECORDING</span>
+            <SectionHeading>Recording</SectionHeading>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
             <FieldRow label="Clip length">
               <span className="text-sm text-zinc-100 min-w-[4ch] text-right tabular-nums">
                 {s.recording.buffer_duration_secs}s
@@ -148,7 +151,7 @@ export default function SettingsPage() {
                     parseInt(e.target.value, 10) as never
                   )
                 }
-                className="w-40 h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-zinc-100"
+                className="w-40 h-1.5 bg-surface-2 rounded-full appearance-none cursor-pointer accent-accent"
               />
             </FieldRow>
 
@@ -162,7 +165,7 @@ export default function SettingsPage() {
                     parseInt(e.target.value, 10) as never
                   )
                 }
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               >
                 <option value={24}>24</option>
                 <option value={30}>30</option>
@@ -176,7 +179,7 @@ export default function SettingsPage() {
                 onChange={(e) =>
                   void setField("recording", "resolution", e.target.value as never)
                 }
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               >
                 {RESOLUTION_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -208,7 +211,7 @@ export default function SettingsPage() {
                   })
                 }
                 placeholder="~/Videos/Prism"
-                className="w-64 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="w-64 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               />
             </FieldRow>
 
@@ -225,8 +228,11 @@ export default function SettingsPage() {
 
         {/* Hotkeys Section */}
         <section className="mb-8">
-          <SectionHeading>Hotkeys</SectionHeading>
-          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
+          <div className="space-y-1 mb-3">
+            <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">HOTKEYS</span>
+            <SectionHeading>Hotkeys</SectionHeading>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
             <FieldRow label="Save clip">
               <HotkeyCaptureInput
                 value={s.hotkeys.save_clip}
@@ -270,8 +276,11 @@ export default function SettingsPage() {
 
         {/* General Section */}
         <section className="mb-8">
-          <SectionHeading>General</SectionHeading>
-          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
+          <div className="space-y-1 mb-3">
+            <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">GENERAL</span>
+            <SectionHeading>General</SectionHeading>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
             <FieldRow label="Launch at startup">
               <ToggleSwitch
                 checked={s.general.launch_at_startup}
@@ -312,8 +321,11 @@ export default function SettingsPage() {
 
         {/* Cloud Section */}
         <section className="mb-8">
-          <SectionHeading>Cloud Upload</SectionHeading>
-          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
+          <div className="space-y-1 mb-3">
+            <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">CLOUD</span>
+            <SectionHeading>Cloud Upload</SectionHeading>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
             <FieldRow label="Server URL">
               <input
                 type="text"
@@ -326,7 +338,7 @@ export default function SettingsPage() {
                   })
                 }
                 placeholder="https://clips.example.com"
-                className="w-64 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="w-64 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               />
             </FieldRow>
 
@@ -388,7 +400,7 @@ export default function SettingsPage() {
                     (parseInt(e.target.value, 10) || 1) as never,
                   )
                 }
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               >
                 <option value={1}>1 (sequential)</option>
                 <option value={2}>2</option>
@@ -400,8 +412,11 @@ export default function SettingsPage() {
 
         {/* Storage Section */}
         <section className="mb-8">
-          <SectionHeading>Storage</SectionHeading>
-          <div className="mt-3 border-t border-zinc-800/50 pt-3 space-y-1">
+          <div className="space-y-1 mb-3">
+            <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">STORAGE</span>
+            <SectionHeading>Storage</SectionHeading>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
             <FieldRow label="Max clips (GB)">
               <input
                 type="number"
@@ -415,7 +430,7 @@ export default function SettingsPage() {
                     (parseInt(e.target.value, 10) || 0) as never
                   )
                 }
-                className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600 [&::-webkit-inner-spin-button]:opacity-50"
+                className="w-24 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70 [&::-webkit-inner-spin-button]:opacity-50"
               />
               <span className="text-xs text-zinc-500">(0 = unlimited)</span>
             </FieldRow>
@@ -436,7 +451,7 @@ export default function SettingsPage() {
                     },
                   });
                 }}
-                className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600 [&::-webkit-inner-spin-button]:opacity-50"
+                className="w-24 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70 [&::-webkit-inner-spin-button]:opacity-50"
               />
               <span className="text-xs text-zinc-500">(empty = disabled)</span>
             </FieldRow>

@@ -53,7 +53,7 @@ export default function ScreenPreview({ recording }: ScreenPreviewProps) {
   return (
     <div className="relative w-full flex-1 min-h-0 flex items-center justify-center">
       {/* Constrained 16:9 box that scales with available space */}
-      <div className="relative w-full max-h-full aspect-video bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
+      <div className="relative w-full max-h-full aspect-video bg-surface rounded-2xl overflow-hidden border border-white/10">
         {src ? (
           <img
             src={src}

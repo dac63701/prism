@@ -110,10 +110,10 @@ export default function HotkeyCaptureInput({ value, onChange }: HotkeyCaptureInp
           setError(null);
         }}
         className={cn(
-          "min-w-44 rounded-lg border px-3 py-1.5 text-left text-sm font-mono transition-colors focus:outline-none focus:ring-1 focus:ring-zinc-600",
+          "min-w-44 rounded-xl border px-3 py-1.5 text-left text-sm font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70",
           capturing
-            ? "border-zinc-100 bg-zinc-100 text-zinc-950"
-            : "border-zinc-700 bg-zinc-900 text-zinc-100 hover:border-zinc-600"
+            ? "border-accent bg-accent text-white"
+            : "border-white/10 bg-surface text-white hover:border-white/20"
         )}
       >
         {label}

@@ -117,14 +117,14 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
       </div>
 
       {/* Tab buttons */}
-      <div className="flex gap-1 rounded-lg bg-zinc-900 border border-zinc-800 p-0.5">
+      <div className="flex gap-1 rounded-lg bg-surface border border-white/10 p-0.5">
         <button
           onClick={() => setActiveTab("display")}
           className={cn(
             "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
             activeTab === "display"
-              ? "bg-zinc-700 text-zinc-200"
-              : "text-zinc-500 hover:text-zinc-300"
+              ? "bg-surface-2 text-white"
+              : "text-zinc-400 hover:text-white"
           )}
         >
           <Monitor className="size-3.5" />
@@ -135,8 +135,8 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
           className={cn(
             "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
             activeTab === "app"
-              ? "bg-zinc-700 text-zinc-200"
-              : "text-zinc-500 hover:text-zinc-300"
+              ? "bg-surface-2 text-white"
+              : "text-zinc-400 hover:text-white"
           )}
         >
           <AppWindow className="size-3.5" />
@@ -154,9 +154,9 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
                 onClick={() => selectDisplay(display.displayId, display.isMain)}
                 className={cn(
                   "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition-colors",
-                  "hover:bg-zinc-800/60 border border-transparent",
+                  "hover:bg-white/5 border border-transparent",
                   isDisplaySelected(display.displayId, display.isMain) &&
-                    "bg-zinc-800 border-zinc-700"
+                    "bg-surface-2 border-accent/20"
                 )}
               >
                 <Monitor className="size-4 shrink-0 text-zinc-500" />
@@ -168,8 +168,8 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
                     {display.width}×{display.height}
                   </p>
                 </div>
-                {isDisplaySelected(display.displayId, display.isMain) && (
-                  <Check className="size-3.5 text-emerald-400 shrink-0" />
+                  {isDisplaySelected(display.displayId, display.isMain) && (
+                  <Check className="size-3.5 text-accent shrink-0" />
                 )}
               </button>
             ))}
@@ -189,9 +189,9 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
                 onClick={() => selectApp(app.bundleId)}
                 className={cn(
                   "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition-colors",
-                  "hover:bg-zinc-800/60 border border-transparent",
+                  "hover:bg-white/5 border border-transparent",
                   isAppSelected(app.bundleId) &&
-                    "bg-zinc-800 border-zinc-700"
+                    "bg-surface-2 border-accent/20"
                 )}
               >
                 <AppWindow className="size-4 shrink-0 text-zinc-500" />
@@ -204,8 +204,8 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
                     {app.windowCount > 0 && ` · ${app.windowCount}w`}
                   </p>
                 </div>
-                {isAppSelected(app.bundleId) && (
-                  <Check className="size-3.5 text-emerald-400 shrink-0" />
+                  {isAppSelected(app.bundleId) && (
+                  <Check className="size-3.5 text-accent shrink-0" />
                 )}
               </button>
             ))}

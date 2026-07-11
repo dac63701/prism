@@ -76,7 +76,7 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
   }, [mode, videoThumb, captureFrame, cacheKey]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-zinc-800 to-zinc-950">
+    <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-surface to-bg">
       {mode === "img" ? (
         <img
           src={thumbSrc}

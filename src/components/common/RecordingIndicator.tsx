@@ -14,7 +14,7 @@ export default function RecordingIndicator() {
   if (!isRecording) {
     return (
       <div className="flex items-center gap-2 text-xs text-zinc-600">
-        <span className="size-1.5 rounded-full bg-zinc-600" />
+        <span className="size-1.5 rounded-full bg-zinc-500" />
         Idle
       </div>
     );
@@ -23,9 +23,9 @@ export default function RecordingIndicator() {
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="size-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
-      <span className="font-medium text-zinc-100">Recording</span>
+      <span className="font-medium text-white">Recording</span>
       <span className="text-zinc-600">{formatElapsed(recordingElapsedSeconds)}</span>
-      <span className="text-zinc-700">·</span>
+      <span className="text-zinc-600">·</span>
       <span className="text-zinc-600">{formatElapsed(bufferTimeSeconds)} buffered</span>
     </div>
   );

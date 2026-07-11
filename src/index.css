@@ -6,6 +6,12 @@
 @theme {
   --font-sans: "Geist Variable", sans-serif;
   --font-heading: var(--font-sans);
+  --color-bg: #050816;
+  --color-surface: #0b1222;
+  --color-surface-2: #10192e;
+  --color-border: #1f2a44;
+  --color-accent: #4f8cff;
+  --color-accent-2: #77a8ff;
 }
 
 * {
@@ -14,7 +20,11 @@
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
+  background: linear-gradient(180deg, #050816 0%, #060c18 100%);
+  color: #e5eefc;
   font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(79, 140, 255, 0.35);
 }
