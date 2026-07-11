@@ -52,8 +52,12 @@ pub fn run() {
             upload_queue.cleanup_completed();
             app.manage(upload_queue);
 
-            // Initialize auth manager
+            // Initialize recorder
             let settings = app.state::<SettingsManager>().get();
+            let recorder = Mutex::new(Recorder::new(&settings));
+            app.manage(recorder);
+
+            // Initialize auth manager
             let auth_mgr = AuthManager::new();
             if let Ok(mut state) = auth_mgr.state.lock() {
                 state.authenticated = !settings.cloud.api_key.is_empty();
