@@ -21,12 +21,10 @@ const ROOT = join(__dirname, "..");
 const brandPath = join(ROOT, "lib", "brand.ts");
 const brandSrc = readFileSync(brandPath, "utf-8");
 
-// Extract the SVG string between backtick quotes after LOGO_SVG =
 const match = brandSrc.match(/LOGO_SVG\s*=\s*`([\s\S]*?)`/);
 if (!match) throw new Error("Could not extract LOGO_SVG from lib/brand.ts");
 const svgContent = match[1];
 
-// Wrap in a full SVG document with explicit size for rendering
 function wrapSVG(viewBox) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -46,33 +44,51 @@ async function renderSVG(size, pad = 0) {
     .toBuffer();
 }
 
-async function renderJPEG(size) {
-  const bg = await sharp({
-    create: {
-      width: size,
-      height: Math.round(size * 0.525),
-      channels: 3,
-      background: { r: 5, g: 8, b: 22 },
-    },
-  })
-    .jpeg()
-    .toBuffer();
+// ── ICO writer ───────────────────────────────────────────────────────
+// ICO format supports embedded PNG data. We write a proper ICO header
+// wrapping one or more PNG images.
+function writeIco(filePath, pngBuffers) {
+  const count = pngBuffers.length;
+  const headerSize = 6 + count * 16;
+  const header = Buffer.alloc(headerSize);
 
-  const logo = await sharp(Buffer.from(SVG_SOURCE))
-    .resize(Math.round(size * 0.4), Math.round(size * 0.4))
-    .png()
-    .toBuffer();
+  let offset = 0;
+  // Reserved
+  header.writeUInt16LE(0, offset); offset += 2;
+  // Type: 1 = ICO
+  header.writeUInt16LE(1, offset); offset += 2;
+  // Count
+  header.writeUInt16LE(count, offset); offset += 2;
 
-  return sharp(bg)
-    .composite([
-      {
-        input: logo,
-        top: Math.round(size * 0.12),
-        left: Math.round(size * 0.3),
-      },
-    ])
-    .jpeg({ quality: 90 })
-    .toBuffer();
+  let dataOffset = headerSize;
+  for (let i = 0; i < count; i++) {
+    const buf = pngBuffers[i];
+    const w = i === 0 ? 0 : Math.min(pngBuffers[i].width || 256, 255);
+
+    // Directory entry
+    // Width (0 = 256)
+    header.writeUInt8(Math.min(pngBuffers[i].width || 0, 255) || 0, offset); offset += 1;
+    // Height (0 = 256)
+    header.writeUInt8(Math.min(pngBuffers[i].height || 0, 255) || 0, offset); offset += 1;
+    // Color palette count
+    header.writeUInt8(0, offset); offset += 1;
+    // Reserved
+    header.writeUInt8(0, offset); offset += 1;
+    // Color planes
+    header.writeUInt16LE(1, offset); offset += 2;
+    // Bits per pixel
+    header.writeUInt16LE(32, offset); offset += 2;
+    // Image data size
+    header.writeUInt32LE(buf.length, offset); offset += 4;
+    // Image data offset
+    header.writeUInt32LE(dataOffset, offset); offset += 4;
+
+    dataOffset += buf.length;
+  }
+
+  // Write header + all PNG data
+  const ico = Buffer.concat([header, ...pngBuffers]);
+  writeFileSync(filePath, ico);
 }
 
 // ── Output directories ───────────────────────────────────────────────
@@ -85,60 +101,55 @@ for (const dir of [PUBLIC, TAURI_ICONS]) {
 
 // ── Generate all assets ──────────────────────────────────────────────
 async function main() {
-  // Website favicon (32x32 PNG — modern favicon)
-  writeFileSync(join(PUBLIC, "favicon.ico"), await renderSVG(32));
+  // Render PNGs at various sizes
+  const png32 = await renderSVG(32);
+  const png128 = await renderSVG(128);
+  const png256 = await renderSVG(256);
+  const png512 = await renderSVG(512);
+
+  // Attach width/height metadata for ICO writer
+  const withMeta = (buf, w, h) => { buf.width = w; buf.height = h; return buf; };
+
+  // Website favicon (multi-size ICO: 32 + 256)
+  writeIco(join(PUBLIC, "favicon.ico"), [
+    withMeta(png32, 32, 32),
+    withMeta(png256, 256, 256),
+  ]);
 
   // Website OG image (1200x630)
-  const ogBuffer = await sharp({
-    create: {
-      width: 1200,
-      height: 630,
-      channels: 3,
-      background: { r: 5, g: 8, b: 22 },
-    },
-  })
-    .jpeg()
-    .toBuffer();
+  const ogBg = await sharp({
+    create: { width: 1200, height: 630, channels: 3, background: { r: 5, g: 8, b: 22 } },
+  }).jpeg().toBuffer();
 
-  const logoLarge = await sharp(Buffer.from(SVG_SOURCE))
-    .resize(400, 400)
-    .png()
-    .toBuffer();
+  const logoLarge = await sharp(Buffer.from(SVG_SOURCE)).resize(400, 400).png().toBuffer();
 
-  const ogComposite = await sharp(ogBuffer)
-    .composite([
-      {
-        input: logoLarge,
-        top: 115,
-        left: 400,
-      },
-    ])
+  const ogComposite = await sharp(ogBg)
+    .composite([{ input: logoLarge, top: 115, left: 400 }])
     .jpeg({ quality: 92 })
     .toBuffer();
 
   writeFileSync(join(PUBLIC, "og-image.jpg"), ogComposite);
 
-  // Tauri desktop app icons
-  writeFileSync(join(TAURI_ICONS, "32x32.png"), await renderSVG(32));
-  writeFileSync(join(TAURI_ICONS, "128x128.png"), await renderSVG(128));
-  writeFileSync(join(TAURI_ICONS, "128x128@2x.png"), await renderSVG(256));
+  // Tauri app icons
+  writeFileSync(join(TAURI_ICONS, "32x32.png"), png32);
+  writeFileSync(join(TAURI_ICONS, "128x128.png"), png128);
+  writeFileSync(join(TAURI_ICONS, "128x128@2x.png"), png256);
+  writeFileSync(join(TAURI_ICONS, "icon.png"), png512);
 
-  // icon.png (larger version for Tauri)
-  writeFileSync(join(TAURI_ICONS, "icon.png"), await renderSVG(512));
-
-  // icon.ico (multi-size ICO — sharp can't write .ico, so use PNG as fallback)
-  writeFileSync(join(TAURI_ICONS, "icon.ico"), await renderSVG(256));
-
-  // macOS icns — skip, we keep the existing one since .icns requires special tooling
+  // icon.ico — proper ICO format with 32 + 256 entries
+  writeIco(join(TAURI_ICONS, "icon.ico"), [
+    withMeta(png32, 32, 32),
+    withMeta(png256, 256, 256),
+  ]);
 
   console.log("✅ Assets generated");
-  console.log(`  → ${PUBLIC}/favicon.ico`);
-  console.log(`  → ${PUBLIC}/og-image.jpg`);
-  console.log(`  → ${TAURI_ICONS}/32x32.png`);
-  console.log(`  → ${TAURI_ICONS}/128x128.png`);
-  console.log(`  → ${TAURI_ICONS}/128x128@2x.png`);
-  console.log(`  → ${TAURI_ICONS}/icon.png`);
-  console.log(`  → ${TAURI_ICONS}/icon.ico`);
+  console.log("  → public/favicon.ico  (ICO: 32, 256)");
+  console.log("  → public/og-image.jpg (1200×630)");
+  console.log("  → src-tauri/icons/32x32.png");
+  console.log("  → src-tauri/icons/128x128.png");
+  console.log("  → src-tauri/icons/128x128@2x.png");
+  console.log("  → src-tauri/icons/icon.png");
+  console.log("  → src-tauri/icons/icon.ico  (ICO: 32, 256)");
 }
 
 main().catch((err) => {
