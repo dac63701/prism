@@ -29,9 +29,7 @@ pub async fn upload_clip(
         return Err(format!("Clip not found: {path}"));
     }
 
-    let size_bytes = std::fs::metadata(&clip_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size_bytes = std::fs::metadata(&clip_path).map(|m| m.len()).unwrap_or(0);
 
     let duration_secs = read_mp4_duration(&clip_path).unwrap_or(0);
     let (width, height) = read_mp4_resolution(&clip_path).unwrap_or((0, 0));
@@ -57,11 +55,14 @@ pub async fn upload_clip(
         size_bytes,
     );
 
-    let _ = app.emit("upload-progress", serde_json::json!({
-        "id": task_id,
-        "status": "Pending",
-        "progress": 0.0,
-    }));
+    let _ = app.emit(
+        "upload-progress",
+        serde_json::json!({
+            "id": task_id,
+            "status": "Pending",
+            "progress": 0.0,
+        }),
+    );
 
     Ok(())
 }
@@ -77,10 +78,7 @@ pub async fn upload_queue_status(
 
 /// Cancel a pending upload.
 #[tauri::command]
-pub async fn cancel_upload(
-    queue: State<'_, UploadQueue>,
-    task_id: String,
-) -> Result<(), String> {
+pub async fn cancel_upload(queue: State<'_, UploadQueue>, task_id: String) -> Result<(), String> {
     queue.cancel(&task_id);
     Ok(())
 }
@@ -93,11 +91,14 @@ pub async fn retry_upload(
     task_id: String,
 ) -> Result<(), String> {
     queue.retry(&task_id);
-    let _ = app.emit("upload-progress", serde_json::json!({
-        "id": task_id,
-        "status": "Pending",
-        "progress": 0.0,
-    }));
+    let _ = app.emit(
+        "upload-progress",
+        serde_json::json!({
+            "id": task_id,
+            "status": "Pending",
+            "progress": 0.0,
+        }),
+    );
     Ok(())
 }
 

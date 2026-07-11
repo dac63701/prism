@@ -109,4 +109,9 @@ impl BufferManager {
     pub fn frame_count(&self) -> usize {
         self.buffer.len()
     }
+
+    /// Scan all buffered H.264 frames for SPS/PPS NAL units.
+    pub fn find_sps_pps_anywhere(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.buffer.find_sps_pps_anywhere()
+    }
 }

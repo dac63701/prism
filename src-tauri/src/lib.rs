@@ -61,7 +61,10 @@ pub fn run() {
             app.manage(game_registry);
 
             // Initialize upload queue with persistence
-            let app_data = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let app_data = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
             let upload_queue = upload::queue::UploadQueue::new();
             upload_queue.set_persist_path(app_data);
             upload_queue.cleanup_completed();
@@ -147,10 +150,12 @@ pub fn run() {
             }
         });
 
-    let app = builder.build(tauri::generate_context!()).unwrap_or_else(|e| {
-        eprintln!("Fatal: Failed to build Tauri application: {e}");
-        std::process::exit(1);
-    });
+    let app = builder
+        .build(tauri::generate_context!())
+        .unwrap_or_else(|e| {
+            eprintln!("Fatal: Failed to build Tauri application: {e}");
+            std::process::exit(1);
+        });
 
     app.run(move |app_handle, event| {
         match event {

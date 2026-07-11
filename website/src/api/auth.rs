@@ -5,7 +5,7 @@ use argon2::{
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::Redirect,
+    response::{Html, Redirect},
     Json,
 };
 use rand::Rng;
@@ -386,7 +386,7 @@ pub async fn google_callback(
 
     if claims.desktop {
         let desktop_code = jwt::create_desktop_code(user.id, &user.role, &config.jwt_secret)?;
-        let target = format!("{}?code={}", config.desktop_scheme_url, urlencoding::encode(&desktop_code));
+        let target = format!("/api/auth/desktop/success?code={}", urlencoding::encode(&desktop_code));
         return Ok((cookies, Redirect::temporary(&target)));
     }
 
@@ -397,6 +397,65 @@ pub async fn google_callback(
     };
 
     Ok((cookies, Redirect::temporary(&redirect_to)))
+}
+
+#[derive(Deserialize)]
+pub struct DesktopSuccessQuery {
+    code: String,
+}
+
+/// Renders a branded "Signed in" page that prompts the user to open the
+/// desktop app via the `prism://` custom scheme.
+pub async fn desktop_success(
+    Query(query): Query<DesktopSuccessQuery>,
+    State(config): State<Config>,
+) -> Html<String> {
+    let app_url = format!("{}?code={}", config.desktop_scheme_url, urlencoding::encode(&query.code));
+
+    Html(format!(r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism — Signed In</title>
+<meta http-equiv="refresh" content="2;url={app_url}">
+<style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
+    display:flex; justify-content:center; align-items:center;
+    min-height:100vh; background:#09090b; color:#e4e4e7;
+  }}
+  .card {{ text-align:center; padding:48px 24px; max-width:420px; }}
+  .logo {{ width:64px; height:64px; margin:0 auto 24px; }}
+  h1 {{ font-size:24px; font-weight:600; margin-bottom:8px; }}
+  p {{ color:#a1a1aa; margin-bottom:28px; line-height:1.5; }}
+  .btn {{
+    display:inline-block; background:#6366f1; color:#fff;
+    border:none; padding:12px 32px; border-radius:8px;
+    font-size:15px; font-weight:500; cursor:pointer;
+    text-decoration:none; transition:background .15s;
+  }}
+  .btn:hover {{ background:#4f46e5; }}
+  .fallback {{ margin-top:20px; font-size:13px; color:#71717a; }}
+  .fallback a {{ color:#818cf8; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <svg class="logo" viewBox="0 0 64 64" fill="none">
+    <rect width="64" height="64" rx="16" fill="#6366f1"/>
+    <path d="M20 44V20h8l8 12 8-12h8v24h-8V32l-8 12-8-12v12H20z" fill="#fff"/>
+  </svg>
+  <h1>Signed in to Prism</h1>
+  <p>Your Google account is connected.<br>Return to the app to continue.</p>
+  <a class="btn" href="{app_url}">Open Prism App</a>
+  <p class="fallback">
+    Not opening? <a href="{app_url}">Click here</a> or go back to the app and sign in again.
+  </p>
+</div>
+</body>
+</html>"##))
 }
 
 pub async fn desktop_exchange(

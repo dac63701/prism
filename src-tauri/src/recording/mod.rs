@@ -840,13 +840,30 @@ impl Recorder {
         if frames.is_empty() {
             return Err("No frames available to clip".into());
         }
+        // If the cached SPS/PPS from the encoder are empty, try to find them
+        // by scanning all buffered H.264 frames (covers the case where the
+        // encoder hasn't output a keyframe within the clip window yet).
+        let cached_sps_pps = if inner.sps.is_empty() || inner.pps.is_empty() {
+            inner.buffer.find_sps_pps_anywhere().map(|(s, p)| {
+                eprintln!(
+                    "[prism] found SPS({}) PPS({}) from buffer scan",
+                    s.len(),
+                    p.len()
+                );
+                (s, p)
+            })
+        } else {
+            Some((inner.sps.clone(), inner.pps.clone()))
+        };
+        let (sps, pps) = cached_sps_pps.unwrap_or_default();
+
         Ok(ClipData {
             frames,
             output_dir: inner.output_dir.clone(),
             #[cfg(any(target_os = "windows", target_os = "macos"))]
-            sps: inner.sps.clone(),
+            sps,
             #[cfg(any(target_os = "windows", target_os = "macos"))]
-            pps: inner.pps.clone(),
+            pps,
             #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             sps: Vec::new(),
             #[cfg(not(any(target_os = "windows", target_os = "macos")))]

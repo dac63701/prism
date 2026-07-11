@@ -133,6 +133,41 @@ impl RingBuffer {
     pub fn is_empty(&self) -> bool {
         self.frames.is_empty()
     }
+
+    /// Scan all stored frames (regardless of timestamp) for H.264 SPS (NAL type 7)
+    /// and PPS (NAL type 8) in AVCC format (4-byte big-endian length prefix per NAL).
+    /// Returns the first matching pair, or `None`.
+    pub fn find_sps_pps_anywhere(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        for frame in &self.frames {
+            if frame.pixel_format != crate::capture::PixelFormat::H264 {
+                continue;
+            }
+            let data = &*frame.data;
+            let mut offset = 0;
+            let mut sps = None;
+            let mut pps = None;
+
+            while offset + 4 <= data.len() {
+                let nal_len =
+                    u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+                offset += 4;
+                if offset + nal_len > data.len() {
+                    break;
+                }
+                let nal_type = data[offset] & 0x1F;
+                match nal_type {
+                    7 => sps = Some(data[offset..offset + nal_len].to_vec()),
+                    8 => pps = Some(data[offset..offset + nal_len].to_vec()),
+                    _ => {}
+                }
+                if sps.is_some() && pps.is_some() {
+                    return Some((sps.unwrap(), pps.unwrap()));
+                }
+                offset += nal_len;
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

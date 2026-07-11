@@ -58,7 +58,12 @@ impl UploadQueue {
                 if let Ok(mut queue) = self.inner.lock() {
                     // Only load pending/failed tasks (resume incomplete ones)
                     for task in tasks {
-                        if matches!(task.status, UploadStatus::Pending | UploadStatus::Uploading | UploadStatus::Failed(_)) {
+                        if matches!(
+                            task.status,
+                            UploadStatus::Pending
+                                | UploadStatus::Uploading
+                                | UploadStatus::Failed(_)
+                        ) {
                             queue.push(UploadTask {
                                 status: UploadStatus::Pending,
                                 progress: 0.0,
@@ -143,22 +148,19 @@ impl UploadQueue {
 
     /// Get the next pending task.
     pub fn next_pending(&self) -> Option<UploadTask> {
-        self.inner
-            .lock()
-            .ok()
-            .and_then(|mut queue| {
-                let idx = queue.iter().position(|t| t.status == UploadStatus::Pending);
-                idx.map(|i| {
-                    queue[i].status = UploadStatus::Uploading;
-                    queue[i].started_at_secs = Some(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0),
-                    );
-                    queue[i].clone()
-                })
+        self.inner.lock().ok().and_then(|mut queue| {
+            let idx = queue.iter().position(|t| t.status == UploadStatus::Pending);
+            idx.map(|i| {
+                queue[i].status = UploadStatus::Uploading;
+                queue[i].started_at_secs = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                );
+                queue[i].clone()
             })
+        })
     }
 
     /// Mark a task as completed.
