@@ -3,7 +3,7 @@
  *
  * Usage:  node scripts/generate-assets.mjs
  *
- * Reads the SVG from ../lib/brand.ts (LOGO_SVG export), renders it at
+ * Reads the SVG from ../public/brand/logo.svg, renders it at
  * multiple sizes, and writes the output to:
  *   - ../public/              (website favicon, og:image)
  *   - ../../src-tauri/icons/  (Tauri app icons)
@@ -17,28 +17,16 @@ import sharp from "sharp";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 
-// ── Parse the SVG from lib/brand.ts ──────────────────────────────────
-const brandPath = join(ROOT, "lib", "brand.ts");
-const brandSrc = readFileSync(brandPath, "utf-8");
+// ── Parse the SVG from public/brand/logo.svg ─────────────────────────
+const svgPath = join(ROOT, "public", "brand", "logo.svg");
+const svgContent = readFileSync(svgPath, "utf-8");
 
-const match = brandSrc.match(/LOGO_SVG\s*=\s*`([\s\S]*?)`/);
-if (!match) throw new Error("Could not extract LOGO_SVG from lib/brand.ts");
-const svgContent = match[1];
-
-function wrapSVG(viewBox) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-${svgContent.replace(/<svg[^>]*>/, "").replace(/<\/svg>/, "")}
-</svg>`;
-}
-
-const SVG_SOURCE = wrapSVG("0 0 24 24");
+// The source SVG uses a fixed viewBox (e.g. "0 0 290 290")
+const SVG_SOURCE = svgContent;
 
 // ── Rendering helper ─────────────────────────────────────────────────
-async function renderSVG(size, pad = 0) {
-  const total = size + pad * 2;
-  const svg = wrapSVG(`${-pad} ${-pad} ${total} ${total}`);
-  return sharp(Buffer.from(svg))
+async function renderSVG(size) {
+  return sharp(Buffer.from(SVG_SOURCE))
     .resize(size, size)
     .png()
     .toBuffer();

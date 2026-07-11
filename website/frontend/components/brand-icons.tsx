@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { LOGO_SVG } from "@/lib/brand";
+import { LOGO_SVG_PATH } from "@/lib/brand";
 
 export function PrismLogo({ className }: { className?: string }) {
   return (
@@ -10,9 +10,10 @@ export function PrismLogo({ className }: { className?: string }) {
       )}
       aria-hidden="true"
     >
-      <span
+      <img
+        src={LOGO_SVG_PATH}
+        alt=""
         className="h-5 w-5"
-        dangerouslySetInnerHTML={{ __html: LOGO_SVG }}
       />
     </span>
   );
