@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://goprism.studio
+
+# Sitemaps
+Sitemap: https://goprism.studio/sitemap.xml

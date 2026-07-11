@@ -15,6 +15,12 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
           <nav className="hidden items-center gap-2 md:flex">
+            <Link href="/features" className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white">
+              Features
+            </Link>
+            <Link href="/docs" className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white">
+              Docs
+            </Link>
             <Link href="/privacy" className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white">
               Privacy
             </Link>

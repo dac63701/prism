@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "next-sitemap --config next-sitemap.config.cjs",
     "start": "next start",
     "preview": "next start"
   },
@@ -14,6 +15,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
     "next": "^15.3.0",
+    "next-sitemap": "^4.2.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwind-merge": "^3.6.0"

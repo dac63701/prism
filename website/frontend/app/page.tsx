@@ -32,10 +32,13 @@ export default function LandingPage() {
             <Badge>Capture. Clip. Share.</Badge>
             <div className="space-y-5">
               <h1 className="max-w-3xl text-5xl font-semibold tracking-tight text-white sm:text-6xl">
-                The cloud home for your best Prism moments.
+                Prism — screen recording, clipped and shared instantly.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-zinc-400">
-                Keep clips organized, show them off with public profiles, and send share links that look polished everywhere.
+                Prism is a lightweight screen recorder that captures your best gaming moments
+                as instant clips. Built with H.264 hardware encoding for zero-lag capture,
+                cloud storage so nothing gets lost, and polished share cards that look great
+                everywhere. No file juggling, no huge recordings — just the moments that matter.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
