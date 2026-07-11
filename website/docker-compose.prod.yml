@@ -41,6 +41,7 @@ services:
       - prism-data:/data
     networks:
       - prism-internal
+      - nginx-network
     depends_on:
       postgres:
         condition: service_healthy

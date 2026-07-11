@@ -64,12 +64,29 @@ docker compose exec postgres psql -U prism -d prism -c "UPDATE users SET role = 
 Nginx config:
 
 ```nginx
+upstream api {
+    server api:8080;
+}
+
+upstream web {
+    server web:3000;
+}
+
 server {
     listen 443 ssl;
     server_name goprism.studio;
 
+    location /api/ {
+        proxy_pass http://api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 1000M;
+    }
+
     location / {
-        proxy_pass http://server:8080;
+        proxy_pass http://web;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -144,12 +161,15 @@ All endpoints under `/api/`.
 ## Architecture
 
 ```
-Browser ──HTTPS──▶ Nginx ──▶ Axum Server ──▶ PostgreSQL
-                             │
-                             └── /data/clips/ (local storage)
+Browser ──HTTPS──▶ Nginx ──▶ web (Next.js, port 3000)
+                        │
+                        └── /api/* ──▶ api (Axum, port 8080) ──▶ PostgreSQL
+                                                                   │
+                                                                   └── /data/clips/ (local storage)
 ```
 
-- Single binary serves the React SPA as static files
+- Nginx routes `/api/*` directly to the Axum API server, bypassing the Next.js proxy for reliability after container/network resets.
+- Next.js serves the dashboard and public pages; the Next.js rewrite fallback is only used when running without nginx (dev mode).
 - JWT tokens (15m access + 30d refresh) for web auth
 - API keys (SHA-256 hashed) for desktop app auth
 - Rate limiting via token bucket middleware
