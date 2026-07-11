@@ -82,3 +82,20 @@ Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wir
 ### Website render cleanup ✅ DONE
 - Removed the remaining expensive blur and layered-gradient effects from `website/frontend/components/ui.tsx`, `website/frontend/app/page.tsx`, and `website/frontend/app/globals.css`.
 - Verified the website frontend and Rust backend with `npm run build`, `cargo check`, and `npm run tauri build`.
+
+## Styling Conventions
+
+- All interactive elements get `transition` (not `transition-colors`) to enable transform/opacity/filter animations on hover/active
+- Buttons use `<Button>` component from `@/components/ui/button` wherever semantically appropriate (7 variants: `default`, `outline`, `secondary`, `ghost`, `destructive`, `link`, `brand`)
+- Cards use `<Card>` from `@/components/ui/brand` for large content sections (rounded-3xl with gradient bg + shadow)
+- Interactive elements have `active:scale-[0.98]` or `active:scale-95` for press feedback; clip cards have `hover:scale-[1.02]`
+- Focus rings are always `focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-400/70`
+- Icons from `lucide-react`, consistently `size-4` or `size-3.5`, wrapped with `shrink-0`
+- `transition-colors` reserved for passive elements (inputs, toggles) that only animate color/border changes
+
+## Future Options
+
+- **Custom title bar**: Consider frameless window with custom title bar for premium feel
+  (`decorations: false` in tauri.conf.json, drag region in AppLayout)
+- **Light mode**: Currently dark-only; would need `@media (prefers-color-scheme: light)`
+  overrides for all color tokens
