@@ -26,7 +26,7 @@ export default async function LoginPage({
       </div>
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
         <div className="text-center">
-          <div className="text-xs uppercase tracking-[0.3em] text-blue-300/50">Prism</div>
+          <div className="text-sm uppercase tracking-[0.3em] text-blue-300/50">Prism</div>
           <p className="mt-2 text-sm text-zinc-500">Clip-based screen recording</p>
         </div>
         <AuthCard desktop={desktop} mode="login" />

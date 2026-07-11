@@ -58,6 +58,15 @@ impl axum::extract::FromRef<AppState> for storage::local::LocalStorage {
 
 #[tokio::main]
 async fn main() {
+    // Log panics before abort so they're visible in Docker logs
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("=== PANIC ===");
+        eprintln!("{info}");
+        let backtrace = backtrace::Backtrace::new();
+        eprintln!("{:?}", backtrace);
+        eprintln!("=============");
+    }));
+
     dotenvy::dotenv().ok();
 
     tracing_subscriber::fmt()
@@ -66,6 +75,11 @@ async fn main() {
 
     let config = config::Config::from_env();
     tracing::info!("Starting Prism Server v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!(
+        google_configured = %(!config.google_client_id.is_empty() && !config.google_client_secret.is_empty()),
+        jwt_secret_len = config.jwt_secret.len(),
+        "config loaded",
+    );
 
     let pool = db::init_pool(&config.database_url)
         .await
@@ -147,13 +161,21 @@ async fn main() {
 
     tracing::info!("Listening on http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("FATAL: Failed to bind to {addr}: {e}");
+            std::process::exit(1);
+        });
+    if let Err(e) = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await
-    .unwrap();
+    {
+        eprintln!("FATAL: Server error: {e}");
+        std::process::exit(1);
+    }
 }
 
 async fn rate_limit_middleware(

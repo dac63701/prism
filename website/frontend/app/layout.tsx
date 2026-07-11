@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PrismLogo } from "@/components/brand-icons";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -72,7 +73,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-500">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 lg:px-8">
-            <span>Prism</span>
+            <span className="flex items-center gap-2">
+              <PrismLogo className="h-6 w-6" />
+              Prism
+            </span>
             <div className="flex items-center gap-4">
               <Link href="/features" className="hover:text-zinc-300">
                 Features

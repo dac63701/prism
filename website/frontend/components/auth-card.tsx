@@ -72,7 +72,7 @@ export function AuthCard({
         <div className="text-xs uppercase tracking-[0.3em] text-blue-300/70">
           {isRegister ? "Get started" : "Welcome back"}
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-white">
+        <h1 className="text-3xl font-semibold tracking-tight text-white">
           {isRegister ? "Create your account" : "Sign in to Prism"}
         </h1>
         <p className="text-sm leading-6 text-zinc-400">
@@ -86,7 +86,7 @@ export function AuthCard({
       <div className="space-y-3">
         <a
           href={googleLoginUrl("/dashboard", desktop)}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050816]"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050816]"
         >
           <GoogleLogo />
           {isRegister ? "Sign up with Google" : "Continue with Google"}
