@@ -44,6 +44,12 @@ pub fn start_upload_processor(app: AppHandle) {
             let clip_path = PathBuf::from(&task.clip_path);
             let task_id = task.id.clone();
 
+            eprintln!(
+                "[upload] uploading {} to {}",
+                clip_path.display(),
+                upload_url
+            );
+
             let _ = app.emit(
                 "upload-progress",
                 serde_json::json!({
@@ -74,6 +80,8 @@ pub fn start_upload_processor(app: AppHandle) {
                     queue.mark_completed(&task_id);
                     queue.set_share_url(&task_id, response.share_url.clone());
 
+                    eprintln!("[upload] completed {}: {}", task_id, response.share_url);
+
                     let full_share_url = format!("{}{}", base_url, response.share_url);
                     let _ = app.emit(
                         "upload-progress",
@@ -90,6 +98,7 @@ pub fn start_upload_processor(app: AppHandle) {
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
+                    eprintln!("[upload] failed {}: {}", task_id, err_msg);
                     queue.mark_failed(&task_id, err_msg.clone());
 
                     let _ = app.emit(
