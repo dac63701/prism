@@ -74,7 +74,9 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
         </p>
       </div>
 
-      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition">
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(79,140,255,0.12),rgba(119,168,255,0.04))]" />
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3">
         <button
           onClick={(e) => { e.stopPropagation(); onNavigate(clip.filename); }}
           className="p-3 rounded-full bg-white/15 hover:bg-white/25 text-white transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
@@ -113,6 +115,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
         >
           <Trash2 className="size-4" />
         </button>
+      </div>
       </div>
 
       {showConfirm === clip.filename && (

@@ -57,11 +57,17 @@ export default function AppLayout() {
   }, [saveClip]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#050816] text-[#e5eefc]">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#050816] text-[#e5eefc]">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-blue-500/[0.07] blur-[120px]" />
+        <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-blue-600/5 blur-[120px]" />
+      </div>
+      <div className="relative z-10 flex h-full w-full">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
       <ClipNotification />
     </div>
   );
