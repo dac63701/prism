@@ -1,5 +1,17 @@
 import { cn } from "@/lib/utils";
 
+export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        "rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] shadow-lg shadow-black/20",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
 export function Panel({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div

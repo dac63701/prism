@@ -1,18 +1,51 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 const PERSIST_FILE: &str = "upload_queue.json";
 
 /// Status of a single upload task.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UploadStatus {
     Pending,
     Uploading,
     Completed,
     Failed(String),
     Cancelled,
+}
+
+impl Serialize for UploadStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = match self {
+            UploadStatus::Pending => "Pending",
+            UploadStatus::Uploading => "Uploading",
+            UploadStatus::Completed => "Completed",
+            UploadStatus::Failed(_) => "Failed",
+            UploadStatus::Cancelled => "Cancelled",
+        };
+        serializer.serialize_str(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UploadStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "Pending" => Ok(UploadStatus::Pending),
+            "Uploading" => Ok(UploadStatus::Uploading),
+            "Completed" => Ok(UploadStatus::Completed),
+            "Failed" => Ok(UploadStatus::Failed("Unknown error".into())),
+            "Cancelled" => Ok(UploadStatus::Cancelled),
+            _ => Ok(UploadStatus::Failed(format!("Unknown status: {s}"))),
+        }
+    }
 }
 
 /// An upload task in the queue.
@@ -34,6 +67,19 @@ pub struct UploadTask {
     pub size_bytes: u64,
     pub retry_count: u32,
     pub share_url: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Metadata collected from a clip before it is queued for upload.
+#[derive(Debug, Clone)]
+pub struct UploadMetadata {
+    pub title: String,
+    pub game: String,
+    pub duration_secs: f64,
+    pub width: u32,
+    pub height: u32,
+    pub codec: String,
+    pub size_bytes: u64,
 }
 
 /// Manages the upload queue in memory with optional disk persistence.
@@ -68,6 +114,7 @@ impl UploadQueue {
                                 status: UploadStatus::Pending,
                                 progress: 0.0,
                                 started_at_secs: None,
+                                error: None,
                                 ..task
                             });
                         }
@@ -110,13 +157,7 @@ impl UploadQueue {
         clip_path: String,
         server_url: String,
         api_key: String,
-        title: String,
-        game: String,
-        duration_secs: f64,
-        width: u32,
-        height: u32,
-        codec: String,
-        size_bytes: u64,
+        metadata: UploadMetadata,
     ) {
         if let Ok(mut queue) = self.inner.lock() {
             queue.push(UploadTask {
@@ -127,15 +168,16 @@ impl UploadQueue {
                 started_at_secs: None,
                 server_url: Some(server_url),
                 api_key: Some(api_key),
-                title,
-                game,
-                duration_secs,
-                width,
-                height,
-                codec,
-                size_bytes,
+                title: metadata.title,
+                game: metadata.game,
+                duration_secs: metadata.duration_secs,
+                width: metadata.width,
+                height: metadata.height,
+                codec: metadata.codec,
+                size_bytes: metadata.size_bytes,
                 retry_count: 0,
                 share_url: None,
+                error: None,
             });
         }
         self.persist();
@@ -183,8 +225,10 @@ impl UploadQueue {
                     task.status = UploadStatus::Pending;
                     task.progress = 0.0;
                     task.started_at_secs = None;
+                    task.error = None;
                 } else {
-                    task.status = UploadStatus::Failed(error);
+                    task.status = UploadStatus::Failed(error.clone());
+                    task.error = Some(error);
                 }
             }
         }
@@ -219,6 +263,7 @@ impl UploadQueue {
                     task.progress = 0.0;
                     task.started_at_secs = None;
                     task.retry_count = 0;
+                    task.error = None;
                 }
             }
         }

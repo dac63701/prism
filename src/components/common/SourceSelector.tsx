@@ -109,7 +109,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
         <button
           onClick={loadSources}
           disabled={loading}
-          className="p-1 rounded text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800 transition-colors disabled:opacity-40"
+          className="p-1 rounded text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800 transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 disabled:opacity-40"
           title="Refresh sources"
         >
           <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
@@ -121,7 +121,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
         <button
           onClick={() => setActiveTab("display")}
           className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
+            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
             activeTab === "display"
               ? "bg-surface-2 text-white"
               : "text-zinc-400 hover:text-white"
@@ -133,7 +133,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
         <button
           onClick={() => setActiveTab("app")}
           className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors",
+            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
             activeTab === "app"
               ? "bg-surface-2 text-white"
               : "text-zinc-400 hover:text-white"
@@ -153,7 +153,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
                 key={display.displayId}
                 onClick={() => selectDisplay(display.displayId, display.isMain)}
                 className={cn(
-                  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition-colors",
+                  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
                   "hover:bg-white/5 border border-transparent",
                   isDisplaySelected(display.displayId, display.isMain) &&
                     "bg-surface-2 border-accent/20"
@@ -188,7 +188,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
                 key={app.bundleId}
                 onClick={() => selectApp(app.bundleId)}
                 className={cn(
-                  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition-colors",
+                  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
                   "hover:bg-white/5 border border-transparent",
                   isAppSelected(app.bundleId) &&
                     "bg-surface-2 border-accent/20"

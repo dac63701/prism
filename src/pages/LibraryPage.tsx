@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, Film, Trash2, FolderOpen, Play, Upload, Check, Link2, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useClipsStore, formatSize, formatDuration, formatDate, type Clip } from "@/stores/clips";
 import { useCloudStore } from "@/stores/cloud";
 import ClipThumbnail from "@/components/common/ClipThumbnail";
 
 function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete, onUpload, onNavigate, onCopyShare, onShowConfirm, onHideConfirm, cloudAuthed }: {
   clip: Clip;
-  task: { status: string; progress: number; share_url?: string; clip_path: string } | undefined;
+  task: { status: string; progress: number; share_url?: string; clip_path: string; error?: string | null } | undefined;
   showConfirm: string | null;
   confirming: boolean;
   uploadingClip: string | null;
@@ -19,16 +20,17 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
   onHideConfirm: () => void;
   cloudAuthed: boolean;
 }) {
-  const isUploaded = task?.status === "Completed";
-  const isUploading = task?.status === "Uploading" || uploadingClip === clip.filename;
-  const isFailed = task?.status?.startsWith("Failed");
+  const status = task?.status;
+  const isUploaded = status === "Completed";
+  const isUploading = (status === "Uploading" || uploadingClip === clip.filename);
+  const isFailed = typeof status === "string" && (status === "Failed" || status.startsWith("Failed"));
   const shareUrl = task?.share_url;
   const displayName = clip.title || clip.filename.replace(/\.mp4$/, "");
 
   return (
     <div
       onClick={() => onNavigate(clip.filename)}
-      className="group aspect-video bg-surface rounded-2xl border border-white/10 overflow-hidden relative cursor-pointer"
+      className="group aspect-video bg-surface rounded-2xl border border-white/10 overflow-hidden relative cursor-pointer transition hover:scale-[1.02]"
     >
       <ClipThumbnail path={clip.path} filename={clip.filename} />
 
@@ -38,7 +40,10 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
           Uploaded
         </div>
       ) : isFailed ? (
-        <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600/80 text-[10px] text-white font-medium">
+        <div
+          className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600/80 text-[10px] text-white font-medium"
+          title={task?.error || "Upload failed"}
+        >
           Failed
         </div>
       ) : isUploading ? (
@@ -72,7 +77,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
         <button
           onClick={(e) => { e.stopPropagation(); onNavigate(clip.filename); }}
-          className="p-3 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
+          className="p-3 rounded-full bg-white/15 hover:bg-white/25 text-white transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
           title="Play in app"
         >
           <Play className="size-5 fill-white ml-0.5" />
@@ -81,7 +86,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
         {isUploaded && shareUrl ? (
           <button
             onClick={(e) => { e.stopPropagation(); onCopyShare(shareUrl); }}
-            className="p-3 rounded-full bg-emerald-600/40 hover:bg-emerald-600/60 text-white transition-colors"
+            className="p-3 rounded-full bg-emerald-600/40 hover:bg-emerald-600/60 text-white transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
             title="Copy share link"
           >
             <Link2 className="size-5" />
@@ -90,7 +95,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
           <button
             onClick={(e) => { e.stopPropagation(); onUpload(clip.path, clip.filename, clip.game); }}
             disabled={isUploading}
-            className="p-3 rounded-full bg-accent/40 hover:bg-accent/60 text-white transition-colors disabled:opacity-40"
+            className="p-3 rounded-full bg-accent/40 hover:bg-accent/60 text-white transition active:scale-90 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
             title={isUploading ? "Uploading..." : "Upload to cloud"}
           >
             {isUploading ? (
@@ -103,7 +108,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
 
         <button
           onClick={(e) => { e.stopPropagation(); onShowConfirm(clip.filename); }}
-          className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-900/60 text-zinc-300 hover:text-red-300 transition-colors absolute top-2 right-2"
+          className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-900/60 text-zinc-300 hover:text-red-300 transition active:scale-90 absolute top-2 right-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
           title="Delete clip"
         >
           <Trash2 className="size-4" />
@@ -117,19 +122,21 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
         >
           <p className="text-sm text-zinc-300 text-center">Delete this clip?</p>
           <div className="flex gap-2">
-            <button
+            <Button
+              variant="destructive"
+              size="xs"
               onClick={() => onDelete(clip.filename)}
               disabled={confirming}
-              className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 text-white rounded-md transition-colors disabled:opacity-50"
             >
               {confirming ? "Deleting..." : "Delete"}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={onHideConfirm}
-              className="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-md transition-colors"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -151,6 +158,8 @@ export default function LibraryPage() {
   const uploadClip = useCloudStore((s) => s.uploadClip);
   const copyShareUrl = useCloudStore((s) => s.copyShareUrl);
   const cloudAuthed = useCloudStore((s) => s.authenticated);
+  const uploadError = useCloudStore((s) => s.uploadError);
+  const clearUploadError = useCloudStore((s) => s.clearUploadError);
 
   const [search, setSearch] = useState("");
   const [showConfirm, setShowConfirm] = useState<string | null>(null);
@@ -205,13 +214,14 @@ export default function LibraryPage() {
               {clips.length} clip{clips.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={openClipLocation}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 border border-white/10 bg-white/5 rounded-xl hover:text-zinc-200 hover:bg-white/10 transition-colors"
           >
             <FolderOpen className="size-4" />
             Open Folder
-          </button>
+          </Button>
         </div>
 
         <div className="mt-4 flex items-center gap-3">
@@ -225,11 +235,23 @@ export default function LibraryPage() {
               className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface border border-white/10 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
             />
           </div>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 border border-white/10 bg-white/5 rounded-xl hover:text-zinc-200 hover:bg-white/10 transition-colors">
+          <Button variant="secondary" size="sm">
             <Filter className="size-4" />
             Filter
-          </button>
+          </Button>
         </div>
+
+        {uploadError && (
+          <div className="mt-3 flex items-start gap-2 px-4 py-2.5 rounded-lg bg-red-950/60 border border-red-900/60">
+            <p className="text-xs text-red-300 flex-1">{uploadError}</p>
+            <button
+              onClick={clearUploadError}
+              className="p-0.5 rounded text-red-400 hover:text-red-200 transition active:scale-90 shrink-0"
+            >
+              <span className="text-xs font-medium">Dismiss</span>
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="flex-1 px-6 pb-6 overflow-y-auto">

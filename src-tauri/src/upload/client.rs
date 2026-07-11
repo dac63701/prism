@@ -2,6 +2,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use super::queue::UploadMetadata;
+
 #[derive(Debug, Deserialize)]
 pub struct UploadResponse {
     pub id: String,
@@ -18,12 +20,7 @@ pub async fn upload_clip(
     url: &str,
     file_path: &Path,
     api_token: Option<&str>,
-    title: &str,
-    game: &str,
-    duration_secs: f64,
-    width: u32,
-    height: u32,
-    codec: &str,
+    metadata: &UploadMetadata,
 ) -> Result<UploadResponse, UploadError> {
     let file_bytes = tokio::fs::read(file_path)
         .await
@@ -42,12 +39,12 @@ pub async fn upload_clip(
 
     let form = reqwest::multipart::Form::new()
         .part("file", file_part)
-        .text("title", title.to_string())
-        .text("game", game.to_string())
-        .text("duration_secs", duration_secs.to_string())
-        .text("width", width.to_string())
-        .text("height", height.to_string())
-        .text("codec", codec.to_string())
+        .text("title", metadata.title.clone())
+        .text("game", metadata.game.clone())
+        .text("duration_secs", metadata.duration_secs.to_string())
+        .text("width", metadata.width.to_string())
+        .text("height", metadata.height.to_string())
+        .text("codec", metadata.codec.clone())
         .text("visibility", "unlisted");
 
     let client = reqwest::Client::new();

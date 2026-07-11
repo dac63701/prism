@@ -10,6 +10,7 @@ interface CloudState {
   serverUrl: string;
   uploads: UploadTask[];
   loading: boolean;
+  uploadError: string | null;
 
   login: () => Promise<void>;
   logout: () => Promise<void>;
@@ -17,16 +18,19 @@ interface CloudState {
   uploadClip: (path: string, filename: string, game?: string) => Promise<void>;
   uploadQueueStatus: () => Promise<UploadTask[]>;
   copyShareUrl: (url: string) => Promise<void>;
+  handleAuthCode: (code: string) => Promise<void>;
+  clearUploadError: () => void;
 }
 
 export interface UploadTask {
   id: string;
   clip_path: string;
-  status: "Pending" | "Uploading" | "Completed" | string;
+  status: "Pending" | "Uploading" | "Completed" | "Failed" | "Cancelled" | string;
   progress: number;
   started_at_secs: number | null;
   server_url: string | null;
   share_url?: string;
+  error?: string | null;
 }
 
 let unlistenAuth: (() => void) | null = null;
@@ -76,14 +80,15 @@ export const useCloudStore = create<CloudState>((set, get) => {
     serverUrl: "",
     uploads: [],
     loading: false,
+    uploadError: null,
 
     login: async () => {
       const settings = useSettingsStore.getState().settings;
       if (!settings.cloud.server_url) {
-        console.error("[cloud] Server URL not configured");
+        set({ uploadError: "Server URL not configured" });
         return;
       }
-      set({ loading: true });
+      set({ loading: true, uploadError: null });
       await invoke("cloud_login");
       set({ loading: false });
     },
@@ -91,7 +96,7 @@ export const useCloudStore = create<CloudState>((set, get) => {
     logout: async () => {
       set({ loading: true });
       await invoke("cloud_logout");
-      set({ authenticated: false, displayName: "", email: "", loading: false });
+      set({ authenticated: false, displayName: "", email: "", loading: false, uploadError: null });
     },
 
     checkStatus: async () => {
@@ -110,9 +115,11 @@ export const useCloudStore = create<CloudState>((set, get) => {
 
     uploadClip: async (path: string, filename: string, game?: string) => {
       try {
-        set({ loading: true });
+        set({ loading: true, uploadError: null });
         await invoke("upload_clip", { path, filename, game: game ?? "" });
       } catch (err) {
+        const msg = typeof err === "string" ? err : "Upload failed";
+        set({ uploadError: msg });
         console.error("[cloud] uploadClip failed:", err);
       } finally {
         set({ loading: false });
@@ -137,5 +144,20 @@ export const useCloudStore = create<CloudState>((set, get) => {
         console.error("[cloud] Failed to copy share URL");
       }
     },
+
+    handleAuthCode: async (code: string) => {
+      try {
+        set({ loading: true, uploadError: null });
+        await invoke("cloud_handle_auth_code", { code });
+      } catch (err) {
+        const msg = typeof err === "string" ? err : "Auth failed";
+        set({ uploadError: msg });
+        console.error("[cloud] handleAuthCode failed:", err);
+      } finally {
+        set({ loading: false });
+      }
+    },
+
+    clearUploadError: () => set({ uploadError: null }),
   };
 });

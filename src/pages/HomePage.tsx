@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { X, Monitor, HardDrive, Film } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settings";
@@ -19,7 +19,6 @@ export default function HomePage() {
   const isRecording = useRecordingStore((s) => s.isRecording);
   const bufferTimeSeconds = useRecordingStore((s) => s.bufferTimeSeconds);
   const recordingElapsedSeconds = useRecordingStore((s) => s.recordingElapsedSeconds);
-  const checkStatus = useRecordingStore((s) => s.checkStatus);
   const error = useRecordingStore((s) => s.error);
   const setError = useRecordingStore((s) => s.setError);
   const clearError = useRecordingStore((s) => s.clearError);
@@ -29,25 +28,13 @@ export default function HomePage() {
     if (!loaded) loadSettings();
   }, [loaded, loadSettings]);
 
-  // Poll buffer info while recording (1 Hz for status display)
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (isRecording) {
-      checkStatus();
-      interval = setInterval(checkStatus, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRecording, checkStatus]);
-
   function formatElapsed(secs: number): string {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
-  const handleSourceChange = async (targetJson: string) => {
+  const handleSourceChange = useCallback(async (targetJson: string) => {
     try {
       await invoke("set_capture_target", { targetJson });
       await loadSettings();
@@ -55,7 +42,7 @@ export default function HomePage() {
       const msg = typeof err === "string" ? err : "Failed to switch capture target";
       setError(msg);
     }
-  };
+  }, [loadSettings, setError]);
 
   // Parse current source for display label
   const targetLabel = useMemo(() => {
@@ -100,7 +87,7 @@ export default function HomePage() {
             <p className="text-xs text-red-300 flex-1 leading-relaxed">{error}</p>
             <button
               onClick={clearError}
-              className="p-0.5 rounded text-red-400 hover:text-red-200 transition-colors"
+              className="p-0.5 rounded text-red-400 hover:text-red-200 transition active:scale-90"
             >
               <X className="size-3.5" />
             </button>

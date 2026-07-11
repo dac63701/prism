@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::recording::chrono_now_formatted;
 use crate::settings::SettingsManager;
-use crate::upload::queue::UploadQueue;
+use crate::upload::queue::{UploadMetadata, UploadQueue};
 
 /// Enqueue a clip for upload to the configured server.
 #[tauri::command]
@@ -40,19 +40,22 @@ pub async fn upload_clip(
         .unwrap_or(&filename)
         .to_string();
 
+    let clip_path_for_event = path.clone();
     let task_id = format!("upload_{}", chrono_now_formatted());
     queue.enqueue_with_meta(
         task_id.clone(),
         path,
         settings.cloud.server_url.clone(),
         settings.cloud.api_key.clone(),
-        title,
-        game,
-        duration_secs as f64,
-        width as u32,
-        height as u32,
-        codec,
-        size_bytes,
+        UploadMetadata {
+            title,
+            game,
+            duration_secs: duration_secs as f64,
+            width,
+            height,
+            codec,
+            size_bytes,
+        },
     );
 
     let _ = app.emit(
@@ -61,6 +64,7 @@ pub async fn upload_clip(
             "id": task_id,
             "status": "Pending",
             "progress": 0.0,
+            "clip_path": clip_path_for_event,
         }),
     );
 

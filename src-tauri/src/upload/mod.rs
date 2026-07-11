@@ -5,7 +5,7 @@ pub mod queue;
 
 use std::path::PathBuf;
 
-use queue::{UploadQueue, UploadStatus};
+use queue::{UploadMetadata, UploadQueue, UploadStatus};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::settings::SettingsManager;
@@ -58,12 +58,15 @@ pub fn start_upload_processor(app: AppHandle) {
                 &upload_url,
                 &clip_path,
                 Some(&api_key),
-                &task.title,
-                &task.game,
-                task.duration_secs,
-                task.width,
-                task.height,
-                &task.codec,
+                &UploadMetadata {
+                    title: task.title.clone(),
+                    game: task.game.clone(),
+                    duration_secs: task.duration_secs,
+                    width: task.width,
+                    height: task.height,
+                    codec: task.codec.clone(),
+                    size_bytes: task.size_bytes,
+                },
             )
             .await
             {

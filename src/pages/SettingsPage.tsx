@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSettingsStore, getDefaultHotkeys } from "@/stores/settings";
+import { useCloudStore } from "@/stores/cloud";
 import { cn } from "@/lib/utils";
 import type { AppSettings } from "@/types/settings";
+import { Button } from "@/components/ui/button";
 import PresetSlider from "@/components/settings/PresetSlider";
 import HotkeyCaptureInput from "@/components/settings/HotkeyCaptureInput";
 
@@ -79,6 +81,12 @@ export default function SettingsPage() {
   const loaded = useSettingsStore((s) => s.loaded);
   const settings = useSettingsStore((s) => s.settings);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
+
+  const [showManualCode, setShowManualCode] = useState(false);
+  const [authCode, setAuthCode] = useState("");
+  const handleAuthCode = useCloudStore((s) => s.handleAuthCode);
+  const uploadError = useCloudStore((s) => s.uploadError);
+  const cloudLoading = useCloudStore((s) => s.loading);
 
   useEffect(() => {
     if (!loaded) loadSettings();
@@ -261,15 +269,16 @@ export default function SettingsPage() {
             </FieldRow>
 
             <div className="flex justify-end pt-2">
-              <button
+              <Button
+                variant="ghost"
+                size="xs"
                 type="button"
                 onClick={() => {
                   void resetHotkeys();
                 }}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
               >
                 Reset to defaults
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -353,33 +362,77 @@ export default function SettingsPage() {
                       </span>
                     ) : null}
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     type="button"
-                    onClick={async () => {
-                      const { useCloudStore } = await import("@/stores/cloud");
+                    onClick={() => {
                       useCloudStore.getState().logout();
                     }}
-                    className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                    className="text-zinc-500 hover:text-red-400"
                   >
                     Sign out
-                  </button>
+                  </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-zinc-600">Not signed in</span>
-                  <button
+                <div className="flex flex-col items-start gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-zinc-600">Not signed in</span>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      type="button"
+                      onClick={() => {
+                        useCloudStore.getState().login();
+                      }}
+                      className="text-blue-400 hover:text-blue-300"
+                    >
+                      Sign in with Google
+                    </Button>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     type="button"
-                    onClick={async () => {
-                      const { useCloudStore } = await import("@/stores/cloud");
-                      useCloudStore.getState().login();
-                    }}
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    onClick={() => setShowManualCode(!showManualCode)}
+                    className="text-zinc-500 hover:text-zinc-300"
                   >
-                    Sign in with Google
-                  </button>
+                    Trouble signing in? Paste auth code manually
+                  </Button>
+                  {showManualCode && (
+                    <div className="flex flex-col gap-2 w-full mt-1">
+                      <input
+                        type="text"
+                        value={authCode}
+                        onChange={(e) => setAuthCode(e.target.value)}
+                        placeholder="Paste auth code here..."
+                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="brand"
+                          size="xs"
+                          type="button"
+                          onClick={() => {
+                            handleAuthCode(authCode);
+                            setAuthCode("");
+                            setShowManualCode(false);
+                          }}
+                          disabled={!authCode.trim() || cloudLoading}
+                        >
+                          {cloudLoading ? "Submitting..." : "Submit code"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </FieldRow>
+            {uploadError && (
+              <div className="mt-2 px-4 py-2 rounded-lg bg-red-950/60 border border-red-900/60">
+                <p className="text-xs text-red-300">{uploadError}</p>
+              </div>
+            )}
 
             <FieldRow label="Auto-upload">
               <ToggleSwitch

@@ -10,6 +10,21 @@ export default function AppLayout() {
   const saveClip = useRecordingStore((s) => s.saveClip);
   const checkCloudStatus = useCloudStore((s) => s.checkStatus);
 
+  const isRecording = useRecordingStore((s) => s.isRecording);
+  const checkRecordingStatus = useRecordingStore((s) => s.checkStatus);
+
+  // Poll recording status every 1s while recording (keeps timer live on all pages)
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isRecording) {
+      checkRecordingStatus();
+      interval = setInterval(checkRecordingStatus, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording, checkRecordingStatus]);
+
   useEffect(() => {
     checkCloudStatus();
   }, [checkCloudStatus]);

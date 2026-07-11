@@ -56,7 +56,7 @@ export default function Sidebar() {
             end={item.to === "/"}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition active:scale-[0.98]",
                 isActive
                   ? "bg-surface text-white"
                   : "text-zinc-400 hover:text-white hover:bg-white/5"

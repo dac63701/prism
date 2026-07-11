@@ -16,7 +16,6 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
     "next": "^15.3.0",
-    "next-sitemap": "^4.2.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwind-merge": "^3.6.0"
@@ -28,6 +27,8 @@
     "@types/react-dom": "^19.1.6",
     "postcss": "^8.5.16",
     "tailwindcss": "^4.3.2",
+    "next-sitemap": "^4.2.3",
+    "sharp": "^0.34.1",
     "typescript": "~5.8.3"
   }
 }

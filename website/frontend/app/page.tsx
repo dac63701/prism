@@ -3,7 +3,6 @@ import { ArrowRight, Clapperboard, Lock, Sparkles, Users } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import { Badge, Button, Card, Panel, SectionHeading, StatCard } from "@/components/ui";
 
-export const dynamic = "force-dynamic";
 
 const features = [
   {

@@ -39,9 +39,6 @@ export function googleLoginUrl(next = "/dashboard", desktop = false) {
   return `/api/auth/google?${params.toString()}`;
 }
 
-export function desktopLoginUrl() {
-  return googleLoginUrl("/dashboard", true);
-}
 
 export async function login(email: string, password: string) {
   return jsonFetch<AuthResponse>("/api/auth/login", {
@@ -57,22 +54,8 @@ export async function register(email: string, password: string, display_name?: s
   });
 }
 
-export async function logout() {
-  return jsonFetch<{ status: string }>("/api/auth/logout", {
-    method: "POST",
-  });
-}
 
-export async function refresh(refresh_token?: string) {
-  return jsonFetch<AuthResponse>("/api/auth/refresh", {
-    method: "POST",
-    body: JSON.stringify({ refresh_token }),
-  });
-}
 
-export async function getMe() {
-  return jsonFetch<User>("/api/auth/me", { method: "GET" });
-}
 
 export async function getDashboardStats() {
   return jsonFetch<DashboardStats>("/api/admin/stats", { method: "GET" });
@@ -90,24 +73,6 @@ export async function getClip(id: string) {
   return jsonFetch<ClipDetail>(`/api/clips/${id}`, { method: "GET" });
 }
 
-export async function updateClip(id: string, body: JsonRecord) {
-  return jsonFetch<{ status: string }>(`/api/clips/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function deleteClip(id: string) {
-  const response = await fetch(`/api/clips/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || response.statusText);
-  }
-}
 
 export async function getShareMeta(shareId: string) {
   return jsonFetch<{ clip: ClipDetail; user: User }>(`/api/s/${shareId}/meta`, { method: "GET" });

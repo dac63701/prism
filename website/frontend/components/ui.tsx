@@ -77,18 +77,6 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      className={cn(
-        "w-full rounded-xl border border-white/10 bg-[#09111f] px-4 py-3 text-sm text-white placeholder:text-zinc-500",
-        "focus:border-blue-400/70 focus:outline-none focus:ring-2 focus:ring-blue-500/20",
-        props.className
-      )}
-    />
-  );
-}
 
 export function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
   return (
@@ -138,13 +126,4 @@ export function SectionHeading({
   );
 }
 
-export function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white"
-    >
-      {children}
-    </Link>
-  );
-}
+

@@ -21,3 +21,8 @@ pub async fn get_auth_status(
     let state = auth_mgr.state.lock().map_err(|e| e.to_string())?;
     Ok(state.clone())
 }
+
+#[tauri::command]
+pub async fn cloud_handle_auth_code(app: AppHandle, code: String) -> Result<(), String> {
+    AuthManager::handle_callback(&app, code).await
+}

@@ -56,7 +56,7 @@ export default function PresetSlider({
               type="button"
               onClick={() => onChange(option.value)}
               className={cn(
-                "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                "rounded-full border px-2.5 py-1 text-[11px] transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
                 active
                   ? "border-accent bg-accent text-white"
                   : "border-white/10 bg-surface text-zinc-400 hover:text-white hover:border-white/20"

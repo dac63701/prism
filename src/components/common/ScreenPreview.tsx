@@ -15,6 +15,7 @@ interface ScreenPreviewProps {
 export default function ScreenPreview({ recording }: ScreenPreviewProps) {
   const [src, setSrc] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorCountRef = useRef(0);
 
   useEffect(() => {
     if (!recording) {
@@ -30,16 +31,17 @@ export default function ScreenPreview({ recording }: ScreenPreviewProps) {
         if (active && dataUrl) {
           setSrc(dataUrl);
         }
+        errorCountRef.current = 0;
       } catch {
-        // silently retry
+        errorCountRef.current++;
       }
 
       if (active) {
-        timerRef.current = setTimeout(poll, 800);
+        const backoff = Math.min(800 * Math.pow(2, errorCountRef.current), 10000);
+        timerRef.current = setTimeout(poll, backoff);
       }
     };
 
-    // First poll immediately
     poll();
 
     return () => {

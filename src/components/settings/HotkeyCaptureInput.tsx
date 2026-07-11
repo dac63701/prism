@@ -110,7 +110,7 @@ export default function HotkeyCaptureInput({ value, onChange }: HotkeyCaptureInp
           setError(null);
         }}
         className={cn(
-          "min-w-44 rounded-xl border px-3 py-1.5 text-left text-sm font-mono transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70",
+          "min-w-44 rounded-xl border px-3 py-1.5 text-left text-sm font-mono transition active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70",
           capturing
             ? "border-accent bg-accent text-white"
             : "border-white/10 bg-surface text-white hover:border-white/20"

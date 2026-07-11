@@ -135,6 +135,7 @@ pub fn run() {
             commands::auth::cloud_login,
             commands::auth::cloud_logout,
             commands::auth::get_auth_status,
+            commands::auth::cloud_handle_auth_code,
             commands::uploads::upload_clip,
             commands::uploads::upload_queue_status,
             commands::uploads::cancel_upload,

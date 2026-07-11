@@ -11,6 +11,8 @@ import {
   SkipBack,
   SkipForward,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/brand";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { formatDate, formatDuration, formatSize, useClipsStore } from "@/stores/clips";
 import type { Clip } from "@/stores/clips";
@@ -65,7 +67,7 @@ export default function ClipDetailPage() {
     return (
       <div className="h-full flex flex-col items-center justify-center text-zinc-500 gap-3">
         <p className="text-sm">Clip not found</p>
-        <button onClick={() => navigate("/library")} className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+        <button onClick={() => navigate("/library")} className="text-xs text-zinc-400 hover:text-zinc-200 transition">
           Back to library
         </button>
       </div>
@@ -139,7 +141,7 @@ export default function ClipDetailPage() {
   return (
     <div className="h-full overflow-y-auto">
       <header className="flex items-center gap-3 px-6 pt-5 pb-3">
-        <button onClick={() => navigate("/library")} className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors" aria-label="Back to library">
+        <button onClick={() => navigate("/library")} className="p-1.5 rounded-xl text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Back to library">
           <ArrowLeft className="size-5" />
         </button>
         <div className="min-w-0 flex-1">
@@ -177,7 +179,7 @@ export default function ClipDetailPage() {
 
           {!playing && !videoError && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <button onClick={() => void togglePlay()} className="pointer-events-auto flex size-16 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition-colors hover:bg-white/25" aria-label="Play clip">
+              <button onClick={() => void togglePlay()} className="pointer-events-auto flex size-16 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition active:scale-95 hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Play clip">
                 <Play className="ml-1 size-7 fill-white" />
               </button>
             </div>
@@ -196,16 +198,16 @@ export default function ClipDetailPage() {
             />
             <div className="mt-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-white">
-                <button onClick={() => void togglePlay()} className="rounded-lg p-1.5 transition-colors hover:bg-white/15" aria-label={playing ? "Pause clip" : "Play clip"}>
+                <button onClick={() => void togglePlay()} className="rounded-lg p-1.5 transition active:scale-90 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label={playing ? "Pause clip" : "Play clip"}>
                   {playing ? <Pause className="size-5" /> : <Play className="size-5 fill-white" />}
                 </button>
-                <button onClick={() => seekTo(currentTime - SKIP_SECONDS)} className="rounded-lg p-1.5 transition-colors hover:bg-white/15" aria-label="Skip back 5 seconds">
+                <button onClick={() => seekTo(currentTime - SKIP_SECONDS)} className="rounded-lg p-1.5 transition active:scale-90 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Skip back 5 seconds">
                   <SkipBack className="size-5" />
                 </button>
-                <button onClick={() => seekTo(currentTime + SKIP_SECONDS)} className="rounded-lg p-1.5 transition-colors hover:bg-white/15" aria-label="Skip forward 5 seconds">
+                <button onClick={() => seekTo(currentTime + SKIP_SECONDS)} className="rounded-lg p-1.5 transition active:scale-90 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Skip forward 5 seconds">
                   <SkipForward className="size-5" />
                 </button>
-                <button onClick={() => void togglePip()} className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/15 hover:text-white" aria-label="Picture in picture">
+                <button onClick={() => void togglePip()} className="rounded-lg p-1.5 text-white/70 transition active:scale-90 hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Picture in picture">
                   <PictureInPicture2 className="size-4" />
                 </button>
               </div>
@@ -214,13 +216,13 @@ export default function ClipDetailPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-surface/70 p-4 sm:p-5">
+        <Card><div className="p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-white">Clip details</h2>
               <p className="mt-1 text-xs text-zinc-500">Saved separately from the video, ready for future clip editing.</p>
             </div>
-            {!editing && <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-white/10"><Edit3 className="size-3.5" /> Edit</button>}
+            {!editing && <Button variant="secondary" size="sm" onClick={() => setEditing(true)}><Edit3 className="size-3.5" /> Edit</Button>}
           </div>
 
           {editing ? (
@@ -236,8 +238,8 @@ export default function ClipDetailPage() {
               </label>
               {editorError && <p className="text-xs text-red-400">{editorError}</p>}
               <div className="flex justify-end gap-2">
-                <button onClick={cancelEdit} disabled={saving} className="rounded-xl px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200">Cancel</button>
-                <button onClick={() => void saveMetadata()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-400 disabled:opacity-50"><Save className="size-3.5" /> {saving ? "Saving..." : "Save details"}</button>
+                <Button variant="ghost" size="xs" onClick={cancelEdit} disabled={saving}>Cancel</Button>
+                <Button variant="brand" size="sm" onClick={() => void saveMetadata()} disabled={saving}><Save className="size-3.5" /> {saving ? "Saving..." : "Save details"}</Button>
               </div>
             </div>
           ) : (
@@ -247,7 +249,7 @@ export default function ClipDetailPage() {
               <div className="sm:col-span-2"><p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">Description</p><p className="mt-1 whitespace-pre-wrap leading-6 text-zinc-300">{clip.description || "No description yet."}</p></div>
             </div>
           )}
-        </section>
+        </div></Card>
       </main>
     </div>
   );
