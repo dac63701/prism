@@ -183,8 +183,12 @@ pub fn run() {
                     .general
                     .cs2_gsi_port;
                 match games::cs2::ensure_gsi_config(gsi_port) {
-                    Ok(Some(path)) => eprintln!("[cs2-gsi] configuration ready at {}", path.display()),
-                    Ok(None) => eprintln!("[cs2-gsi] CS2 installation was not found in a standard Steam library"),
+                    Ok(Some(path)) => {
+                        eprintln!("[cs2-gsi] configuration ready at {}", path.display())
+                    }
+                    Ok(None) => eprintln!(
+                        "[cs2-gsi] CS2 installation was not found in a standard Steam library"
+                    ),
                     Err(error) => eprintln!("[cs2-gsi] failed to install configuration: {error}"),
                 }
                 app_handle
