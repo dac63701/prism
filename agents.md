@@ -93,6 +93,67 @@ Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wir
 - Icons from `lucide-react`, consistently `size-4` or `size-3.5`, wrapped with `shrink-0`
 - `transition-colors` reserved for passive elements (inputs, toggles) that only animate color/border changes
 
+## Website Frontend Conventions (`website/frontend/`)
+
+### Lazy Loading & Skeletons
+
+Every route segment that fetches async data **must** have a sibling `loading.tsx` file.
+This creates an automatic `<Suspense>` boundary so the layout shell renders instantly
+while the page's data loads.
+
+**Where to place loading.tsx:**
+
+| Segment | Data fetched by page | Skeleton covers |
+|---|---|---|
+| `app/dashboard/loading.tsx` | `currentUser()` + `listClips()` | Stat cards, recent clips grid, quick-actions panel |
+| `app/dashboard/clips/loading.tsx` | `listClips()` | 6 clip-card skeletons |
+| `app/dashboard/clips/[id]/loading.tsx` | `getClip(id)` | Video player area + metadata panel |
+| `app/admin/loading.tsx` | `getDashboardStats()` | Stat cards, 3 action cards |
+| `app/admin/users/loading.tsx` | `listAdminUsers()` | 5 user-row skeletons |
+| `app/admin/users/[id]/loading.tsx` | `getAdminUser(id)` | 4 info-panel skeletons |
+| `app/s/[shareId]/loading.tsx` | `getShareMeta(shareId)` | Video player + metadata (wraps in SiteShell) |
+| `app/u/[username]/loading.tsx` | `getProfile(username)` | Profile header + 6 clip cards (wraps in SiteShell) |
+| `app/download/loading.tsx` | GitHub releases API | Title + 3 platform download cards (wraps in SiteShell) |
+
+When creating a **new page** with async data:
+1. Create a `loading.tsx` sibling in the same route segment directory
+2. Import skeleton primitives from `@/components/skeleton`
+3. Mirror the real page's container div classes so the skeleton matches layout dimensions
+4. For public pages that self-wrap in `<SiteShell>` (download, share, profile), the loading
+   file must also wrap in `<SiteShell>` so the nav is visible during loading. Dashboard and
+   admin loading files must NOT wrap in SiteShell — the layout already provides DashboardShell.
+
+### Skeleton Primitives
+
+Defined in `components/skeleton.tsx`. All use Tailwind `animate-pulse` + dark-theme colors:
+
+- `<Skeleton className="..." />` — base pulsing placeholder
+- `<SkeletonCard />` — matches `<Card>` (rounded-3xl, gradient bg)
+- `<SkeletonPanel />` — matches `<Panel>` (rounded-2xl, subtle bg)
+- `<SkeletonStatCard />` — label + value + hint placeholder
+- `<SkeletonSectionHeading />` — eyebrow + title + description placeholders
+- `<SkeletonVideoPlayer />` — aspect-video block
+- `<SkeletonClipsGrid count={6} />` — grid of thumbnail card skeletons
+- `<SkeletonTable rows={5} />` — list of row skeletons with name/email/details
+- `<SkeletonUserDetail />` — 2-column grid of 4 info panels
+- `<SkeletonDashboardClips />` — recent clips section with 4 thumbnail cards
+- `<SkeletonDownloadCards />` — 3 platform download card skeletons
+
+### Rules
+
+- Do NOT add `"use client"` to loading.tsx files — they are server components.
+- Do NOT add `export const metadata` to loading.tsx — it is ignored and causes lint warnings.
+- Use `Array.from({ length: N })` for repeated skeleton items rather than manual duplication.
+- If a page is entirely static (no `await`), it does not need a loading.tsx.
+- For future component-level code splitting, use `next/dynamic` from `next/dynamic` with a
+  skeleton fallback: `dynamic(() => import("./heavy-component"), { loading: () => <Skeleton className="..." /> })`.
+
+### Build
+
+```bash
+cd website/frontend && npm run build
+```
+
 ## Future Options
 
 - **Custom title bar**: Consider frameless window with custom title bar for premium feel
