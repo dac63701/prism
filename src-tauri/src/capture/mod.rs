@@ -260,14 +260,21 @@ pub fn bgra_to_nv12(bgra: &[u8], width: u32, height: u32, bgra_stride: u32) -> V
     nv12
 }
 
-enum Nv12Format { Rgb, #[allow(dead_code)] Bgra }
+enum Nv12Format {
+    Rgb,
+    #[allow(dead_code)]
+    Bgra,
+}
 
 fn nv12_convert(nv12: &[u8], width: u32, height: u32, fmt: Nv12Format) -> Vec<u8> {
     let y_size = (width * height) as usize;
     let y_plane = &nv12[..y_size];
     let uv_plane = &nv12[y_size..];
     let uv_width = width.div_ceil(2);
-    let bpp: usize = match fmt { Nv12Format::Rgb => 3, Nv12Format::Bgra => 4 };
+    let bpp: usize = match fmt {
+        Nv12Format::Rgb => 3,
+        Nv12Format::Bgra => 4,
+    };
     let mut out = vec![0u8; (width * height) as usize * bpp];
 
     for y in 0..height {

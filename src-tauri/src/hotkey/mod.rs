@@ -56,5 +56,3 @@ pub fn register_hotkeys<R: Runtime>(
 
     Ok(())
 }
-
-
