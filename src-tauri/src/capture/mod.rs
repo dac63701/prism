@@ -107,6 +107,7 @@ pub struct CaptureSources {
 #[derive(Error, Debug)]
 pub enum CaptureError {
     #[error("Capture backend not available on this platform")]
+    #[allow(dead_code)]
     UnsupportedPlatform,
 
     #[error("Failed to start capture stream: {0}")]
@@ -116,6 +117,7 @@ pub enum CaptureError {
     StreamError(String),
 
     #[error("No frame available")]
+    #[allow(dead_code)]
     NoFrame,
 }
 

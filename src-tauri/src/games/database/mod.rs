@@ -73,6 +73,7 @@ impl GameRegistry {
     }
 
     /// Find a game by window title substring (case-insensitive).
+    #[allow(dead_code)]
     pub fn detect_by_window_title(&self, title: &str) -> Option<GameEntry> {
         let lower = title.to_lowercase();
         self.inner

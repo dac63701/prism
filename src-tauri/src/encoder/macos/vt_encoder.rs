@@ -22,6 +22,7 @@ pub struct VtH264Encoder {
     surface: IOSurface,
     width: u32,
     height: u32,
+    #[allow(dead_code)]
     stride: usize,
     alloc_size: usize,
     frame_index: u64,
@@ -232,6 +233,7 @@ impl VtH264Encoder {
     }
 
     /// Reset frame index (call on recording restart).
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.frame_index = 0;
         self.sps.clear();
@@ -242,6 +244,7 @@ impl VtH264Encoder {
 
 /// Scan AVCC-format data for SPS (NAL type 7) and PPS (NAL type 8).
 /// Assumes 4-byte big-endian length prefixes per NAL unit.
+#[allow(dead_code)]
 fn extract_nal_sps_pps(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), EncodeError> {
     let mut offset = 0;
     let mut sps = Vec::new();
