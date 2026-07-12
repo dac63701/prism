@@ -50,9 +50,9 @@ pub async fn insert_clip(pool: &PgPool, clip: &Clip) -> Result<Clip, sqlx::Error
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::clip_visibility)
            RETURNING id, user_id, original_filename, storage_path, thumbnail_path,
-                     share_id, title, game, duration_secs, size_bytes,
-                     width, height, codec, visibility,
-                     download_count, created_at, updated_at"#,
+                      share_id, title, game, duration_secs, size_bytes,
+                      width, height, codec, visibility::text as visibility,
+                      download_count, created_at, updated_at"#,
     )
     .bind(clip.id)
     .bind(clip.user_id)
@@ -76,7 +76,7 @@ pub async fn get_clip(pool: &PgPool, id: Uuid) -> Result<Option<Clip>, sqlx::Err
     sqlx::query_as::<_, Clip>(
         r#"SELECT id, user_id, original_filename, storage_path, thumbnail_path,
                   share_id, title, game, duration_secs, size_bytes,
-                  width, height, codec, visibility,
+                  width, height, codec, visibility::text as visibility,
                   download_count, created_at, updated_at
            FROM clips WHERE id = $1"#,
     )
@@ -92,7 +92,7 @@ pub async fn get_clip_by_share_id(
     sqlx::query_as::<_, Clip>(
         r#"SELECT id, user_id, original_filename, storage_path, thumbnail_path,
                   share_id, title, game, duration_secs, size_bytes,
-                  width, height, codec, visibility,
+                  width, height, codec, visibility::text as visibility,
                   download_count, created_at, updated_at
            FROM clips WHERE share_id = $1"#,
     )
@@ -149,23 +149,23 @@ pub async fn list_clips(
     let list_sql = if let Some(_uid) = user_id {
         format!(
             r#"SELECT c.id, c.user_id, c.title, c.game, c.duration_secs, c.size_bytes,
-                      c.width, c.height, c.visibility, c.thumbnail_path,
-                      c.created_at,
-                      NULL as user_email,
-                      NULL as user_display_name
-               FROM clips c
-               WHERE c.user_id = $1
-                 AND (c.title ILIKE $2 OR c.original_filename ILIKE $2)
-                 AND c.game ILIKE $3
-               ORDER BY {}
-               LIMIT $4 OFFSET $5"#,
+                       c.width, c.height, c.visibility::text as visibility, c.thumbnail_path,
+                       c.created_at,
+                       NULL as user_email,
+                       NULL as user_display_name
+                FROM clips c
+                WHERE c.user_id = $1
+                  AND (c.title ILIKE $2 OR c.original_filename ILIKE $2)
+                  AND c.game ILIKE $3
+                ORDER BY {}
+                LIMIT $4 OFFSET $5"#,
             order_clause
         )
     } else {
         format!(
             r#"SELECT c.id, c.user_id, c.title, c.game, c.duration_secs, c.size_bytes,
-                      c.width, c.height, c.visibility, c.thumbnail_path,
-                      c.created_at, u.email as user_email, u.display_name as user_display_name
+                       c.width, c.height, c.visibility::text as visibility, c.thumbnail_path,
+                       c.created_at, u.email as user_email, u.display_name as user_display_name
                FROM clips c
                LEFT JOIN users u ON u.id = c.user_id
                WHERE (c.title ILIKE $1 OR c.original_filename ILIKE $1)
@@ -271,9 +271,9 @@ pub async fn delete_clip(pool: &PgPool, id: Uuid) -> Result<Option<Clip>, sqlx::
     let clip = sqlx::query_as::<_, Clip>(
         r#"DELETE FROM clips WHERE id = $1
            RETURNING id, user_id, original_filename, storage_path, thumbnail_path,
-                     share_id, title, game, duration_secs, size_bytes,
-                     width, height, codec, visibility,
-                     download_count, created_at, updated_at"#,
+                      share_id, title, game, duration_secs, size_bytes,
+                      width, height, codec, visibility::text as visibility,
+                      download_count, created_at, updated_at"#,
     )
     .bind(id)
     .fetch_optional(pool)

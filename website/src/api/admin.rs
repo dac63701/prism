@@ -279,7 +279,7 @@ pub async fn get_logs(
         .unwrap_or((0,));
 
     let query_sql = format!(
-        "SELECT id, user_id, action as \"action\", level as \"level\", ip_address, details, created_at
+        "SELECT id, user_id, action::text as action, level::text as level, ip_address, details, created_at
          FROM activity_logs {}
          ORDER BY created_at DESC
          LIMIT {} OFFSET {}",
