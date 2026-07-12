@@ -21,18 +21,22 @@ export async function cookieHeader() {
 }
 
 export async function currentUser() {
-  const response = await fetch(`${await requestOrigin()}/api/auth/me`, {
-    headers: {
-      cookie: await cookieHeader(),
-    },
-    cache: "no-store",
-  });
+  try {
+    const response = await fetch(`${await requestOrigin()}/api/auth/me`, {
+      headers: {
+        cookie: await cookieHeader(),
+      },
+      cache: "no-store",
+    });
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as User;
+  } catch {
     return null;
   }
-
-  return (await response.json()) as User;
 }
 
 export async function requireUser() {
