@@ -16,6 +16,7 @@ on:
       - "website/src/**"
       - "website/frontend/**"
       - "website/.env.example"
+      - ".gitattributes"
       - ".dockerignore"
       - ".github/workflows/docker*.yml"
   pull_request:
@@ -33,6 +34,7 @@ on:
       - "website/src/**"
       - "website/frontend/**"
       - "website/.env.example"
+      - ".gitattributes"
       - ".dockerignore"
       - ".github/workflows/docker*.yml"
   schedule:
@@ -40,6 +42,30 @@ on:
   workflow_dispatch:
 
 jobs:
+  migration-integrity:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject changes to applied migrations
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff --diff-filter=MRD --name-only "$BASE_SHA" "$GITHUB_SHA" -- website/src/db/migrations)
+          if [[ -n "$changed" ]]; then
+            echo "Applied migrations are immutable. Add a new numbered migration instead:"
+            echo "$changed"
+            exit 1
+          fi
+
   build:
     runs-on: ubuntu-latest
     permissions:

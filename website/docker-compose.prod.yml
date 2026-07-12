@@ -18,7 +18,7 @@ services:
       retries: 10
 
   api:
-    image: dac63701/prism-server:latest
+    image: ${API_IMAGE:-dac63701/prism-server@sha256:79d567803c00daf701ef499410a45a61b81f672611c13db8b269bd378289f071}
     container_name: prism-api
     pull_policy: always
     restart: unless-stopped
@@ -40,8 +40,11 @@ services:
     volumes:
       - prism-data:/data
     networks:
-      - prism-internal
-      - nginx-network
+      prism-internal:
+      nginx-network:
+        aliases:
+          - api
+          - prism-api
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,7 +56,7 @@ services:
       start_period: 60s
 
   web:
-    image: dac63701/prism-web:latest
+    image: ${WEB_IMAGE:-dac63701/prism-web@sha256:88a816eb1119ed3357fc8575e4953a780f3863c13759bfca6c4fa688150e0752}
     container_name: prism-web
     pull_policy: always
     restart: unless-stopped
@@ -63,8 +66,11 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
     networks:
-      - nginx-network
-      - prism-internal
+      nginx-network:
+        aliases:
+          - web
+          - prism-web
+      prism-internal:
     depends_on:
       api:
         condition: service_healthy

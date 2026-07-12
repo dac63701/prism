@@ -35,7 +35,7 @@ docker compose exec postgres psql -U prism -d prism -c "UPDATE users SET role = 
 | `JWT_SECRET` | — | 32+ char random string (required) |
 | `SERVER_HOST` | `0.0.0.0` | Bind address |
 | `SERVER_PORT` | `8080` | Bind port |
-| `STORAGE_PATH` | `./data` | Where clips/thumbnails are stored |
+| `STORAGE_PATH` | `/data` | Where clips/thumbnails are stored |
 | `MAX_UPLOAD_SIZE_MB` | `500` | Per-file upload limit |
 | `DEFAULT_MAX_STORAGE_GB` | `10` | Default per-user storage quota |
 | `RATE_LIMIT_REQUESTS_PER_MIN` | `100` | Global rate limit |
@@ -44,11 +44,13 @@ docker compose exec postgres psql -U prism -d prism -c "UPDATE users SET role = 
 | `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | `http://localhost:8080/api/auth/google/callback` | Google OAuth callback |
 | `DESKTOP_SCHEME_URL` | `prism://auth/callback` | Desktop app callback scheme |
+| `API_IMAGE` | Pinned production API digest | Production API image reference |
+| `WEB_IMAGE` | Pinned production web digest | Production web image reference |
 
 ## Production Deployment (Portainer)
 
 ```bash
-# Portainer should use the prebuilt Docker Hub images from docker-compose.prod.yml.
+# Portainer should use the pinned Docker Hub image digests in docker-compose.prod.yml.
 # Set Docker Hub secrets in GitHub Actions:
 #   DOCKER_USERNAME, DOCKER_PASSWORD
 # GitHub Actions now has separate workflows for PR validation, main-branch publish,
@@ -58,26 +60,54 @@ docker compose exec postgres psql -U prism -d prism -c "UPDATE users SET role = 
 #   SERVER_HOST, SERVER_PORT, STORAGE_PATH, SITE_URL, API_ORIGIN,
 #   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
 #   DESKTOP_SCHEME_URL, MAX_UPLOAD_SIZE_MB, DEFAULT_MAX_STORAGE_GB,
-#   RATE_LIMIT_REQUESTS_PER_MIN, RUST_LOG, API_PORT, WEB_PORT
+#   RATE_LIMIT_REQUESTS_PER_MIN, RUST_LOG, API_IMAGE, WEB_IMAGE
 ```
 
-Nginx config:
+Set `DATABASE_URL` to use the in-stack hostname, not `localhost`:
+
+```text
+postgres://<user>:<url-encoded-password>@postgres:5432/<database>
+```
+
+`API_IMAGE` and `WEB_IMAGE` must be immutable `@sha256:` references for a
+specific release. Do not deploy production with a mutable `latest` tag.
+
+### Recovering a pre-migration-checksum database
+
+Early Prism images changed the already-applied SQLx migration `001`. Existing
+Postgres volumes created before that release cannot start newer API images until
+their known migration checksum is reconciled.
+
+1. Stop `api` and `web`, then take and verify a Postgres backup and a copy of the `prism-data` volume.
+2. Inspect migration `001` before changing anything:
+
+```sql
+SELECT version, success, encode(checksum, 'hex') AS checksum
+FROM _sqlx_migrations
+WHERE version = 1;
+```
+
+3. Only when it reports the known legacy checksum, run `scripts/reconcile-sqlx-001-checksum.sql` against the database from a trusted shell.
+4. Redeploy a pinned API image built from this release. Migration `006` then normalizes the legacy `share_id` default.
+
+The recovery script is intentionally guarded: it changes exactly one successful
+`001` row with the known legacy checksum, or rolls back. Never delete
+`_sqlx_migrations` and never recreate a production database volume to bypass a
+migration error.
+
+Nginx must also join `nginx-network`. Use Docker's resolver so Nginx can survive
+an API or web container restart instead of resolving the upstream only at boot:
 
 ```nginx
-upstream api {
-    server api:8080;
-}
-
-upstream web {
-    server web:3000;
-}
-
 server {
     listen 443 ssl;
     server_name goprism.studio;
 
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     location /api/ {
-        proxy_pass http://api;
+        set $api_upstream api:8080;
+        proxy_pass http://$api_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -86,7 +116,8 @@ server {
     }
 
     location / {
-        proxy_pass http://web;
+        set $web_upstream web:3000;
+        proxy_pass http://$web_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
