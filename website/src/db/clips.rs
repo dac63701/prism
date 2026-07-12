@@ -294,7 +294,7 @@ pub async fn get_server_stats(pool: &PgPool) -> Result<(i64, i64, i64, i64, i64)
         r#"SELECT
                (SELECT COUNT(*) FROM users) as total_users,
                (SELECT COUNT(*) FROM clips) as total_clips,
-               (SELECT COALESCE(SUM(size_bytes), 0) FROM clips) as total_bytes,
+               (SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM clips) as total_bytes,
                (SELECT COUNT(*) FROM clips WHERE created_at >= CURRENT_DATE) as uploads_today,
                (SELECT COUNT(*) FROM clips WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') as uploads_week
            FROM (SELECT 1) t"#,
