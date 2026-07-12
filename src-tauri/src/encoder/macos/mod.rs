@@ -109,7 +109,8 @@ impl Encoder for MacEncoder {
         );
 
         // Encode each frame
-        let timescale = config.fps as i32;
+        let crate_timescale = crate::encoder::compute_timescale(frames, config.fps);
+        let timescale = crate_timescale as i32;
         let mut encoded_samples: Vec<EncodedFrame> = Vec::with_capacity(frames.len());
 
         for (i, frame) in frames.iter().enumerate() {
@@ -338,6 +339,8 @@ fn mux_h264_clip(
 
     use mp4::{AvcConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
 
+    let timescale = crate::encoder::compute_timescale(frames, config.fps);
+
     let mp4_config = Mp4Config {
         major_brand: "isom".parse().unwrap(),
         minor_version: 512,
@@ -346,7 +349,7 @@ fn mux_h264_clip(
             "iso2".parse().unwrap(),
             "avc1".parse().unwrap(),
         ],
-        timescale: config.fps,
+        timescale,
     };
 
     let file = std::fs::File::create(output_path)
@@ -364,7 +367,7 @@ fn mux_h264_clip(
 
     let track_config = TrackConfig {
         track_type: TrackType::Video,
-        timescale: config.fps,
+        timescale,
         language: "und".to_string(),
         media_conf: MediaConfig::AvcConfig(avc_config),
     };

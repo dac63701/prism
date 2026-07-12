@@ -109,15 +109,8 @@ pub async fn upload_clip(
 
     let clip_id = Uuid::new_v4();
     let storage_path = format!("clips/{}/{}.mp4", auth.user_id, clip_id);
-    let thumb_path = format!("thumbs/{}.jpg", clip_id);
 
     storage.store(&storage_path, &file_data).await?;
-
-    let thumb_storage_path = format!("thumbs/{}.jpg", clip_id);
-    let media_path = std::path::PathBuf::from(&config.storage_path).join(&storage_path);
-    let thumb_file_path = std::path::PathBuf::from(&config.storage_path).join(&thumb_storage_path);
-
-    let _ = crate::thumbnail::generate_thumbnail(&media_path, &thumb_file_path, 320);
 
     let share_id: String = (0..12)
         .map(|_| format!("{:x}", rand::random::<u8>()))
@@ -128,7 +121,7 @@ pub async fn upload_clip(
         user_id: auth.user_id,
         original_filename,
         storage_path,
-        thumbnail_path: Some(thumb_path),
+        thumbnail_path: None,
         share_id,
         title,
         game,

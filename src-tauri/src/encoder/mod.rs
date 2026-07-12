@@ -49,6 +49,29 @@ pub trait Encoder: Send {
     ) -> Result<(), EncodeError>;
 }
 
+/// Compute the effective MP4 timescale from actual frame timestamps.
+///
+/// Uses the wall-clock timestamps on the first and last frame to derive the
+/// true capture rate, rather than relying on `config.fps` (which can diverge
+/// from the actual capture rate due to display refresh limits, FPS-limiters,
+/// or encoder back-pressure).
+///
+/// Falls back to `config_fps` when fewer than 2 frames are available or the
+/// timestamps are degenerate.
+pub fn compute_timescale(frames: &[StoredFrame], config_fps: u32) -> u32 {
+    if frames.len() < 2 {
+        return config_fps.max(1);
+    }
+    let first_ts = frames[0].timestamp;
+    let last_ts = frames[frames.len() - 1].timestamp;
+    let actual_duration_ns = last_ts.duration_since(first_ts).as_nanos() as f64;
+    if actual_duration_ns <= 0.0 {
+        return config_fps.max(1);
+    }
+    let actual_fps = (frames.len() as f64) / (actual_duration_ns / 1_000_000_000.0);
+    (actual_fps.round() as u32).max(1)
+}
+
 /// Create the platform-appropriate hardware encoder.
 pub fn create_encoder() -> Box<dyn Encoder> {
     #[cfg(target_os = "macos")]

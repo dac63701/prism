@@ -37,6 +37,8 @@ impl Encoder for WindowsEncoder {
         let (sps, pps) = extract_sps_pps(frames)?;
 
         // Build MP4 container
+        let timescale = crate::encoder::compute_timescale(frames, config.fps);
+
         let mp4_config = Mp4Config {
             major_brand: "isom".parse().unwrap(),
             minor_version: 512,
@@ -45,7 +47,7 @@ impl Encoder for WindowsEncoder {
                 "iso2".parse().unwrap(),
                 "avc1".parse().unwrap(),
             ],
-            timescale: config.fps,
+            timescale,
         };
 
         let file = std::fs::File::create(output_path)
@@ -63,7 +65,7 @@ impl Encoder for WindowsEncoder {
 
         let track_config = TrackConfig {
             track_type: TrackType::Video,
-            timescale: config.fps,
+            timescale,
             language: "und".to_string(),
             media_conf: MediaConfig::AvcConfig(avc_config),
         };
