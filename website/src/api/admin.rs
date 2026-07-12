@@ -375,14 +375,12 @@ pub async fn update_config(
 
 // ── Health ─────────────────────────────────────────────────────────
 
-pub async fn health(State(pool): State<PgPool>) -> Result<Json<serde_json::Value>, AppError> {
-    sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    Ok(Json(serde_json::json!({
+pub async fn health() -> Json<serde_json::Value> {
+    // Liveness probe — stateless so it always passes once the server is running.
+    // Database health is the responsibility of the Postgres container's own
+    // healthcheck and the depends_on condition between api → postgres.
+    Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
-    })))
+    }))
 }
