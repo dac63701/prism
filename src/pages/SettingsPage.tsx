@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore, getDefaultHotkeys } from "@/stores/settings";
 import { useCloudStore } from "@/stores/cloud";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,22 @@ function FieldRow({
   );
 }
 
+type DetectedGame = { name: string; pid: number };
+
+const AUTO_CLIP_EVENTS: Record<string, Array<{ key: string; label: string }>> = {
+  "Counter-Strike 2": [
+    { key: "kill", label: "Kills" },
+    { key: "death", label: "Deaths" },
+    { key: "headshot", label: "Headshots" },
+    { key: "win", label: "Round wins" },
+  ],
+  Rust: [
+    { key: "combat", label: "Gunfights" },
+    { key: "headshot", label: "Headshot dings" },
+    { key: "explosion", label: "Rockets / C4" },
+  ],
+};
+
 export default function SettingsPage() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const loaded = useSettingsStore((s) => s.loaded);
@@ -83,7 +101,9 @@ export default function SettingsPage() {
   const updateSettings = useSettingsStore((s) => s.updateSettings);
 
   const [showManualCode, setShowManualCode] = useState(false);
+  const [detectedGame, setDetectedGame] = useState<DetectedGame | null>(null);
   const [authCode, setAuthCode] = useState("");
+  const cloudAuthenticated = useCloudStore((s) => s.authenticated);
   const handleAuthCode = useCloudStore((s) => s.handleAuthCode);
   const uploadError = useCloudStore((s) => s.uploadError);
   const cloudLoading = useCloudStore((s) => s.loading);
@@ -91,6 +111,29 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!loaded) loadSettings();
   }, [loaded, loadSettings]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenDetected: (() => void) | undefined;
+    let unlistenLost: (() => void) | undefined;
+    void (async () => {
+      try {
+        const active = await invoke<DetectedGame | null>("get_detected_game");
+        if (!disposed) setDetectedGame(active);
+        unlistenDetected = await listen<DetectedGame>("game-detected", (event) => {
+          setDetectedGame(event.payload);
+        });
+        unlistenLost = await listen("game-lost", () => setDetectedGame(null));
+      } catch (error) {
+        console.error("Failed to read game detection status:", error);
+      }
+    })();
+    return () => {
+      disposed = true;
+      unlistenDetected?.();
+      unlistenLost?.();
+    };
+  }, []);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debouncedSave = (newSettings: AppSettings) => {
@@ -121,6 +164,21 @@ export default function SettingsPage() {
   };
 
   const s = settings;
+
+  const updateAutoClipGame = (
+    gameName: string,
+    patch: Partial<AppSettings["auto_clip"]["games"][number]>
+  ) => {
+    save({
+      ...settings,
+      auto_clip: {
+        ...settings.auto_clip,
+        games: settings.auto_clip.games.map((game) =>
+          game.game_name === gameName ? { ...game, ...patch } : game
+        ),
+      },
+    });
+  };
 
   // Force inputs to remount with correct values after async load
   const loadedKey = loaded ? "loaded" : "initial";
@@ -325,6 +383,189 @@ export default function SettingsPage() {
                 }
               />
             </FieldRow>
+            <FieldRow label="CS2 GSI port">
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={s.general.cs2_gsi_port}
+                onChange={(e) =>
+                  void setField(
+                    "general",
+                    "cs2_gsi_port",
+                    (parseInt(e.target.value, 10) || 4000) as never
+                  )
+                }
+                className="w-24 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus-visible:border-blue-400/70"
+              />
+            </FieldRow>
+            <p className="pt-1 text-xs text-zinc-500">
+              Restart Prism after changing the CS2 GSI port.
+            </p>
+          </div>
+        </section>
+
+        {/* Auto-clipping Section */}
+        <section className="mb-8">
+          <div className="space-y-1 mb-3">
+            <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">AUTO-CLIPPING</span>
+            <SectionHeading>Automatic Highlights</SectionHeading>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+            <FieldRow label="Enable auto-clipping">
+              <ToggleSwitch
+                checked={s.auto_clip.enabled}
+                onChange={(checked) =>
+                  void setField("auto_clip", "enabled", checked as never)
+                }
+              />
+            </FieldRow>
+            <FieldRow label="Clip cooldown">
+              <span className="text-sm text-zinc-100 min-w-[4ch] text-right tabular-nums">
+                {s.auto_clip.cooldown_secs}s
+              </span>
+              <input
+                type="range"
+                min={5}
+                max={120}
+                step={5}
+                value={s.auto_clip.cooldown_secs}
+                onChange={(e) =>
+                  void setField(
+                    "auto_clip",
+                    "cooldown_secs",
+                    parseInt(e.target.value, 10) as never
+                  )
+                }
+                className="w-40 h-1.5 bg-surface-2 rounded-full appearance-none cursor-pointer accent-accent"
+              />
+            </FieldRow>
+            <FieldRow label="Rust audio sensitivity">
+              <span className="text-sm text-zinc-100 min-w-[4ch] text-right tabular-nums">
+                {Math.round(s.auto_clip.audio_sensitivity * 100)}%
+              </span>
+              <input
+                type="range"
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={s.auto_clip.audio_sensitivity}
+                onChange={(e) =>
+                  void setField(
+                    "auto_clip",
+                    "audio_sensitivity",
+                    parseFloat(e.target.value) as never
+                  )
+                }
+                className="w-40 h-1.5 bg-surface-2 rounded-full appearance-none cursor-pointer accent-accent"
+              />
+            </FieldRow>
+
+            <div className="pt-3 space-y-3">
+              {s.auto_clip.games.map((game) => {
+                const events = AUTO_CLIP_EVENTS[game.game_name] ?? [];
+                const isDetected = detectedGame?.name === game.game_name;
+                const method = game.game_name === "Counter-Strike 2" ? "Official GSI" : "Private process audio";
+                return (
+                  <div key={game.game_name} className="rounded-2xl border border-white/10 bg-surface/70 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-medium text-zinc-100">{game.game_name}</h3>
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            isDetected ? "bg-emerald-500/15 text-emerald-300" : "bg-white/5 text-zinc-500"
+                          )}>
+                            {isDetected ? "Detected" : "Waiting"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-500">{method}</p>
+                      </div>
+                      <ToggleSwitch
+                        checked={game.enabled}
+                        onChange={(enabled) => updateAutoClipGame(game.game_name, { enabled })}
+                      />
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {events.map((event) => {
+                        const selected = game.events.includes(event.key);
+                        return (
+                          <button
+                            key={event.key}
+                            type="button"
+                            onClick={() =>
+                              updateAutoClipGame(game.game_name, {
+                                events: selected
+                                  ? game.events.filter((key) => key !== event.key)
+                                  : [...game.events, event.key],
+                              })
+                            }
+                            className={cn(
+                              "rounded-lg border px-2.5 py-1 text-xs transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-400/70",
+                              selected
+                                ? "border-blue-400/50 bg-blue-500/15 text-blue-200"
+                                : "border-white/10 bg-white/[0.03] text-zinc-500 hover:text-zinc-300"
+                            )}
+                          >
+                            {event.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-3">
+                      <label className="text-xs text-zinc-500">
+                        Kill clip
+                        <input
+                          type="number"
+                          min={5}
+                          max={120}
+                          value={game.kill_clip_duration}
+                          onChange={(e) => updateAutoClipGame(game.game_name, { kill_clip_duration: parseInt(e.target.value, 10) || 20 })}
+                          className="mt-1 w-full bg-surface border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus-visible:border-blue-400/70"
+                        />
+                      </label>
+                      <label className="text-xs text-zinc-500">
+                        Death clip
+                        <input
+                          type="number"
+                          min={5}
+                          max={120}
+                          value={game.death_clip_duration}
+                          onChange={(e) => updateAutoClipGame(game.game_name, { death_clip_duration: parseInt(e.target.value, 10) || 30 })}
+                          className="mt-1 w-full bg-surface border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus-visible:border-blue-400/70"
+                        />
+                      </label>
+                      <label className="text-xs text-zinc-500">
+                        Combat clip
+                        <input
+                          type="number"
+                          min={5}
+                          max={120}
+                          value={game.combat_event_duration}
+                          onChange={(e) => updateAutoClipGame(game.game_name, { combat_event_duration: parseInt(e.target.value, 10) || 20 })}
+                          className="mt-1 w-full bg-surface border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus-visible:border-blue-400/70"
+                        />
+                      </label>
+                    </div>
+
+                    {game.game_name === "Rust" && (
+                      <div className="mt-3 flex items-center justify-between">
+                        <span className="text-xs text-zinc-500">Listen to Rust audio</span>
+                        <ToggleSwitch
+                          checked={game.audio_enabled}
+                          onChange={(audio_enabled) => updateAutoClipGame(game.game_name, { audio_enabled })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="pt-2 text-xs text-zinc-500">
+              Enable Game detection above. CS2 uses Valve&apos;s localhost API; Rust reads only final process audio through Windows WASAPI.
+            </p>
           </div>
         </section>
 
@@ -352,7 +593,7 @@ export default function SettingsPage() {
             </FieldRow>
 
             <FieldRow label="Account">
-              {s.cloud.api_key ? (
+              {cloudAuthenticated ? (
                 <div className="flex items-center gap-3">
                   <div className="text-sm text-zinc-300">
                     {s.cloud.account_display_name || "Connected"}

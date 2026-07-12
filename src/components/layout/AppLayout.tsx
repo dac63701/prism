@@ -16,17 +16,21 @@ export default function AppLayout() {
   }, []);
   const saveClip = useRecordingStore((s) => s.saveClip);
   const checkCloudStatus = useCloudStore((s) => s.checkStatus);
-  const settings = useSettingsStore((s) => s.settings);
+  const settingsLoaded = useSettingsStore((s) => s.loaded);
 
   const isRecording = useRecordingStore((s) => s.isRecording);
   const checkRecordingStatus = useRecordingStore((s) => s.checkStatus);
 
-  // Re-derive cloud auth state whenever settings load or change.
-  // This avoids a race where checkCloudStatus() reads default
-  // settings (api_key = "") before loadSettings() finishes.
+  // Verify cloud auth once after settings finish loading on startup.
+  // This catches stale/invalid API keys from a previous install.
+  // After that, auth state is driven by the auth-state-changed event
+  // (OAuth callback / logout) so re-verification on every settings
+  // change doesn't clobber a freshly-created API key.
   useEffect(() => {
-    checkCloudStatus();
-  }, [settings, checkCloudStatus]);
+    if (settingsLoaded) {
+      checkCloudStatus();
+    }
+  }, [settingsLoaded, checkCloudStatus]);
 
   // Poll recording status every 1s while recording (keeps timer live on all pages)
   useEffect(() => {

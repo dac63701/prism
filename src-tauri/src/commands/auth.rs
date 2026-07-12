@@ -56,9 +56,11 @@ pub async fn cloud_verify_auth(settings_mgr: State<'_, SettingsManager>) -> Resu
 
     match req.send().await {
         Ok(resp) => {
-            let valid = resp.status() != reqwest::StatusCode::UNAUTHORIZED;
+            let status = resp.status();
+            let valid = status != reqwest::StatusCode::UNAUTHORIZED;
             if !valid {
-                eprintln!("[auth] API key rejected by {} (401)", upload_url);
+                let body = resp.text().await.unwrap_or_default();
+                eprintln!("[auth] API key rejected by {upload_url} ({status}): {body}");
             }
             Ok(valid)
         }

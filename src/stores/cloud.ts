@@ -37,14 +37,14 @@ let unlistenAuth: (() => void) | null = null;
 let unlistenUploadProgress: (() => void) | null = null;
 let unlistenAuthError: (() => void) | null = null;
 
-export const useCloudStore = create<CloudState>((set, get) => {
+export const useCloudStore = create<CloudState>((set) => {
   const setupListeners = async () => {
     if (!unlistenAuth) {
       unlistenAuth = await listen<boolean>("auth-state-changed", (event) => {
+        // The event fires after a successful OAuth callback or logout.
+        // authenticated=true means the backend just created a fresh API key
+        // and saved it to settings — no need to re-verify immediately.
         set({ authenticated: event.payload });
-        if (event.payload) {
-          get().checkStatus();
-        }
       });
     }
     if (!unlistenAuthError) {
