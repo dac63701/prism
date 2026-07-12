@@ -14,7 +14,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  APP_VERSION: "0.1.0"
+  APP_VERSION: "0.2.1"
 
 jobs:
   # ── Lint & Check (fast, runs on all pushes and PRs) ────────────────
