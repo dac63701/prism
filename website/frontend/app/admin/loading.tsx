@@ -22,9 +22,9 @@ export default function AdminLoading() {
             className="animate-pulse rounded-3xl border border-[#1f2a44] bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-5"
           >
             <Skeleton className="h-5 w-5 rounded" />
-            <Skeleton className="mt-4 h-5 w-16" />
-            <Skeleton className="mt-2 h-4 w-48" />
-            <Skeleton className="mt-4 h-4 w-24" />
+            <Skeleton className="mt-4 h-7 w-16" />
+            <Skeleton className="mt-2 h-5 w-48" />
+            <Skeleton className="mt-4 h-5 w-24" />
           </div>
         ))}
       </div>

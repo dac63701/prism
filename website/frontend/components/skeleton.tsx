@@ -54,9 +54,9 @@ export function SkeletonPanel({ className, children }: { className?: string; chi
 export function SkeletonStatCard({ className }: { className?: string }) {
   return (
     <SkeletonPanel className={cn("p-5", className)}>
-      <Skeleton className="h-3 w-20" />
-      <Skeleton className="mt-3 h-7 w-24" />
-      <Skeleton className="mt-2 h-3 w-32" />
+      <Skeleton className="h-[14px] w-20" />
+      <Skeleton className="mt-2 h-[28px] w-24" />
+      <Skeleton className="mt-1 h-3 w-32" />
     </SkeletonPanel>
   );
 }
@@ -76,7 +76,7 @@ export function SkeletonSectionHeading({
     <div className={cn("space-y-2", className)}>
       <Skeleton className="h-3 w-16" />
       <Skeleton className="h-7 w-48" />
-      <Skeleton className="h-4 w-80" />
+      <Skeleton className="h-6 w-80" />
     </div>
   );
 }
@@ -91,10 +91,13 @@ export function SkeletonClipsGrid({ count = 6, className }: { count?: number; cl
   return (
     <div className={cn("grid gap-4 md:grid-cols-2 xl:grid-cols-3", className)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="animate-pulse rounded-3xl border border-[#1f2a44] bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-3">
+        <div key={i} className="animate-pulse rounded-2xl border border-[#1f2a44] bg-white/[0.03]">
           <Skeleton className="aspect-video w-full rounded-2xl" />
-          <Skeleton className="mt-3 h-4 w-3/4" />
-          <Skeleton className="mt-2 h-3 w-1/2" />
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-[14px] w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-3 w-1/3" />
+          </div>
         </div>
       ))}
     </div>

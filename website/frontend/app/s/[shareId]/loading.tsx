@@ -13,14 +13,14 @@ export default function ShareLoading() {
           <SkeletonPanel className="space-y-4 p-6">
             <Skeleton className="h-6 w-20 rounded-full" />
             <div>
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="mt-2 h-4 w-32" />
+              <Skeleton className="h-9 w-48" />
+              <Skeleton className="mt-2 h-5 w-32" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <SkeletonPanel key={i} className="p-4">
                   <Skeleton className="h-3 w-12" />
-                  <Skeleton className="mt-2 h-4 w-20" />
+                  <Skeleton className="mt-1 h-[20px] w-20" />
                 </SkeletonPanel>
               ))}
             </div>

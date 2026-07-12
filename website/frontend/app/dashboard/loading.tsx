@@ -1,4 +1,4 @@
-import { SkeletonSectionHeading, SkeletonStatCard, SkeletonPanel, Skeleton } from "@/components/skeleton";
+import { SkeletonSectionHeading, SkeletonStatCard, SkeletonCard, Skeleton } from "@/components/skeleton";
 
 export default function DashboardLoading() {
   return (
@@ -16,11 +16,11 @@ export default function DashboardLoading() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="animate-pulse rounded-3xl border border-[#1f2a44] bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-5">
+        <SkeletonCard className="p-5">
           <div className="flex items-center justify-between">
-            <div className="space-y-2">
+            <div>
               <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-5 w-28" />
+              <Skeleton className="mt-1 h-5 w-28" />
             </div>
             <Skeleton className="h-4 w-16" />
           </div>
@@ -29,40 +29,40 @@ export default function DashboardLoading() {
               <div key={i} className="rounded-2xl border border-[#1f2a44] bg-white/[0.03]">
                 <Skeleton className="aspect-video w-full rounded-2xl" />
                 <div className="space-y-2 p-4">
-                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-[14px] w-3/4" />
                   <Skeleton className="h-3 w-1/2" />
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </SkeletonCard>
 
         <div className="space-y-4">
-          <SkeletonPanel className="p-5">
+          <SkeletonCard className="p-5">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded" />
               <div className="space-y-1">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-[14px] w-20" />
+                <Skeleton className="h-[18px] w-24" />
               </div>
             </div>
             <div className="mt-4 space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-2xl" />
+                <Skeleton key={i} className="h-[52px] w-full rounded-2xl" />
               ))}
             </div>
-          </SkeletonPanel>
+          </SkeletonCard>
 
-          <SkeletonPanel className="p-5">
+          <SkeletonCard className="p-5">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded" />
               <div className="space-y-1">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-[14px] w-20" />
+                <Skeleton className="h-[18px] w-16" />
               </div>
             </div>
-            <Skeleton className="mt-4 h-4 w-48" />
-          </SkeletonPanel>
+            <Skeleton className="mt-4 h-[20px] w-48" />
+          </SkeletonCard>
         </div>
       </div>
     </div>

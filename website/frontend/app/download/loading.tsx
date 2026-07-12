@@ -12,8 +12,8 @@ export default function DownloadLoading() {
 
         <div className="relative z-10 text-center">
           <Skeleton className="mx-auto h-3 w-28" />
-          <Skeleton className="mx-auto mt-3 h-10 w-44" />
-          <Skeleton className="mx-auto mt-3 h-4 w-96" />
+          <Skeleton className="mx-auto mt-3 h-11 w-44" />
+          <Skeleton className="mx-auto mt-3 h-7 w-96" />
         </div>
 
         <div className="relative z-10 mt-12">
