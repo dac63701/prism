@@ -64,8 +64,36 @@ impl axum::extract::FromRef<AppState> for api::auth::DesktopCodeCache {
     }
 }
 
+fn validate_env() {
+    // Docker Compose passes empty strings for undefined vars rather than leaving
+    // them unset, so env::var().is_err() is not sufficient — we must also check
+    // that the value is non-empty.
+    let required = [
+        "DATABASE_URL",
+        "JWT_SECRET",
+    ];
+    let mut ok = true;
+    for name in &required {
+        match std::env::var(name) {
+            Ok(v) if !v.trim().is_empty() => {}
+            _ => {
+                eprintln!("FATAL: environment variable {name} is not set or is empty");
+                ok = false;
+            }
+        }
+    }
+    if !ok {
+        eprintln!("FATAL: one or more required environment variables are missing. See above.");
+        std::process::exit(1);
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    // Validate required env vars BEFORE anything else, so failures are always
+    // visible in Docker logs — even if tracing or the panic hook is not yet set up.
+    validate_env();
+
     // Log panics before abort so they're visible in Docker logs
     std::panic::set_hook(Box::new(|info| {
         eprintln!("=== PANIC ===");

@@ -1,5 +1,19 @@
 use std::env;
 
+/// Return the value of `name` or exit with a fatally-visible error.
+/// Docker Compose passes empty strings for undefined vars, so we treat
+/// empty/missing identically — the caller in main.rs already validates
+/// these vars exist, but this ensures any other call path also fails clearly.
+fn require_env(name: &str) -> String {
+    match env::var(name) {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => {
+            eprintln!("FATAL: environment variable {name} is not set or is empty");
+            std::process::exit(1);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub database_url: String,
@@ -19,20 +33,20 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
-        let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+        let jwt_secret = require_env("JWT_SECRET");
         if jwt_secret.len() < 32 {
             eprintln!("WARNING: JWT_SECRET is shorter than 32 chars — use a strong secret");
         }
 
         Self {
-            database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+            database_url: require_env("DATABASE_URL"),
             jwt_secret,
             server_host: env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             server_port: env::var("SERVER_PORT")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(8080),
-            storage_path: env::var("STORAGE_PATH").unwrap_or_else(|_| "./data".into()),
+            storage_path: env::var("STORAGE_PATH").unwrap_or_else(|_| "/data".into()),
             max_upload_size_mb: env::var("MAX_UPLOAD_SIZE_MB")
                 .ok()
                 .and_then(|v| v.parse().ok())

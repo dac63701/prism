@@ -4,15 +4,15 @@ services:
     container_name: prism-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - prism-pgdata:/var/lib/postgresql/data
     networks:
       - prism-internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -23,20 +23,20 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      SERVER_HOST: ${SERVER_HOST}
-      SERVER_PORT: ${SERVER_PORT}
-      STORAGE_PATH: ${STORAGE_PATH}
-      SITE_URL: ${SITE_URL}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
-      DESKTOP_SCHEME_URL: ${DESKTOP_SCHEME_URL}
-      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB}
-      DEFAULT_MAX_STORAGE_GB: ${DEFAULT_MAX_STORAGE_GB}
-      RATE_LIMIT_REQUESTS_PER_MIN: ${RATE_LIMIT_REQUESTS_PER_MIN}
-      RUST_LOG: ${RUST_LOG}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — e.g. postgres://user:pass@postgres:5432/prism}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — generate a 64-char random string}
+      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      STORAGE_PATH: ${STORAGE_PATH:-/data}
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8080/api/auth/google/callback}
+      DESKTOP_SCHEME_URL: ${DESKTOP_SCHEME_URL:-prism://auth/callback}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-500}
+      DEFAULT_MAX_STORAGE_GB: ${DEFAULT_MAX_STORAGE_GB:-10}
+      RATE_LIMIT_REQUESTS_PER_MIN: ${RATE_LIMIT_REQUESTS_PER_MIN:-100}
+      RUST_LOG: ${RUST_LOG:-info}
     volumes:
       - prism-data:/data
     networks:
@@ -58,8 +58,8 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      SITE_URL: ${SITE_URL}
-      API_ORIGIN: ${API_ORIGIN}
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      API_ORIGIN: ${API_ORIGIN:-http://api:8080}
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
     networks:
