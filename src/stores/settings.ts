@@ -33,6 +33,7 @@ export function getDefaultSettings(): AppSettings {
       minimize_to_tray: true,
       show_clip_notification: true,
       game_detection_enabled: false,
+      cs2_gsi_port: 4000,
     },
     storage: {
       max_clips_gb: 50,
@@ -41,10 +42,39 @@ export function getDefaultSettings(): AppSettings {
     cloud: {
       server_url: "https://goprism.studio",
       api_key: "",
+      access_token: "",
+      refresh_token: "",
       auto_upload: false,
       max_concurrent_uploads: 1,
       account_display_name: "",
       account_email: "",
+    },
+    auto_clip: {
+      enabled: false,
+      cooldown_secs: 30,
+      audio_sensitivity: 0.5,
+      games: [
+        {
+          game_name: "Counter-Strike 2",
+          enabled: true,
+          kill_clip_duration: 20,
+          death_clip_duration: 30,
+          combat_event_duration: 20,
+          events: ["kill", "death", "headshot", "win"],
+          audio_enabled: false,
+          audio_sensitivity: null,
+        },
+        {
+          game_name: "Rust",
+          enabled: true,
+          kill_clip_duration: 20,
+          death_clip_duration: 30,
+          combat_event_duration: 20,
+          events: ["headshot", "explosion", "combat"],
+          audio_enabled: true,
+          audio_sensitivity: null,
+        },
+      ],
     },
   };
 }

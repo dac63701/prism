@@ -8,12 +8,15 @@ use std::path::PathBuf;
 use queue::{UploadMetadata, UploadQueue, UploadStatus};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::auth::AuthManager;
 use crate::settings::SettingsManager;
 
 /// Start the background upload processor.
 /// Spawns a task that polls the queue and processes pending uploads.
 pub fn start_upload_processor(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut refreshed_this_session = false;
+
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
@@ -47,18 +50,10 @@ pub fn start_upload_processor(app: AppHandle) {
                 continue;
             }
             let upload_url = format!("{base_url}/api/clips/upload");
-            let api_key = settings.cloud.api_key.clone();
-            if api_key.is_empty() {
-                eprintln!("[upload] api_key is empty — skipping {}", task_id);
+            let access_token = settings.cloud.access_token.clone();
+            if access_token.is_empty() {
+                eprintln!("[upload] access_token is empty — skipping {}", task_id);
                 queue.mark_failed(&task_id, "Not authenticated — sign in first".into());
-                continue;
-            }
-            if !api_key.starts_with("prism_") {
-                eprintln!(
-                    "[upload] api_key has unexpected format (no prism_ prefix) — skipping {}",
-                    task_id
-                );
-                queue.mark_failed(&task_id, "Invalid API key format".into());
                 continue;
             }
 
@@ -87,10 +82,10 @@ pub fn start_upload_processor(app: AppHandle) {
                 }),
             );
 
-            match client::upload_clip(
+            let result = client::upload_clip(
                 &upload_url,
                 &clip_path,
-                Some(&api_key),
+                Some(&access_token),
                 &UploadMetadata {
                     title: task.title.clone(),
                     game: task.game.clone(),
@@ -101,8 +96,9 @@ pub fn start_upload_processor(app: AppHandle) {
                     size_bytes: task.size_bytes,
                 },
             )
-            .await
-            {
+            .await;
+
+            match result {
                 Ok(response) => {
                     queue.mark_completed(&task_id);
                     queue.set_share_url(&task_id, response.share_url.clone());
@@ -120,13 +116,42 @@ pub fn start_upload_processor(app: AppHandle) {
                             "clip_path": task.clip_path,
                         }),
                     );
-
-                    // Share URL is included in the event payload for frontend to copy
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
                     eprintln!("[upload] failed {}: {}", task_id, err_msg);
-                    queue.mark_failed(&task_id, err_msg.clone());
+
+                    // HTTP 401 may mean the JWT expired — try one refresh
+                    if err_msg.contains("401") && !refreshed_this_session {
+                        eprintln!("[upload] trying token refresh...");
+                        match AuthManager::refresh_access_token(&app).await {
+                            Ok(_) => {
+                                eprintln!("[upload] token refreshed, will retry");
+                                refreshed_this_session = true;
+                                // Re-enqueue as pending so next loop picks it up
+                                queue.mark_failed(&task_id, "Token expired, will retry".into());
+                                // Force a retry by resetting the task to pending
+                                // (mark_failed with retry_count < 3 will do this)
+                                continue;
+                            }
+                            Err(refresh_err) => {
+                                eprintln!("[upload] token refresh failed: {refresh_err}");
+                                queue.mark_permanent_failure(
+                                    &task_id,
+                                    "Session expired — please sign in again".into(),
+                                );
+                                let _ = app.emit("auth-invalid", ());
+                            }
+                        }
+                    } else if err_msg.contains("401") {
+                        queue.mark_permanent_failure(
+                            &task_id,
+                            "Session expired — please sign in again".into(),
+                        );
+                        let _ = app.emit("auth-invalid", ());
+                    } else {
+                        queue.mark_failed(&task_id, err_msg.clone());
+                    }
 
                     let _ = app.emit(
                         "upload-progress",

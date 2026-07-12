@@ -97,19 +97,23 @@ impl UploadQueue {
     }
 
     /// Set the persist path and load existing tasks.
+    /// Only resumes Pending/Uploading tasks whose clip files still exist on disk.
+    /// Permanently failed tasks are never resurrected.
     pub fn set_persist_path(&self, app_data: PathBuf) {
         let path = app_data.join(PERSIST_FILE);
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(tasks) = serde_json::from_str::<Vec<UploadTask>>(&content) {
                 if let Ok(mut queue) = self.inner.lock() {
-                    // Only load pending/failed tasks (resume incomplete ones)
                     for task in tasks {
-                        if matches!(
-                            task.status,
-                            UploadStatus::Pending
-                                | UploadStatus::Uploading
-                                | UploadStatus::Failed(_)
-                        ) {
+                        if matches!(task.status, UploadStatus::Pending | UploadStatus::Uploading) {
+                            let clip_path = PathBuf::from(&task.clip_path);
+                            if !clip_path.exists() {
+                                eprintln!(
+                                    "[upload] skipping deleted clip on reload: {}",
+                                    clip_path.display()
+                                );
+                                continue;
+                            }
                             queue.push(UploadTask {
                                 status: UploadStatus::Pending,
                                 progress: 0.0,
@@ -479,11 +483,13 @@ mod tests {
         let dir = std::env::temp_dir().join("prism_upload_test");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("upload_queue.json");
+        let clip_path = dir.join("persist.mp4");
+        let _ = std::fs::write(&clip_path, b"dummy mp4 content");
 
         let q = UploadQueue::new();
         q.enqueue_with_meta(
             "persist_1".into(),
-            "/clips/persist.mp4".into(),
+            clip_path.to_string_lossy().to_string(),
             "https://example.com".into(),
             "key".into(),
             make_metadata(),
@@ -545,5 +551,35 @@ mod tests {
         q.cleanup_completed();
         let all = q.all();
         assert_eq!(all.len(), 1, "recent completed tasks should be kept");
+    }
+
+    #[test]
+    fn test_set_persist_path_skips_missing_files() {
+        let dir = std::env::temp_dir().join("prism_upload_test_missing");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("upload_queue.json");
+        // Clip file intentionally NOT created — simulates deleted clip
+
+        let q = UploadQueue::new();
+        q.enqueue_with_meta(
+            "missing_clip".into(),
+            dir.join("nonexistent.mp4").to_string_lossy().to_string(),
+            "https://example.com".into(),
+            "key".into(),
+            make_metadata(),
+        );
+
+        if let Ok(mut pp) = q.persist_path.lock() {
+            *pp = Some(path.clone());
+        }
+        q.persist();
+
+        let q2 = UploadQueue::new();
+        q2.set_persist_path(dir.clone());
+
+        let all = q2.all();
+        assert_eq!(all.len(), 0, "deleted clips should be skipped on reload");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

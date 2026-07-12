@@ -19,6 +19,25 @@ export interface GeneralSettings {
   minimize_to_tray: boolean;
   show_clip_notification: boolean;
   game_detection_enabled: boolean;
+  cs2_gsi_port: number;
+}
+
+export interface PerGameAutoClip {
+  game_name: string;
+  enabled: boolean;
+  kill_clip_duration: number;
+  death_clip_duration: number;
+  combat_event_duration: number;
+  events: string[];
+  audio_enabled: boolean;
+  audio_sensitivity: number | null;
+}
+
+export interface AutoClipSettings {
+  enabled: boolean;
+  cooldown_secs: number;
+  audio_sensitivity: number;
+  games: PerGameAutoClip[];
 }
 
 export interface StorageSettings {
@@ -29,6 +48,8 @@ export interface StorageSettings {
 export interface CloudSettings {
   server_url: string;
   api_key: string;
+  access_token: string;
+  refresh_token: string;
   auto_upload: boolean;
   max_concurrent_uploads: number;
   account_display_name: string;
@@ -41,4 +62,5 @@ export interface AppSettings {
   general: GeneralSettings;
   storage: StorageSettings;
   cloud: CloudSettings;
+  auto_clip: AutoClipSettings;
 }

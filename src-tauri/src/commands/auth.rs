@@ -27,13 +27,13 @@ pub async fn cloud_handle_auth_code(app: AppHandle, code: String) -> Result<(), 
     AuthManager::handle_callback(&app, code).await
 }
 
-/// Check whether the stored API key has valid format.
+/// Check whether the stored access_token is present.
 /// Does NOT contact the server — the runtime upload path handles
 /// server-side validation and surfaces 401 errors naturally.
 #[tauri::command]
 pub async fn cloud_verify_auth(
     settings_mgr: State<'_, crate::settings::SettingsManager>,
 ) -> Result<bool, String> {
-    let api_key = settings_mgr.get().cloud.api_key;
-    Ok(!api_key.is_empty() && api_key.starts_with("prism_"))
+    let token = settings_mgr.get().cloud.access_token;
+    Ok(!token.is_empty())
 }

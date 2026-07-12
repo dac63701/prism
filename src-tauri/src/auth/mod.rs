@@ -145,7 +145,18 @@ impl AuthManager {
             .await
             .map_err(|e| format!("Failed to parse exchange response: {e}"))?;
 
-        let api_key = Self::create_api_key(&client, base, &exchange.access_token).await?;
+        // Attempt API key creation (non-fatal — primary auth is now JWT)
+        match Self::create_api_key(&client, base, &exchange.access_token).await {
+            Ok(key) => {
+                let settings_mgr = app.state::<SettingsManager>();
+                let mut s = settings_mgr.get();
+                s.cloud.api_key = key;
+                let _ = settings_mgr.set(app, s);
+            }
+            Err(e) => {
+                eprintln!("[auth] API key creation failed (non-fatal): {e}");
+            }
+        }
 
         {
             let mgr = app.state::<AuthManager>();
@@ -158,7 +169,8 @@ impl AuthManager {
         {
             let settings_mgr = app.state::<SettingsManager>();
             let mut new_settings = settings_mgr.get();
-            new_settings.cloud.api_key = api_key;
+            new_settings.cloud.access_token = exchange.access_token;
+            new_settings.cloud.refresh_token = exchange.refresh_token;
             new_settings.cloud.account_display_name = exchange.user.display_name;
             new_settings.cloud.account_email = exchange.user.email;
             let _ = settings_mgr.set(app, new_settings);
@@ -166,6 +178,57 @@ impl AuthManager {
 
         let _ = app.emit("auth-state-changed", true);
         Ok(())
+    }
+
+    /// Refresh the access_token using the stored refresh_token.
+    /// Returns the new access_token and updates settings.
+    pub async fn refresh_access_token(app: &AppHandle) -> Result<String, String> {
+        let settings = app.state::<SettingsManager>().get();
+        let base = settings.cloud.server_url.trim_end_matches('/').to_string();
+        let refresh_token = settings.cloud.refresh_token;
+        if refresh_token.is_empty() {
+            return Err("No refresh token available".into());
+        }
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{base}/api/auth/refresh"))
+            .json(&serde_json::json!({ "refresh_token": refresh_token }))
+            .send()
+            .await
+            .map_err(|e| format!("Refresh request failed: {e}"))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Token refresh failed ({status}): {body}"));
+        }
+
+        #[derive(Deserialize)]
+        struct RefreshResponse {
+            access_token: String,
+            #[allow(dead_code)]
+            refresh_token: Option<String>,
+        }
+
+        let body: RefreshResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse refresh response: {e}"))?;
+
+        let new_token = body.access_token;
+
+        {
+            let settings_mgr = app.state::<SettingsManager>();
+            let mut s = settings_mgr.get();
+            s.cloud.access_token = new_token.clone();
+            if let Some(new_refresh) = body.refresh_token {
+                s.cloud.refresh_token = new_refresh;
+            }
+            let _ = settings_mgr.set(app, s);
+        }
+
+        Ok(new_token)
     }
 
     async fn create_api_key(
@@ -199,6 +262,8 @@ impl AuthManager {
         let settings_mgr = app.state::<SettingsManager>();
         let mut new_settings = settings_mgr.get();
         new_settings.cloud.api_key.clear();
+        new_settings.cloud.access_token.clear();
+        new_settings.cloud.refresh_token.clear();
         new_settings.cloud.account_display_name.clear();
         new_settings.cloud.account_email.clear();
         let _ = settings_mgr.set(app, new_settings);

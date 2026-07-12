@@ -10,6 +10,8 @@ pub struct AppSettings {
     pub general: GeneralSettings,
     pub storage: StorageSettings,
     pub cloud: CloudSettings,
+    #[serde(default)]
+    pub auto_clip: AutoClipSettings,
 }
 
 // ── Recording ──────────────────────────────────────────────────────────────
@@ -82,6 +84,9 @@ pub struct GeneralSettings {
     pub minimize_to_tray: bool,
     pub show_clip_notification: bool,
     pub game_detection_enabled: bool,
+    /// Localhost port used by Counter-Strike 2 Game State Integration.
+    #[serde(default = "default_cs2_gsi_port")]
+    pub cs2_gsi_port: u16,
 }
 
 impl Default for GeneralSettings {
@@ -91,8 +96,73 @@ impl Default for GeneralSettings {
             minimize_to_tray: true,
             show_clip_notification: true,
             game_detection_enabled: false,
+            cs2_gsi_port: default_cs2_gsi_port(),
         }
     }
+}
+
+// ── Auto clipping ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoClipSettings {
+    pub enabled: bool,
+    /// Minimum time between automatic clips for the same game.
+    pub cooldown_secs: u32,
+    /// 0.0 is least sensitive and 1.0 is most sensitive.
+    pub audio_sensitivity: f32,
+    pub games: Vec<PerGameAutoClip>,
+}
+
+impl Default for AutoClipSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cooldown_secs: 30,
+            audio_sensitivity: 0.5,
+            games: vec![
+                PerGameAutoClip {
+                    game_name: "Counter-Strike 2".into(),
+                    enabled: true,
+                    kill_clip_duration: 20,
+                    death_clip_duration: 30,
+                    combat_event_duration: 20,
+                    events: vec![
+                        "kill".into(),
+                        "death".into(),
+                        "headshot".into(),
+                        "win".into(),
+                    ],
+                    audio_enabled: false,
+                    audio_sensitivity: None,
+                },
+                PerGameAutoClip {
+                    game_name: "Rust".into(),
+                    enabled: true,
+                    kill_clip_duration: 20,
+                    death_clip_duration: 30,
+                    combat_event_duration: 20,
+                    events: vec!["headshot".into(), "explosion".into(), "combat".into()],
+                    audio_enabled: true,
+                    audio_sensitivity: None,
+                },
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerGameAutoClip {
+    pub game_name: String,
+    pub enabled: bool,
+    pub kill_clip_duration: u32,
+    pub death_clip_duration: u32,
+    pub combat_event_duration: u32,
+    #[serde(default)]
+    pub events: Vec<String>,
+    #[serde(default)]
+    pub audio_enabled: bool,
+    #[serde(default)]
+    pub audio_sensitivity: Option<f32>,
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
@@ -120,8 +190,12 @@ impl Default for StorageSettings {
 pub struct CloudSettings {
     /// Self-hosted Prism server URL (e.g. "https://clips.example.com")
     pub server_url: String,
-    /// API key for authenticating upload requests
+    /// API key for authenticating upload requests (deprecated — use access_token)
     pub api_key: String,
+    /// JWT access token from desktop exchange (used for upload auth)
+    pub access_token: String,
+    /// JWT refresh token for obtaining new access tokens
+    pub refresh_token: String,
     /// Auto-upload clips immediately after saving
     pub auto_upload: bool,
     /// Max concurrent uploads (0 = sequential)
@@ -137,6 +211,8 @@ impl Default for CloudSettings {
         Self {
             server_url: String::from("https://goprism.studio"),
             api_key: String::new(),
+            access_token: String::new(),
+            refresh_token: String::new(),
             auto_upload: false,
             max_concurrent_uploads: 1,
             account_display_name: String::new(),
@@ -157,6 +233,10 @@ pub fn default_resolution_string() -> String {
 /// Default output bitrate for new installs and resets.
 pub fn default_bitrate_kbps() -> u32 {
     8_000
+}
+
+pub fn default_cs2_gsi_port() -> u16 {
+    4_000
 }
 
 /// Map a user-facing resolution label to dimensions.

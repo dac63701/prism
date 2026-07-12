@@ -17,7 +17,7 @@ pub async fn upload_clip(
     game: String,
 ) -> Result<(), String> {
     let settings = settings_mgr.get();
-    if settings.cloud.api_key.is_empty() {
+    if settings.cloud.access_token.is_empty() {
         return Err("Not authenticated — sign in first".into());
     }
     if settings.cloud.server_url.is_empty() {

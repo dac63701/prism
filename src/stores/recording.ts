@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useClipsStore } from "@/stores/clips";
+import { useSettingsStore } from "@/stores/settings";
+import { useCloudStore } from "@/stores/cloud";
 
 /// IPC timeout for save_clip (seconds).
 const SAVE_CLIP_TIMEOUT_SECS = 15;
@@ -43,6 +45,14 @@ export const useRecordingStore = create<RecordingState>((set) => {
         console.log("[recording] event: clip-saved =", event.payload);
         set({ lastClipPath: event.payload, saving: false });
         void useClipsStore.getState().loadClips();
+
+        const settings = useSettingsStore.getState().settings;
+        if (settings.cloud.auto_upload && settings.cloud.access_token) {
+          const path = event.payload;
+          const sep = path.includes("\\") ? "\\" : "/";
+          const filename = path.split(sep).pop() || "clip.mp4";
+          void useCloudStore.getState().uploadClip(path, filename);
+        }
       });
     }
   };

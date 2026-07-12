@@ -83,7 +83,7 @@ pub fn run() {
             // Initialize auth manager
             let auth_mgr = AuthManager::new();
             if let Ok(mut state) = auth_mgr.state.lock() {
-                state.authenticated = !settings.cloud.api_key.is_empty();
+                state.authenticated = !settings.cloud.access_token.is_empty();
                 state.display_name = settings.cloud.account_display_name.clone();
                 state.email = settings.cloud.account_email.clone();
             }

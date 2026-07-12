@@ -36,6 +36,7 @@ export interface UploadTask {
 let unlistenAuth: (() => void) | null = null;
 let unlistenUploadProgress: (() => void) | null = null;
 let unlistenAuthError: (() => void) | null = null;
+let unlistenAuthInvalid: (() => void) | null = null;
 
 export const useCloudStore = create<CloudState>((set) => {
   const setupListeners = async () => {
@@ -70,6 +71,11 @@ export const useCloudStore = create<CloudState>((set) => {
         },
       );
     }
+    if (!unlistenAuthInvalid) {
+      unlistenAuthInvalid = await listen<undefined>("auth-invalid", () => {
+        set({ authenticated: false, uploadError: "Session expired — please sign in again" });
+      });
+    }
   };
   setupListeners();
 
@@ -103,7 +109,7 @@ export const useCloudStore = create<CloudState>((set) => {
       try {
         const settings = useSettingsStore.getState().settings;
         const valid =
-          !!settings.cloud.api_key &&
+          !!settings.cloud.access_token &&
           (await invoke<boolean>("cloud_verify_auth"));
         set({
           serverUrl: settings.cloud.server_url,
