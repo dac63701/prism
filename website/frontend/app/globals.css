@@ -8,6 +8,12 @@
   --color-border: #1f2a44;
   --color-accent: #4f8cff;
   --color-accent-2: #77a8ff;
+  --animate-fade-up: fade-up 0.25s ease-out;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 :root {

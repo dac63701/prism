@@ -63,6 +63,17 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
+function Step({ n, children }: { n: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-xs font-medium text-blue-200">
+        {n}
+      </span>
+      <div className="text-sm text-zinc-300">{children}</div>
+    </div>
+  );
+}
+
 export function DownloadCard({
   platforms,
   release,
@@ -117,56 +128,99 @@ export function DownloadCard({
 
       {/* Main download card */}
       <Panel className={cn("overflow-hidden border p-8 transition", platforms[selected].length > 0 ? "border-blue-400/20" : "border-white/10")}>
-        {primaryAsset ? (
-          <div className="flex flex-col items-center gap-6 text-center">
-            <div className={cn(
-              "flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br shadow-lg",
-              PLATFORM_INFO[selected].gradient
-            )}>
-              {(() => {
-                const Icon = PLATFORM_INFO[selected].icon;
-                return <Icon className="h-9 w-9 text-white/80" />;
-              })()}
+        <div key={selected} className="animate-fade-up space-y-8">
+          {primaryAsset ? (
+            <div className="flex flex-col items-center gap-6 text-center">
+              <div className={cn(
+                "flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br shadow-lg",
+                PLATFORM_INFO[selected].gradient
+              )}>
+                {(() => {
+                  const Icon = PLATFORM_INFO[selected].icon;
+                  return <Icon className="h-9 w-9 text-white/80" />;
+                })()}
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold text-white">
+                  {PLATFORM_INFO[selected].label}
+                </h2>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {release ? `Version ${release.tag_name}` : "Latest"} &middot;{" "}
+                  {formatBytes(primaryAsset.size)}
+                </p>
+              </div>
+              <a
+                href={primaryAsset.browser_download_url}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-xl px-8 py-3 text-sm font-medium text-white shadow-lg transition",
+                  "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-2))]",
+                  "hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                )}
+              >
+                {PLATFORM_INFO[selected].badge}
+                <ChevronDown className="h-4 w-4" />
+              </a>
+              <div className="flex flex-wrap justify-center gap-2">
+                {currentAssets.map((asset) => (
+                  <a
+                    key={asset.name}
+                    href={asset.browser_download_url}
+                    className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-400 transition hover:bg-white/10 hover:text-zinc-200"
+                  >
+                    {asset.name} ({formatBytes(asset.size)})
+                  </a>
+                ))}
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl font-semibold text-white">
-                {PLATFORM_INFO[selected].label}
-              </h2>
-              <p className="mt-1 text-sm text-zinc-400">
-                {release ? `Version ${release.tag_name}` : "Latest"} &middot;{" "}
-                {formatBytes(primaryAsset.size)}
+          ) : (
+            <div className="py-8 text-center">
+              <p className="text-sm text-zinc-500">
+                No builds available for {PLATFORM_INFO[selected].label} yet.
               </p>
             </div>
-            <a
-              href={primaryAsset.browser_download_url}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-xl px-8 py-3 text-sm font-medium text-white shadow-lg transition",
-                "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-2))]",
-                "hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-              )}
-            >
-              {PLATFORM_INFO[selected].badge}
-              <ChevronDown className="h-4 w-4" />
-            </a>
-            <div className="flex flex-wrap justify-center gap-2">
-              {currentAssets.map((asset) => (
-                <a
-                  key={asset.name}
-                  href={asset.browser_download_url}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-400 transition hover:bg-white/10 hover:text-zinc-200"
-                >
-                  {asset.name} ({formatBytes(asset.size)})
-                </a>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="py-8 text-center">
-            <p className="text-sm text-zinc-500">
-              No builds available for {PLATFORM_INFO[selected].label} yet.
-            </p>
-          </div>
-        )}
+          )}
+
+          {platforms[selected].length > 0 && (
+            <>
+              <hr className="border-white/10" />
+              <div className="space-y-5">
+                <div className="text-xs uppercase tracking-[0.28em] text-blue-300/70">Installation Guide</div>
+                <div className="space-y-4">
+                  {selected === "windows" && (
+                    <>
+                      <Step n="1">Download the <span className="text-white">.msi</span> or <span className="text-white">.exe</span> installer above.</Step>
+                      <Step n="2">Run the installer and follow the setup wizard.</Step>
+                      <Step n="3">Launch Prism from the Start Menu.</Step>
+                      <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/30 p-3 text-sm text-zinc-300 font-mono">winget install prism</pre>
+                    </>
+                  )}
+                  {selected === "macos" && (
+                    <>
+                      <Step n="1">Open the downloaded <span className="text-white">.dmg</span> file.</Step>
+                      <Step n="2">Drag Prism into the <span className="text-white">Applications</span> folder.</Step>
+                      <Step n="3">Right-click Prism and select <span className="text-white">Open</span> to bypass Gatekeeper on first launch.</Step>
+                      <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/30 p-3 text-sm text-zinc-300 font-mono">brew install --cask prism</pre>
+                    </>
+                  )}
+                  {selected === "linux" && (
+                    <>
+                      <Step n="1">Download the <span className="text-white">.AppImage</span> file above.</Step>
+                      <Step n="2">Make it executable in your terminal.</Step>
+                      <Step n="3">Run Prism directly.</Step>
+                      <pre className="overflow-x-auto rounded-lg border border-white/10 bg-black/30 p-3 text-sm text-zinc-300 font-mono">
+{`chmod +x Prism-*.AppImage
+./Prism-*.AppImage`}
+                      </pre>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Alternatively, choose a different package above.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
       </Panel>
     </div>
   );

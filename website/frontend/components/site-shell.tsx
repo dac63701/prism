@@ -24,6 +24,9 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
             <Link href="/privacy" className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white">
               Privacy
             </Link>
+            <Link href="/download" className="rounded-lg px-3 py-2 text-sm text-zinc-300 transition hover:bg-white/5 hover:text-white">
+              Download
+            </Link>
             <Button asChild>
               <Link href="/login">Login</Link>
             </Button>
