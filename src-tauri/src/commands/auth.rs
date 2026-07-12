@@ -1,7 +1,6 @@
 use tauri::{AppHandle, State};
 
 use crate::auth::AuthManager;
-use crate::settings::SettingsManager;
 
 #[tauri::command]
 pub async fn cloud_login(app: AppHandle) -> Result<(), String> {
@@ -28,46 +27,13 @@ pub async fn cloud_handle_auth_code(app: AppHandle, code: String) -> Result<(), 
     AuthManager::handle_callback(&app, code).await
 }
 
-/// Verify the stored API key is still valid against the server.
-/// Returns true if the key is valid or the server is unreachable (to
-/// avoid clearing auth state due to transient network issues).
-/// Only returns false on a definitive 401 rejection from the server.
+/// Check whether the stored API key has valid format.
+/// Does NOT contact the server — the runtime upload path handles
+/// server-side validation and surfaces 401 errors naturally.
 #[tauri::command]
-pub async fn cloud_verify_auth(settings_mgr: State<'_, SettingsManager>) -> Result<bool, String> {
-    let settings = settings_mgr.get();
-    let api_key = settings.cloud.api_key;
-    if api_key.is_empty() || !api_key.starts_with("prism_") {
-        return Ok(false);
-    }
-    let base_url = settings.cloud.server_url.trim_end_matches('/').to_string();
-    if base_url.is_empty() {
-        return Ok(false);
-    }
-    let upload_url = format!("{base_url}/api/clips/upload");
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let req = client
-        .post(&upload_url)
-        .header("Authorization", format!("Bearer {api_key}"));
-
-    match req.send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            let valid = status != reqwest::StatusCode::UNAUTHORIZED;
-            if !valid {
-                let body = resp.text().await.unwrap_or_default();
-                eprintln!("[auth] API key rejected by {upload_url} ({status}): {body}");
-            }
-            Ok(valid)
-        }
-        Err(e) => {
-            // Network / timeout / DNS error — keep current auth state
-            eprintln!("[auth] verify request failed (will not invalidate): {e}");
-            Ok(true)
-        }
-    }
+pub async fn cloud_verify_auth(
+    settings_mgr: State<'_, crate::settings::SettingsManager>,
+) -> Result<bool, String> {
+    let api_key = settings_mgr.get().cloud.api_key;
+    Ok(!api_key.is_empty() && api_key.starts_with("prism_"))
 }
