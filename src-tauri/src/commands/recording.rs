@@ -83,6 +83,19 @@ pub async fn save_clip(
         settings.recording.buffer_duration_secs
     };
 
+    let filename = format!("clip_{}.mp4", chrono_now_formatted());
+    save_clip_internal(&app, &recorder, &settings, duration, filename)
+}
+
+/// Save a clip from an internal event source while retaining the same safe
+/// extract-then-encode behavior used by the manual Tauri command.
+pub(crate) fn save_clip_internal(
+    app: &AppHandle,
+    recorder: &Mutex<Recorder>,
+    settings: &crate::settings::config::AppSettings,
+    duration: u32,
+    filename: String,
+) -> Result<String, String> {
     // Step 1: Extract frames under lock (brief — frame copy only)
     let clip_data = {
         let rec = recorder.lock().map_err(|e| {
@@ -116,8 +129,6 @@ pub async fn save_clip(
     };
 
     // Step 3: Generate output path
-    let timestamp = chrono_now_formatted();
-    let filename = format!("clip_{timestamp}.mp4");
     let output_path = clip_data.output_dir.join(&filename);
 
     // Ensure output directory exists

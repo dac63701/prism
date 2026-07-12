@@ -7,7 +7,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::{ApiKeyOrJwtAuth, AuthUser};
 use crate::config::Config;
 use crate::db;
 use crate::db::tags;
@@ -36,7 +36,7 @@ pub async fn upload_clip(
     State(pool): State<PgPool>,
     State(config): State<Config>,
     State(storage): State<LocalStorage>,
-    auth: AuthUser,
+    ApiKeyOrJwtAuth(auth): ApiKeyOrJwtAuth,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let user = db::users::get_user_by_id(&pool, auth.user_id)
