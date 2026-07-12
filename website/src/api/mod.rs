@@ -19,6 +19,7 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
         .route("/api/auth/logout", routing::post(auth::logout))
         .route("/api/auth/desktop/success", routing::get(auth::desktop_success))
         .route("/api/auth/desktop/exchange", routing::post(auth::desktop_exchange))
+        .route("/api/auth/desktop/poll", routing::get(auth::desktop_poll))
         .route("/api/auth/me", routing::get(auth::me))
         .route("/api/auth/me", routing::delete(auth::delete_account))
         .route(

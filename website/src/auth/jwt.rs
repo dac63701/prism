@@ -25,6 +25,7 @@ pub struct RefreshClaims {
 pub struct OAuthStateClaims {
     pub redirect_to: String,
     pub desktop: bool,
+    pub session: Option<String>,
     pub nonce: String,
     pub exp: usize,
     pub iat: usize,
@@ -74,12 +75,14 @@ pub fn create_refresh_token(user_id: Uuid, secret: &str) -> Result<String, AppEr
 pub fn create_oauth_state(
     redirect_to: &str,
     desktop: bool,
+    session: Option<String>,
     secret: &str,
 ) -> Result<String, AppError> {
     let now = chrono::Utc::now().timestamp() as usize;
     let claims = OAuthStateClaims {
         redirect_to: redirect_to.to_string(),
         desktop,
+        session,
         nonce: Uuid::new_v4().to_string(),
         exp: now + 600,
         iat: now,

@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
@@ -8,6 +11,7 @@ use axum::{
     response::{Html, Redirect},
     Json,
 };
+use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -19,6 +23,17 @@ use crate::config::Config;
 use crate::db;
 use crate::errors::AppError;
 use crate::storage::StorageBackend;
+
+pub struct CachedCode {
+    pub code: String,
+    pub created_at: DateTime<Utc>,
+}
+
+pub type DesktopCodeCache = Arc<Mutex<HashMap<String, CachedCode>>>;
+
+pub fn new_desktop_code_cache() -> DesktopCodeCache {
+    Arc::new(Mutex::new(HashMap::new()))
+}
 
 #[derive(Deserialize)]
 pub struct RegisterRequest {
@@ -58,6 +73,17 @@ pub struct CreateApiKeyRequest {
 pub struct GoogleStartQuery {
     next: Option<String>,
     desktop: Option<bool>,
+    session: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DesktopPollQuery {
+    session: String,
+}
+
+#[derive(Serialize)]
+pub struct PollResponse {
+    code: String,
 }
 
 #[derive(Deserialize)]
@@ -318,7 +344,8 @@ pub async fn google_start(
 
     let redirect_to = query.next.unwrap_or_else(|| "/dashboard".into());
     let desktop = query.desktop.unwrap_or(false);
-    let state = jwt::create_oauth_state(&redirect_to, desktop, &config.jwt_secret)?;
+    let session = query.session.clone();
+    let state = jwt::create_oauth_state(&redirect_to, desktop, session, &config.jwt_secret)?;
 
     let url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent%20select_account&state={}",
@@ -334,6 +361,7 @@ pub async fn google_start(
 pub async fn google_callback(
     State(pool): State<PgPool>,
     State(config): State<Config>,
+    State(cache): State<DesktopCodeCache>,
     Query(query): Query<GoogleCallbackQuery>,
 ) -> Result<impl axum::response::IntoResponse, AppError> {
     if let Some(error) = query.error {
@@ -386,6 +414,16 @@ pub async fn google_callback(
 
     if claims.desktop {
         let desktop_code = jwt::create_desktop_code(user.id, &user.role, &config.jwt_secret)?;
+
+        if let Some(session) = &claims.session {
+            if let Ok(mut map) = cache.lock() {
+                map.insert(session.clone(), CachedCode {
+                    code: desktop_code.clone(),
+                    created_at: Utc::now(),
+                });
+            }
+        }
+
         let target = format!("/api/auth/desktop/success?code={}", urlencoding::encode(&desktop_code));
         return Ok((cookies, Redirect::temporary(&target)));
     }
@@ -496,6 +534,20 @@ pub async fn desktop_success(
 </script>
 </body>
 </html>"##))
+}
+
+pub async fn desktop_poll(
+    Query(query): Query<DesktopPollQuery>,
+    State(cache): State<DesktopCodeCache>,
+) -> Result<Json<PollResponse>, AppError> {
+    if let Ok(mut map) = cache.lock() {
+        if let Some(entry) = map.remove(&query.session) {
+            if Utc::now().signed_duration_since(entry.created_at).num_seconds() < 300 {
+                return Ok(Json(PollResponse { code: entry.code }));
+            }
+        }
+    }
+    Err(AppError::NotFound("No auth code available for this session".into()))
 }
 
 pub async fn desktop_exchange(

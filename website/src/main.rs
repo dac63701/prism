@@ -25,6 +25,7 @@ pub struct AppState {
     pub config: config::Config,
     pub storage: storage::local::LocalStorage,
     pub rate_limiter: middleware::rate_limit::RateLimiter,
+    pub desktop_code_cache: api::auth::DesktopCodeCache,
 }
 
 impl Clone for AppState {
@@ -34,6 +35,7 @@ impl Clone for AppState {
             config: self.config.clone(),
             storage: self.storage.clone(),
             rate_limiter: middleware::rate_limit::RateLimiter::new(self.config.rate_limit_per_min),
+            desktop_code_cache: self.desktop_code_cache.clone(),
         }
     }
 }
@@ -53,6 +55,12 @@ impl axum::extract::FromRef<AppState> for config::Config {
 impl axum::extract::FromRef<AppState> for storage::local::LocalStorage {
     fn from_ref(state: &AppState) -> Self {
         storage::local::LocalStorage::new(&state.config.storage_path)
+    }
+}
+
+impl axum::extract::FromRef<AppState> for api::auth::DesktopCodeCache {
+    fn from_ref(state: &AppState) -> Self {
+        state.desktop_code_cache.clone()
     }
 }
 
@@ -102,6 +110,7 @@ async fn main() {
         config,
         storage,
         rate_limiter,
+        desktop_code_cache: api::auth::new_desktop_code_cache(),
     };
     let mut allowed_origins = vec![
         "http://localhost:3000".parse::<HeaderValue>().unwrap(),

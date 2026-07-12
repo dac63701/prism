@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
+use uuid::Uuid;
 
 use crate::settings::SettingsManager;
 
@@ -64,11 +66,55 @@ impl AuthManager {
             let _ = app.emit("auth-error", "Server URL not configured");
             return;
         }
+
+        let base = server_url.trim_end_matches('/');
+        let session = Uuid::new_v4().to_string();
+
         let auth_url = format!(
-            "{}/api/auth/google?desktop=true&next=/dashboard",
-            server_url.trim_end_matches('/')
+            "{}/api/auth/google?desktop=true&session={}&next=/dashboard",
+            base, session
         );
         let _ = tauri_plugin_opener::open_url(&auth_url, None::<&str>);
+
+        let poll_url = format!("{}/api/auth/desktop/poll?session={}", base, session);
+        let app_handle = app.clone();
+
+        tauri::async_runtime::spawn(async move {
+            let client = reqwest::Client::new();
+            let start = std::time::Instant::now();
+
+            loop {
+                if start.elapsed().as_secs() > 300 {
+                    break;
+                }
+
+                {
+                    let mgr = app_handle.state::<AuthManager>();
+                    let authed = mgr.state.lock().map(|s| s.authenticated).unwrap_or(false);
+                    if authed {
+                        break;
+                    }
+                }
+
+                match client.get(&poll_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        if let Ok(body) = resp.json::<Value>().await {
+                            if let Some(code) = body.get("code").and_then(|c| c.as_str()) {
+                                let _ = AuthManager::handle_callback(
+                                    &app_handle,
+                                    code.to_string(),
+                                )
+                                .await;
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        });
     }
 
     pub async fn handle_callback(app: &AppHandle, code: String) -> Result<(), String> {

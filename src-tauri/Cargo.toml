@@ -17,6 +17,7 @@ tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 reqwest = { version = "0.12", features = ["json", "multipart"] }
@@ -30,6 +31,8 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-deep-link = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.22"
+tiny_http = "0.12"
+realfft = "3.5"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
@@ -48,7 +51,9 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dxgi_Common",
     "Win32_Media_MediaFoundation",
     "Win32_System_Com",
+    "Win32_UI_WindowsAndMessaging",
 ] }
+wasapi = "0.23"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # pipewire = { version = "0.8" }
