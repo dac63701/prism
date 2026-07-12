@@ -100,11 +100,8 @@ impl AuthManager {
                     Ok(resp) if resp.status().is_success() => {
                         if let Ok(body) = resp.json::<Value>().await {
                             if let Some(code) = body.get("code").and_then(|c| c.as_str()) {
-                                let _ = AuthManager::handle_callback(
-                                    &app_handle,
-                                    code.to_string(),
-                                )
-                                .await;
+                                let _ = AuthManager::handle_callback(&app_handle, code.to_string())
+                                    .await;
                                 break;
                             }
                         }
