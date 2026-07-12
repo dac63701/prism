@@ -18,7 +18,7 @@ services:
       retries: 10
 
   api:
-    image: ${API_IMAGE:-dac63701/prism-server@sha256:79d567803c00daf701ef499410a45a61b81f672611c13db8b269bd378289f071}
+    image: ${API_IMAGE:-dac63701/prism-server@sha256:3e9b869d92ed7d994db057f09b2ac30045d765aacb1a02fb4a5c21172e9e41f2}
     container_name: prism-api
     pull_policy: always
     restart: unless-stopped
