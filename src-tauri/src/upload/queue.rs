@@ -224,7 +224,7 @@ impl UploadQueue {
     pub fn mark_failed(&self, id: &str, error: String) {
         if let Ok(mut queue) = self.inner.lock() {
             if let Some(task) = queue.iter_mut().find(|t| t.id == id) {
-                if task.retry_count < 3 {
+                if task.retry_count < 2 {
                     task.retry_count += 1;
                     task.status = UploadStatus::Pending;
                     task.progress = 0.0;
@@ -420,15 +420,6 @@ mod tests {
             "should retry on 2nd failure"
         );
         assert_eq!(all[0].retry_count, 2);
-
-        q.mark_failed("task_1", "error 3".into());
-        let all = q.all();
-        assert_eq!(
-            all[0].status,
-            UploadStatus::Pending,
-            "should retry on 3rd failure"
-        );
-        assert_eq!(all[0].retry_count, 3);
 
         q.mark_failed("task_1", "final error".into());
         let all = q.all();
