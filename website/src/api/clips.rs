@@ -112,6 +112,35 @@ pub async fn upload_clip(
 
     storage.store(&storage_path, &file_data).await?;
 
+    // Generate thumbnail
+    let thumb_storage_path = format!("thumbs/{}/{}.jpg", auth.user_id, clip_id);
+    let thumbnail_path = {
+        let tmp_video = std::env::temp_dir().join(format!("prism_{}.mp4", clip_id));
+        let tmp_thumb = std::env::temp_dir().join(format!("prism_{}_thumb.jpg", clip_id));
+
+        // Write video to temp file
+        let _ = tokio::fs::write(&tmp_video, &file_data).await;
+
+        // Generate thumbnail (ffmpeg or pattern fallback)
+        let _ = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 320);
+
+        // Read and store thumbnail
+        if let Ok(thumb_data) = tokio::fs::read(&tmp_thumb).await {
+            let _ = storage.store(&thumb_storage_path, &thumb_data).await;
+        }
+
+        // Cleanup temp files
+        let _ = tokio::fs::remove_file(&tmp_video).await;
+        let _ = tokio::fs::remove_file(&tmp_thumb).await;
+
+        // Only set thumbnail_path if the file was stored successfully
+        if storage.exists(&thumb_storage_path).await.unwrap_or(false) {
+            Some(thumb_storage_path)
+        } else {
+            None
+        }
+    };
+
     let share_id: String = (0..12)
         .map(|_| format!("{:x}", rand::random::<u8>()))
         .collect();
@@ -121,7 +150,7 @@ pub async fn upload_clip(
         user_id: auth.user_id,
         original_filename,
         storage_path,
-        thumbnail_path: None,
+        thumbnail_path,
         share_id,
         title,
         game,

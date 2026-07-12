@@ -37,7 +37,7 @@ export default function ScreenPreview({ recording }: ScreenPreviewProps) {
       }
 
       if (active) {
-        const backoff = Math.min(800 * Math.pow(2, errorCountRef.current), 10000);
+        const backoff = Math.min(2000 * Math.pow(2, errorCountRef.current), 10000);
         timerRef.current = setTimeout(poll, backoff);
       }
     };

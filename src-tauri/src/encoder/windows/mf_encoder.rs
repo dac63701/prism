@@ -485,10 +485,37 @@ fn annex_b_to_avcc(annex_b: &[u8]) -> Vec<u8> {
     avcc
 }
 
+/// Quick O(1) check: does the data start with an Annex B start code?
+/// Annex B: `00 00 00 01` or `00 00 01` prefix before first NAL.
+/// AVCC: 4-byte big-endian length prefix (first byte is rarely 0 for SPS).
+fn looks_like_annex_b(data: &[u8]) -> bool {
+    if data.len() < 3 {
+        return false;
+    }
+    if data[0] != 0 || data[1] != 0 {
+        return false;
+    }
+    data[2] == 1 || (data.len() >= 4 && data[2] == 0 && data[3] == 1)
+}
+
 /// Normalize a Media Foundation H.264 packet to AVCC. Hardware MFTs may emit
 /// either Annex B or AVCC depending on the driver and negotiated output type.
+///
+/// Fast path: avoids the O(n) `is_valid_avcc` scan for the common case where
+/// the MFT already outputs AVCC (modern drivers).
 fn h264_to_avcc(data: &[u8]) -> Result<Vec<u8>, EncodeError> {
-    if is_valid_avcc(data) {
+    if !looks_like_annex_b(data) {
+        // Common case: MFT outputs AVCC directly — skip O(n) validation scan.
+        // Still verify the first NALU length is within bounds (O(1)) to catch
+        // clearly malformed packets without scanning the entire buffer.
+        if data.len() >= 4 {
+            let first_len = u32::from_be_bytes(data[0..4].try_into().unwrap()) as usize;
+            if first_len == 0 || 4 + first_len > data.len() {
+                return Err(EncodeError::EncodeFailed(
+                    "MFT returned an invalid H.264 packet".into(),
+                ));
+            }
+        }
         return Ok(data.to_vec());
     }
 

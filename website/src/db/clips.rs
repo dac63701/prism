@@ -36,6 +36,7 @@ pub struct ClipListItem {
     pub height: i32,
     pub visibility: String,
     pub thumbnail_path: Option<String>,
+    pub share_id: String,
     pub created_at: DateTime<Utc>,
     pub user_email: Option<String>,
     pub user_display_name: Option<String>,
@@ -150,7 +151,7 @@ pub async fn list_clips(
         format!(
             r#"SELECT c.id, c.user_id, c.title, c.game, c.duration_secs, c.size_bytes,
                        c.width, c.height, c.visibility::text as visibility, c.thumbnail_path,
-                       c.created_at,
+                       c.share_id, c.created_at,
                        NULL as user_email,
                        NULL as user_display_name
                 FROM clips c
@@ -165,7 +166,7 @@ pub async fn list_clips(
         format!(
             r#"SELECT c.id, c.user_id, c.title, c.game, c.duration_secs, c.size_bytes,
                        c.width, c.height, c.visibility::text as visibility, c.thumbnail_path,
-                       c.created_at, u.email as user_email, u.display_name as user_display_name
+                       c.share_id, c.created_at, u.email as user_email, u.display_name as user_display_name
                FROM clips c
                LEFT JOIN users u ON u.id = c.user_id
                WHERE (c.title ILIKE $1 OR c.original_filename ILIKE $1)

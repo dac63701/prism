@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getClip } from "@/lib/server-api";
 import { Card, Panel, SectionHeading, Badge } from "@/components/ui";
 import { DeleteClipButton } from "@/components/delete-clip-button";
+import VideoPlayer from "@/components/video-player";
 
 export default async function ClipDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,13 +24,11 @@ export default async function ClipDetailPage({ params }: { params: Promise<{ id:
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <Card className="overflow-hidden p-3">
-          <div className="aspect-video overflow-hidden rounded-[1.35rem] bg-black">
-            {clip.video_url ? (
-              <video controls playsInline poster={clip.thumbnail_url ?? undefined} className="h-full w-full object-cover">
-                <source src={clip.video_url} />
-              </video>
-            ) : null}
-          </div>
+          {clip.video_url ? (
+            <VideoPlayer src={clip.video_url} poster={clip.thumbnail_url ?? undefined} />
+          ) : (
+            <div className="aspect-video rounded-[1.35rem] bg-black" />
+          )}
         </Card>
 
         <Panel className="space-y-4 p-6">

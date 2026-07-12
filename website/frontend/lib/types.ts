@@ -23,6 +23,7 @@ export interface ClipListItem {
   height: number;
   visibility: "public" | "private" | "unlisted";
   thumbnail_path?: string | null;
+  share_id: string;
   created_at: string;
   user_email?: string | null;
   user_display_name?: string | null;

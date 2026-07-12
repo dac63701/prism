@@ -91,7 +91,7 @@ impl GameDetector {
                     audio.update_active_game(&app, next.as_ref());
                 }
 
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         });
     }

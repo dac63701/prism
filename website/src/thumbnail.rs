@@ -2,8 +2,10 @@ use std::path::Path;
 
 use crate::errors::AppError;
 
-/// Generate a JPEG thumbnail (320px wide) from an MP4 video file.
-/// Uses `image` crate on the first frame extracted via a minimal approach.
+/// Generate a JPEG thumbnail from an MP4 video file.
+///
+/// Tries `ffmpeg` first to extract the first frame as a real thumbnail.
+/// Falls back to a pattern-based placeholder if ffmpeg is unavailable.
 pub fn generate_thumbnail(
     video_path: &Path,
     thumb_path: &Path,
@@ -13,59 +15,41 @@ pub fn generate_thumbnail(
         return Err(AppError::NotFound("Video file not found".into()));
     }
 
-    let file = std::fs::File::open(video_path)?;
-    let size = file.metadata()?.len();
-    let reader = std::io::BufReader::new(file);
+    // Try ffmpeg subprocess — extracts the real first frame
+    let result = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            &video_path.to_string_lossy(),
+            "-vframes",
+            "1",
+            "-q:v",
+            "2",
+            "-vf",
+            &format!("scale={}:-1", max_w),
+            &thumb_path.to_string_lossy(),
+        ])
+        .output();
 
-    let mp4_reader = mp4::Mp4Reader::read_header(reader, size)
-        .map_err(|e| AppError::BadRequest(format!("Failed to read MP4: {e}")))?;
-
-    let track = mp4_reader
-        .tracks()
-        .values()
-        .find(|t| matches!(t.track_type(), Ok(mp4::TrackType::Video)))
-        .ok_or_else(|| AppError::BadRequest("No video track in MP4".into()))?;
-    let width = track.width() as u32;
-    let height = track.height() as u32;
-
-    let thumb_w = max_w.min(width).max(1);
-    let thumb_h = (height as f64 * (thumb_w as f64 / width as f64))
-        .round()
-        .max(1.0) as u32;
-
-    let mut img = image::RgbImage::new(thumb_w, thumb_h);
-    for y in 0..thumb_h {
-        for x in 0..thumb_w {
-            let sy = (y as f64 * height as f64 / thumb_h as f64) as u32;
-            let sx = (x as f64 * width as f64 / thumb_w as f64) as u32;
-            let r = ((sx ^ sy) % 256) as u8;
-            let g = ((sx * sy) % 256) as u8;
-            let b = ((sx + sy) % 256) as u8;
-            img.put_pixel(x, y, image::Rgb([r, g, b]));
+    match result {
+        Ok(output) if output.status.success() => return Ok(()),
+        _ => {
+            // ffmpeg failed or not installed — fall through to placeholder
         }
     }
 
-    if let Some(parent) = thumb_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    let file_out = std::fs::File::create(thumb_path)?;
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file_out, 80);
-    encoder
-        .encode(&img, thumb_w, thumb_h, image::ExtendedColorType::Rgb8)
-        .map_err(|e| AppError::Internal(format!("JPEG encode failed: {e}")))?;
-
-    Ok(())
+    generate_pattern_placeholder(thumb_path, (max_w, (max_w as f64 * 9.0 / 16.0) as u32))
 }
 
-/// Generate a colored placeholder thumbnail (for when extraction isn't available).
-#[allow(dead_code)]
-pub fn generate_placeholder_thumb(thumb_path: &Path, dim: (u32, u32)) -> Result<(), AppError> {
+fn generate_pattern_placeholder(
+    thumb_path: &Path,
+    dim: (u32, u32),
+) -> Result<(), AppError> {
     if let Some(parent) = thumb_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    let mut img = image::RgbImage::new(dim.0, dim.1);
+    let mut img = image::RgbImage::new(dim.0.max(1), dim.1.max(1));
     for y in 0..dim.1 {
         for x in 0..dim.0 {
             let r = ((x ^ y) % 256) as u8;
@@ -82,4 +66,11 @@ pub fn generate_placeholder_thumb(thumb_path: &Path, dim: (u32, u32)) -> Result<
         .map_err(|e| AppError::Internal(format!("JPEG encode failed: {e}")))?;
 
     Ok(())
+}
+
+/// Generate a pattern-based placeholder thumbnail (used externally for
+/// cases where no video file is available).
+#[allow(dead_code)]
+pub fn generate_placeholder_thumb(thumb_path: &Path, dim: (u32, u32)) -> Result<(), AppError> {
+    generate_pattern_placeholder(thumb_path, dim)
 }

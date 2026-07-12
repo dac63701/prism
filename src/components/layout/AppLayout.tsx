@@ -37,7 +37,7 @@ export default function AppLayout() {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (isRecording) {
       checkRecordingStatus();
-      interval = setInterval(checkRecordingStatus, 1000);
+      interval = setInterval(checkRecordingStatus, 3000);
     }
     return () => {
       if (interval) clearInterval(interval);

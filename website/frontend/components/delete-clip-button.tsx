@@ -43,7 +43,7 @@ export function DeleteClipButton({
   if (compact) {
     return (
       <button
-        onClick={handleDelete}
+        onClick={(e) => { e.stopPropagation(); handleDelete(); }}
         disabled={deleting}
         className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-lg bg-black/60 text-zinc-400 opacity-0 transition hover:bg-red-500/80 hover:text-white group-hover:opacity-100"
         title={`Delete ${clipTitle}`}

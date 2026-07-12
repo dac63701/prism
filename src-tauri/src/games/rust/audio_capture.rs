@@ -75,7 +75,7 @@ fn capture_loop(
                 crate::games::trigger::trigger_auto_clip(app, moment);
             }
         }
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(20));
     }
 
     let _ = client.stop_stream();

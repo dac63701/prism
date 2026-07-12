@@ -18,7 +18,7 @@ pub fn start_upload_processor(app: AppHandle) {
         let mut refreshed_this_session = false;
 
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
             let settings = app.state::<SettingsManager>().get();
             let queue = app.state::<UploadQueue>();

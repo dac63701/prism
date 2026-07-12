@@ -53,7 +53,69 @@ Confirm the build succeeds before reporting completion.
 - SPS/PPS: captured from first keyframe output of MF H.264 encoder, cached in `RecorderInner`,
   prepended to clip data if the original keyframe was evicted from the ring buffer
 
-## Active Issues & Plans
+## Completed Work
+
+### OAuth & Authentication
+- Full OAuth sign-in flow with deep-link routing (`prism://` scheme) for Windows
+- Auto-retrieve OAuth credentials via session-based polling (no button press needed)
+- Robust auth verification with server-side API key validity checks
+- Bring app window to foreground after deep-link OAuth sign-in
+- Stop re-verifying auth after fresh sign-in; use cloud store for Settings display
+- Switch upload auth from API key to JWT `access_token`
+- Redirect browser to signin success page after OAuth + suppress webview right-click
+- Bold logo + wordmark hero on sign-in/register pages
+
+### Cloud Sync & Clip Management
+- Upload queue with clip upload UI (`useUploadQueue` hook, upload processor)
+- Live settings API key in upload processor, skip retries on missing file
+- Manual multipart body construction for axum 0.8 / multer 3.x compatibility
+- Reduce upload retries to 2 (from 3)
+- Clip deletion from dashboard list and detail pages
+- Fix dashboard: replace admin-only stats with user-scoped data
+- Fix: cast `SUM(size_bytes)` to bigint for `NUMERIC/INT8` type mismatch in `get_server_stats`
+- Fix: `::text` cast for visibility ENUM in all SELECT/RETURNING queries + activity_logs action/level
+- Fix: alter `clips.duration_secs` from REAL to DOUBLE PRECISION to match Rust f64 mapping
+- Fix: run `duration_secs` ALTER as raw SQL after migrations (avoids VersionMismatch error)
+
+### MP4 & Thumbnail Fixes
+- Compute MP4 timescale from actual frame timestamps
+- Stop generating XOR placeholder thumbnails — proper NV12→RGB→JPEG thumbnails now work
+
+### Settings & Recording
+- Settings changes no longer start/stop recording
+- Add console logging to upload processor for visibility
+
+### Desktop App UI
+- UI consistency pass across entire desktop app
+- Decorative polish: background glow orbs and clip card hover overlay
+- Improve clip library and playback
+- Unify app and website styling — replace white borders with `border-border` (#1f2a44), differentiate sidebar background
+
+### Website Frontend
+- Add skeleton loading states for all data-fetching routes
+- Match skeleton dimensions exactly to real page layouts
+- Add `VideoPlayer` component
+- Remove redundant chevron icon from download button
+- Enhance download page with animated tabs, install guide, and nav links
+- Remove expensive blur and layered-gradient effects (website render cleanup)
+- Skeleton primitives system: `SkeletonCard`, `SkeletonPanel`, `SkeletonStatCard`, `SkeletonClipsGrid`, `SkeletonTable`, etc.
+- Lazy loading with `loading.tsx` for every route segment
+
+### CI/CD & Infrastructure
+- Docker images published for Portainer (ci: publish docker images for portainer)
+- Rust cache via Swatinem/rust-cache (auto-invalidates on Cargo.lock change)
+- Fix: route `/api/*` directly through nginx instead of Next.js rewrite
+- Fix: Dockerfile.web — correct `outputFileTracingRoot`, restore manual COPY of `.next/static` and public
+- Fix: frontend dist path, remove unused mut, fix standalone server.js path
+- Fix CI: per-platform bundle types instead of invalid `--bundles all`, Ubuntu system deps, macOS lane on macos-26
+
+### Code Quality
+- `cargo fmt` compliance across all Rust source files (multiple passes)
+- `#[allow(dead_code)]` for macOS-specific, Linux-specific, and cross-platform unused variants
+- Clippy: `div_ceil`, `clamp`, `is_multiple_of`, `too_many_arguments`, `unwrap_or_default`, `unnecessary_unwrap`, `field_reassign_with_default`
+- Replace `gen_random_bytes` with `gen_random_uuid` to drop pgcrypto dependency
+- SPS/PPS encoding fallback + brand logo + cargo fmt
+- Optimize, consolidate, and cleanup project-wide (tagged v0.1.0)
 
 ### 4K 144Hz Monitor Buffering (FIXED)
 **Root cause**: The ScreenCaptureKit SCStream fires at the display's native refresh rate (144Hz),
@@ -79,9 +141,42 @@ Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wir
 - **Part B (monitor switching)**: ✅ DONE — encoder reset on stop (Win + Mac), emit on error,
   frontend error surfacing.
 
-### Website render cleanup ✅ DONE
-- Removed the remaining expensive blur and layered-gradient effects from `website/frontend/components/ui.tsx`, `website/frontend/app/page.tsx`, and `website/frontend/app/globals.css`.
-- Verified the website frontend and Rust backend with `npm run build`, `cargo check`, and `npm run tauri build`.
+## Pending Work
+
+### High CPU Usage
+Investigate and fix high CPU usage in both the desktop app (recording/capture pipeline) and potentially the upload processor. Profile with Windows Task Manager/PerfMon and Rust `perf`-like tooling. Likely suspects: busy-wait polling in capture loop, excessive IPC events, or SQLite write amplification.
+
+### Clip Sharing
+Add ability to toggle clip visibility (public/private) via a "Share" button on the website. Generate shareable links that let others watch the clip without authentication. Requires:
+- Backend: `PATCH /api/clips/:id/visibility` endpoint
+- Frontend: Share button + share modal with link copy
+- Public view page at `/s/<share_id>` (existing skeleton loading already in place)
+
+### Remote Clip Name Editing
+Allow renaming clips from the website dashboard. Changes sync back to the desktop client via periodic pull mechanism (already in place). Requires:
+- Backend: `PATCH /api/clips/:id/name` endpoint
+- Frontend: inline edit or rename dialog on clip detail page
+- Desktop: honor updated name on next pull
+
+### App UI Full Rewrite / Fix
+The desktop app UI needs significant work — potentially a full rewrite. Current state has inconsistencies, missing polish, and suboptimal component architecture. Goals:
+- Consistent dark theme application
+- Proper component hierarchy (no inline styles, use Tailwind classes)
+- Responsive layout that works at small window sizes
+- Proper loading/empty/error states everywhere
+- Reusable component library aligned with website conventions
+
+### Passive File Update Checks
+Add passive checks that verify files have actually been written/updated after operations (clip save, settings persist, upload complete). Use file modification timestamps or content hashing to detect stale state. Surface warnings in the UI if an expected update didn't occur.
+
+### General Cleanup
+- Remove dead code and unused imports across Rust and TypeScript codebases
+- Consolidate duplicate types between frontend and backend
+- Standardize error handling patterns
+- Audit all unwraps/expects in Rust code and replace with proper error propagation
+- Revisit Tauri commands for consistent return types
+- Clean up Zustand store — remove stale fields, normalize shape
+- Ensure all IPC event listeners are properly cleaned up on unmount
 
 ## Styling Conventions
 

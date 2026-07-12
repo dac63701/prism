@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getShareMeta } from "@/lib/server-api";
 import { Card, Badge, Panel } from "@/components/ui";
 import { SiteShell } from "@/components/site-shell";
+import VideoPlayer from "@/components/video-player";
 
 export async function generateMetadata({ params }: { params: Promise<{ shareId: string }> }): Promise<Metadata> {
   const { shareId } = await params;
@@ -45,11 +46,11 @@ export default async function SharePage({ params }: { params: Promise<{ shareId:
       <div className="mx-auto max-w-6xl px-5 py-16 lg:px-8 lg:py-24">
         <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
           <Card className="overflow-hidden p-3">
-            <div className="aspect-video overflow-hidden rounded-[1.35rem] bg-black">
-              <video controls playsInline poster={clip.thumbnail_url ?? undefined} className="h-full w-full object-cover">
-                <source src={clip.video_url} />
-              </video>
-            </div>
+            {clip.video_url ? (
+              <VideoPlayer src={clip.video_url} poster={clip.thumbnail_url ?? undefined} />
+            ) : (
+              <div className="aspect-video rounded-[1.35rem] bg-black" />
+            )}
           </Card>
 
           <Panel className="space-y-4 p-6">
