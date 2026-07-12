@@ -452,11 +452,18 @@ pub async fn desktop_success(
   var deepLink = "{app_url}";
   var successUrl = "{site_url}/signin/success";
 
-  // Attempt to open the deep link. If the page is still visible after
-  // a short delay, redirect the browser to the success page.
+  // Attempt to open the deep link via a programmatic anchor click.
+  // This works in more browsers than window.location.href for custom
+  // protocol schemes (prism://), which many browsers block from
+  // script-initiated top-level navigation.
   var opened = false;
   function tryDeepLink() {{
-    window.location.href = deepLink;
+    var a = document.createElement("a");
+    a.setAttribute("href", deepLink);
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }}
 
   window.addEventListener("blur", function() {{
@@ -471,13 +478,13 @@ pub async fn desktop_success(
     }}
   }}, 3000);
 
-  // On click, try the deep link
+  // On button click, just let the native anchor href fire (don't
+  // preventDefault) — that way the browser handles the custom protocol
+  // navigation directly, which is the most reliable path.
+  // After a short delay, redirect to the success page.
   var btn = document.querySelector(".btn");
   if (btn) {{
-    btn.addEventListener("click", function(e) {{
-      e.preventDefault();
-      tryDeepLink();
-      // If clicked manually, redirect to success after a short delay
+    btn.addEventListener("click", function() {{
       setTimeout(function() {{
         window.location.replace(successUrl);
       }}, 1000);
