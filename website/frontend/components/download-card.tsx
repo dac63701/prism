@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Monitor, Apple, Laptop, ChevronDown } from "lucide-react";
+import { Monitor, Apple, Laptop } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Panel } from "@/components/ui";
 
@@ -158,7 +158,6 @@ export function DownloadCard({
                 )}
               >
                 {PLATFORM_INFO[selected].badge}
-                <ChevronDown className="h-4 w-4" />
               </a>
               <div className="flex flex-wrap justify-center gap-2">
                 {currentAssets.map((asset) => (
