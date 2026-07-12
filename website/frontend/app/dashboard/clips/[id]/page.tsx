@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getClip } from "@/lib/server-api";
 import { Card, Panel, SectionHeading, Badge } from "@/components/ui";
+import { DeleteClipButton } from "@/components/delete-clip-button";
 
 export default async function ClipDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -48,6 +49,10 @@ export default async function ClipDetailPage({ params }: { params: Promise<{ id:
           <div className="space-y-1">
             <div className="text-sm text-zinc-400">Resolution</div>
             <div className="text-white">{clip.width} × {clip.height}</div>
+          </div>
+
+          <div className="pt-2">
+            <DeleteClipButton clipId={clip.id} clipTitle={clip.title || "Untitled clip"} redirectTo="/dashboard/clips" />
           </div>
         </Panel>
       </div>

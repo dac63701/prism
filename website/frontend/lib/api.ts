@@ -73,6 +73,13 @@ export async function getClip(id: string) {
   return jsonFetch<ClipDetail>(`/api/clips/${id}`, { method: "GET" });
 }
 
+export async function deleteClip(id: string) {
+  await fetch(`/api/clips/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
+
 
 export async function getShareMeta(shareId: string) {
   return jsonFetch<{ clip: ClipDetail; user: User }>(`/api/s/${shareId}/meta`, { method: "GET" });
