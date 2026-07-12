@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { Home, Film, Settings, Cloud } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,10 @@ function CloudStatus() {
   const authenticated = useCloudStore((s) => s.authenticated);
   const email = useCloudStore((s) => s.email);
   const uploads = useCloudStore((s) => s.uploads);
-  const pendingCount = uploads.filter((t) => t.status === "Uploading" || t.status === "Pending").length;
+  const pendingCount = useMemo(
+    () => uploads.filter((t) => t.status === "Uploading" || t.status === "Pending").length,
+    [uploads],
+  );
 
   return (
     <div className="flex items-center gap-2 text-[11px]">

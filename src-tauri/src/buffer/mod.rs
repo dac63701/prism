@@ -36,6 +36,7 @@ impl BufferConfig {
     /// This is the size of raw frames when the encoder is unavailable
     /// (fallback path). Compressed H.264 packets are ~10 KB and the
     /// byte-budgeted ring buffer handles both cases correctly.
+    #[allow(dead_code)]
     pub fn frame_size(&self, width: u32, height: u32) -> usize {
         (width as usize)
             .saturating_mul(height as usize)

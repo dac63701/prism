@@ -240,6 +240,7 @@ impl UploadQueue {
     }
 
     /// Update progress for a task.
+    #[allow(dead_code)]
     pub fn update_progress(&self, id: &str, progress: f32) {
         if let Ok(mut queue) = self.inner.lock() {
             if let Some(task) = queue.iter_mut().find(|t| t.id == id) {

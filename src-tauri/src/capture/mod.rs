@@ -26,6 +26,7 @@ pub struct CapturedFrame {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
     /// 32-bit BGRA (macOS default, Windows DXGI default)
+    #[allow(dead_code)]
     Bgra,
     /// 8-bit YUV 4:2:0 planar (NV12) — preferred by hardware encoders
     Nv12,
@@ -58,6 +59,7 @@ pub struct CaptureConfig {
     /// Target frames per second (e.g. 30, 60)
     pub fps: u32,
     /// Whether to include the cursor in captured frames
+    #[allow(dead_code)]
     pub capture_cursor: bool,
     /// What display / window / application to capture
     pub target: CaptureTarget,
@@ -135,6 +137,7 @@ pub trait CaptureBackend: Send {
     fn read_latest_frame(&mut self) -> Option<CapturedFrame>;
 
     /// Whether the backend is currently capturing.
+    #[allow(dead_code)]
     fn is_active(&self) -> bool;
 }
 
@@ -198,6 +201,7 @@ impl LatestFrame {
     }
 
     /// Store a new frame (replaces previous).
+    #[allow(dead_code)]
     pub fn store(&self, frame: CapturedFrame) {
         if let Ok(mut guard) = self.inner.lock() {
             *guard = Some(frame);
@@ -205,6 +209,7 @@ impl LatestFrame {
     }
 
     /// Take the latest frame, leaving `None` in its place.
+    #[allow(dead_code)]
     pub fn take(&self) -> Option<CapturedFrame> {
         self.inner.lock().ok().and_then(|mut g| g.take())
     }
@@ -255,19 +260,20 @@ pub fn bgra_to_nv12(bgra: &[u8], width: u32, height: u32, bgra_stride: u32) -> V
     nv12
 }
 
-/// Convert an NV12 frame to RGB (for preview / JPEG encoding).
-/// Output is tightly packed R8G8B8 (3 bytes per pixel).
-pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
+enum Nv12Format { Rgb, #[allow(dead_code)] Bgra }
+
+fn nv12_convert(nv12: &[u8], width: u32, height: u32, fmt: Nv12Format) -> Vec<u8> {
     let y_size = (width * height) as usize;
     let y_plane = &nv12[..y_size];
     let uv_plane = &nv12[y_size..];
     let uv_width = width.div_ceil(2);
-    let mut rgb = vec![0u8; (width * height * 3) as usize];
+    let bpp: usize = match fmt { Nv12Format::Rgb => 3, Nv12Format::Bgra => 4 };
+    let mut out = vec![0u8; (width * height) as usize * bpp];
 
     for y in 0..height {
         let y_row = (y * width) as usize;
         let uv_row = ((y / 2) * uv_width) as usize * 2;
-        let rgb_row = y_row * 3;
+        let out_row = y_row * bpp;
         for x in 0..width {
             let y_off = y_row + x as usize;
             let uv_off = uv_row + (x / 2) as usize * 2;
@@ -280,56 +286,44 @@ pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
             let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
             let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
 
-            let rgb_off = rgb_row + x as usize * 3;
-            rgb[rgb_off] = r;
-            rgb[rgb_off + 1] = g;
-            rgb[rgb_off + 2] = b;
+            let off = out_row + x as usize * bpp;
+            match fmt {
+                Nv12Format::Rgb => {
+                    out[off] = r;
+                    out[off + 1] = g;
+                    out[off + 2] = b;
+                }
+                Nv12Format::Bgra => {
+                    out[off] = b;
+                    out[off + 1] = g;
+                    out[off + 2] = r;
+                    out[off + 3] = 255;
+                }
+            }
         }
     }
 
-    rgb
+    out
+}
+
+/// Convert an NV12 frame to RGB (for preview / JPEG encoding).
+/// Output is tightly packed R8G8B8 (3 bytes per pixel).
+pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
+    nv12_convert(nv12, width, height, Nv12Format::Rgb)
 }
 
 /// Convert an NV12 frame to BGRA (4 bytes per pixel, for VideoToolbox IOSurface).
 /// Output is tightly packed BGRA with stride = width * 4.
+#[allow(dead_code)]
 pub fn nv12_to_bgra(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let y_size = (width * height) as usize;
-    let y_plane = &nv12[..y_size];
-    let uv_plane = &nv12[y_size..];
-    let uv_width = width.div_ceil(2);
-    let mut bgra = vec![0u8; (width * height * 4) as usize];
-
-    for y in 0..height {
-        let y_row = (y * width) as usize;
-        let uv_row = ((y / 2) * uv_width) as usize * 2;
-        let bgra_row = y_row * 4;
-        for x in 0..width {
-            let y_off = y_row + x as usize;
-            let uv_off = uv_row + (x / 2) as usize * 2;
-
-            let y_val = y_plane[y_off] as i32 - 16;
-            let u_val = uv_plane[uv_off] as i32 - 128;
-            let v_val = uv_plane[uv_off + 1] as i32 - 128;
-
-            let r = ((298 * y_val + 409 * v_val + 128) >> 8).clamp(0, 255) as u8;
-            let g = ((298 * y_val - 100 * u_val - 208 * v_val + 128) >> 8).clamp(0, 255) as u8;
-            let b = ((298 * y_val + 516 * u_val + 128) >> 8).clamp(0, 255) as u8;
-
-            let bgra_off = bgra_row + x as usize * 4;
-            bgra[bgra_off] = b;
-            bgra[bgra_off + 1] = g;
-            bgra[bgra_off + 2] = r;
-            bgra[bgra_off + 3] = 255;
-        }
-    }
-
-    bgra
+    nv12_convert(nv12, width, height, Nv12Format::Bgra)
 }
 
 // ---------------------------------------------------------------------------
 // Fallback backend for unsupported platforms
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub struct UnsupportedBackend;
 
 impl CaptureBackend for UnsupportedBackend {

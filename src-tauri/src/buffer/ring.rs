@@ -10,6 +10,7 @@ pub struct StoredFrame {
     pub data: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
+    #[allow(dead_code)]
     pub stride: u32,
     pub pixel_format: crate::capture::PixelFormat,
     pub timestamp: Instant,
@@ -48,6 +49,7 @@ pub struct RingBuffer {
 
 impl RingBuffer {
     /// Create a ring buffer bounded by `capacity` frames with no byte limit.
+    #[allow(dead_code)]
     pub fn new(capacity: usize) -> Self {
         Self {
             frames: VecDeque::with_capacity(capacity),
@@ -120,16 +122,19 @@ impl RingBuffer {
     }
 
     /// Maximum frame capacity.
+    #[allow(dead_code)]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
     /// Total bytes of all stored frames.
+    #[allow(dead_code)]
     pub fn total_bytes(&self) -> usize {
         self.total_bytes
     }
 
     /// Whether the buffer is empty.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.frames.is_empty()
     }

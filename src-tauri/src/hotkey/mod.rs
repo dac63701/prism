@@ -3,11 +3,10 @@
 //! Wraps `tauri-plugin-global-shortcut` with a manager that reads
 //! hotkey bindings from settings and keeps them in sync.
 
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
 use crate::settings::config::HotkeySettings;
-use crate::settings::SettingsManager;
 
 /// Parse a hotkey string like "Cmd+Shift+X" into a `Shortcut`.
 pub fn parse_hotkey(hk: &str) -> Result<Shortcut, String> {
@@ -58,40 +57,4 @@ pub fn register_hotkeys<R: Runtime>(
     Ok(())
 }
 
-/// Map a hotkey action name to its settings key name (for frontend event).
-pub fn action_to_event(action: &str) -> &'static str {
-    match action {
-        "save_clip" => "save_clip",
-        "toggle_recording" => "toggle_recording",
-        "open_library" => "open_library",
-        _ => "unknown",
-    }
-}
 
-/// Global shortcut event handler — dispatches to frontend via events.
-/// Compares the triggered shortcut against configured settings.
-pub fn on_shortcut<R: Runtime>(app: &AppHandle<R>, shortcut: &Shortcut, _event: ShortcutEvent) {
-    let settings = app.state::<SettingsManager>().get().hotkeys;
-
-    let action_str = find_action(&settings, shortcut);
-
-    if let Some(action) = action_str {
-        let _ = app.emit("hotkey-pressed", action);
-    }
-}
-
-/// Find which action matches the given shortcut by comparing against settings.
-fn find_action(settings: &HotkeySettings, shortcut: &Shortcut) -> Option<&'static str> {
-    for (hk_str, action) in [
-        (&settings.save_clip, "save_clip"),
-        (&settings.toggle_recording, "toggle_recording"),
-        (&settings.open_library, "open_library"),
-    ] {
-        if let Ok(hk) = hk_str.parse::<Shortcut>() {
-            if shortcut.mods == hk.mods && shortcut.key == hk.key {
-                return Some(action);
-            }
-        }
-    }
-    None
-}

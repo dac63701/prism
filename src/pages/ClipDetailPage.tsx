@@ -1,23 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  Edit3,
-  Gamepad2,
-  Pause,
-  PictureInPicture2,
-  Play,
-  Save,
-  SkipBack,
-  SkipForward,
-} from "lucide-react";
+import { ArrowLeft, Edit3, Gamepad2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/brand";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { formatDate, formatDuration, formatSize, useClipsStore } from "@/stores/clips";
+import VideoPlayer from "@/components/common/VideoPlayer";
 import type { Clip } from "@/stores/clips";
-
-const SKIP_SECONDS = 5;
 
 export default function ClipDetailPage() {
   const { filename } = useParams<{ filename: string }>();
@@ -34,17 +23,12 @@ export default function ClipDetailPage() {
     [clips, filename, location.state],
   );
 
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [game, setGame] = useState("");
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState("");
-  const [videoError, setVideoError] = useState("");
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (clip) {
@@ -76,37 +60,7 @@ export default function ClipDetailPage() {
 
   const videoSrc = convertFileSrc(clip.path);
   const posterSrc = convertFileSrc(clip.path.replace(/\.mp4$/, "_thumb.jpg"));
-  const totalDuration = videoDuration || clip.duration_secs;
   const displayTitle = clip.title || clip.filename.replace(/\.mp4$/, "");
-
-  const togglePlay = async () => {
-    const video = videoRef.current;
-    if (!video) return;
-    try {
-      if (video.paused) await video.play();
-      else video.pause();
-    } catch {
-      setVideoError("Playback could not be started for this clip.");
-    }
-  };
-
-  const seekTo = (time: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const nextTime = Math.max(0, Math.min(time, Number.isFinite(video.duration) ? video.duration : totalDuration));
-    video.currentTime = nextTime;
-    setCurrentTime(nextTime);
-  };
-
-  const togglePip = async () => {
-    if (!videoRef.current) return;
-    try {
-      if (document.pictureInPictureElement) await document.exitPictureInPicture();
-      else await videoRef.current.requestPictureInPicture();
-    } catch (error) {
-      console.error("Picture-in-Picture failed:", error);
-    }
-  };
 
   const saveMetadata = async () => {
     const trimmedTitle = title.trim();
@@ -152,68 +106,8 @@ export default function ClipDetailPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-6 pb-8">
-        <section className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-black shadow-2xl shadow-black/30">
-          {!playing && (
-            <img src={posterSrc} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} />
-          )}
-          <video
-            ref={videoRef}
-            src={videoSrc}
-            className="h-full w-full"
-            onClick={() => void togglePlay()}
-            onEnded={() => setPlaying(false)}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-            onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-            onLoadedMetadata={(event) => {
-              setVideoDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
-              setVideoError("");
-            }}
-            onError={() => setVideoError("This clip could not be loaded in the app.")}
-            controls={false}
-            preload="metadata"
-            playsInline
-          />
-
-          {videoError && <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-4 text-center text-sm text-zinc-200">{videoError}</div>}
-
-          {!playing && !videoError && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <button onClick={() => void togglePlay()} className="pointer-events-auto flex size-16 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition active:scale-95 hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Play clip">
-                <Play className="ml-1 size-7 fill-white" />
-              </button>
-            </div>
-          )}
-
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent px-4 pb-3 pt-12">
-            <input
-              aria-label="Clip timeline"
-              type="range"
-              min="0"
-              max={Math.max(totalDuration, 1)}
-              step="0.01"
-              value={Math.min(currentTime, totalDuration || 0)}
-              onChange={(event) => seekTo(Number(event.target.value))}
-              className="h-1.5 w-full cursor-pointer accent-white"
-            />
-            <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-white">
-                <button onClick={() => void togglePlay()} className="rounded-lg p-1.5 transition active:scale-90 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label={playing ? "Pause clip" : "Play clip"}>
-                  {playing ? <Pause className="size-5" /> : <Play className="size-5 fill-white" />}
-                </button>
-                <button onClick={() => seekTo(currentTime - SKIP_SECONDS)} className="rounded-lg p-1.5 transition active:scale-90 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Skip back 5 seconds">
-                  <SkipBack className="size-5" />
-                </button>
-                <button onClick={() => seekTo(currentTime + SKIP_SECONDS)} className="rounded-lg p-1.5 transition active:scale-90 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Skip forward 5 seconds">
-                  <SkipForward className="size-5" />
-                </button>
-                <button onClick={() => void togglePip()} className="rounded-lg p-1.5 text-white/70 transition active:scale-90 hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20" aria-label="Picture in picture">
-                  <PictureInPicture2 className="size-4" />
-                </button>
-              </div>
-              <span className="text-xs tabular-nums text-white/75">{formatDuration(Math.floor(currentTime))} / {formatDuration(Math.floor(totalDuration))}</span>
-            </div>
-          </div>
+        <section className="relative overflow-hidden rounded-2xl border border-border bg-black shadow-2xl shadow-black/30">
+          <VideoPlayer src={videoSrc} poster={posterSrc} />
         </section>
 
         <Card><div className="p-4 sm:p-5">

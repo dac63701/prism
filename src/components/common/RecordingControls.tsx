@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { Play, Square, Scissors, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRecordingStore } from "@/stores/recording";
@@ -12,14 +13,14 @@ export default function RecordingControls() {
   const saveClip = useRecordingStore((s) => s.saveClip);
   const clearError = useRecordingStore((s) => s.clearError);
 
-  const handleMainClick = () => {
+  const handleMainClick = useCallback(() => {
     if (starting) return;
     if (isRecording) {
       stopRecording();
     } else {
       startRecording();
     }
-  };
+  }, [starting, isRecording, stopRecording, startRecording]);
 
   return (
     <div className="flex flex-col items-center gap-3">

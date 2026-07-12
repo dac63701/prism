@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore, getDefaultHotkeys } from "@/stores/settings";
@@ -136,16 +136,16 @@ export default function SettingsPage() {
   }, []);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const debouncedSave = (newSettings: AppSettings) => {
+  const debouncedSave = useCallback((newSettings: AppSettings) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       updateSettings(newSettings);
     }, 300);
-  };
+  }, [updateSettings]);
 
-  const save = (next: AppSettings) => updateSettings(next);
+  const save = useCallback((next: AppSettings) => updateSettings(next), [updateSettings]);
 
-  const setField = <S extends keyof AppSettings, K extends keyof AppSettings[S]>(
+  const setField = useCallback(<S extends keyof AppSettings, K extends keyof AppSettings[S]>(
     section: S,
     key: K,
     value: AppSettings[S][K]
@@ -154,31 +154,31 @@ export default function SettingsPage() {
       ...settings,
       [section]: { ...settings[section], [key]: value },
     });
-  };
+  }, [save, settings]);
 
-  const resetHotkeys = () => {
+  const resetHotkeys = useCallback(() => {
     return updateSettings({
       ...settings,
       hotkeys: getDefaultHotkeys(),
     });
-  };
+  }, [updateSettings, settings]);
 
   const s = settings;
 
-  const updateAutoClipGame = (
-    gameName: string,
-    patch: Partial<AppSettings["auto_clip"]["games"][number]>
-  ) => {
-    save({
-      ...settings,
-      auto_clip: {
-        ...settings.auto_clip,
-        games: settings.auto_clip.games.map((game) =>
-          game.game_name === gameName ? { ...game, ...patch } : game
-        ),
-      },
-    });
-  };
+  const updateAutoClipGame = useCallback(
+    (gameName: string, patch: Partial<AppSettings["auto_clip"]["games"][number]>) => {
+      save({
+        ...settings,
+        auto_clip: {
+          ...settings.auto_clip,
+          games: settings.auto_clip.games.map((game) =>
+            game.game_name === gameName ? { ...game, ...patch } : game
+          ),
+        },
+      });
+    },
+    [save, settings],
+  );
 
   // Force inputs to remount with correct values after async load
   const loadedKey = loaded ? "loaded" : "initial";

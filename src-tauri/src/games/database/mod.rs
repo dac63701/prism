@@ -61,6 +61,7 @@ impl GameRegistry {
     }
 
     /// Find a game by its process name (case-insensitive).
+    #[allow(dead_code)]
     pub fn detect_by_process(&self, process_name: &str) -> Option<GameEntry> {
         let lower = process_name.to_lowercase();
         self.inner
@@ -87,6 +88,7 @@ impl GameRegistry {
     }
 
     /// Toggle auto-clip for a game.
+    #[allow(dead_code)]
     pub fn set_auto_clip(&self, name: &str, enabled: bool) {
         if let Ok(mut games) = self.inner.lock() {
             if let Some(game) = games.iter_mut().find(|g| g.name == name) {
@@ -95,6 +97,7 @@ impl GameRegistry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn all(&self) -> Vec<GameEntry> {
         self.inner.lock().map(|g| g.clone()).unwrap_or_default()
     }

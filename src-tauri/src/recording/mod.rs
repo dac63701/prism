@@ -27,7 +27,7 @@ use crate::settings::config::{is_native_resolution, resolution_dimensions};
 
 /// Polling interval as a fraction of the frame duration,
 /// so we don't busy-loop but still catch frames in time.
-const POLL_FRACTION: f32 = 0.5;
+const POLL_FRACTION: f32 = 1.0;
 
 /// Tauri-managed recording state.
 ///
@@ -187,6 +187,7 @@ impl Recorder {
     }
 
     /// Apply new settings at runtime (re-creates buffer, updates config).
+    #[allow(dead_code)]
     pub fn reconfigure(&self, settings: &AppSettings) {
         let rs = &settings.recording;
         self.cached_fps.store(rs.fps, Ordering::SeqCst);
@@ -343,6 +344,7 @@ impl Recorder {
     }
 
     /// Clear the ring buffer (e.g. on game switch).
+    #[allow(dead_code)]
     pub fn clear_buffer(&self) {
         if let Ok(mut guard) = self.inner.lock() {
             if let Some(inner) = guard.as_mut() {
@@ -669,6 +671,7 @@ impl Recorder {
     }
 
     /// Seconds of buffer time available (frame_count / fps).
+    #[allow(dead_code)]
     pub fn buffer_time_secs(&self) -> f64 {
         let fps = self.cached_fps.load(Ordering::Relaxed);
         if fps == 0 {

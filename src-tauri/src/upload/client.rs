@@ -9,12 +9,18 @@ use super::queue::UploadMetadata;
 
 #[derive(Debug, Deserialize)]
 pub struct UploadResponse {
+    #[allow(dead_code)]
     pub id: String,
     pub share_url: String,
+    #[allow(dead_code)]
     pub title: String,
+    #[allow(dead_code)]
     pub game: Option<String>,
+    #[allow(dead_code)]
     pub duration_secs: f64,
+    #[allow(dead_code)]
     pub size_bytes: i64,
+    #[allow(dead_code)]
     pub created_at: String,
 }
 

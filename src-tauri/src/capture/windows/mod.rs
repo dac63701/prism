@@ -18,6 +18,7 @@ pub struct WindowsCaptureBackend {
     context: Option<ID3D11DeviceContext>,
     duplication: Option<IDXGIOutputDuplication>,
     staging: Option<ID3D11Texture2D>,
+    #[allow(dead_code)]
     latest_frame: LatestFrame,
     active: bool,
     config: Option<CaptureConfig>,
@@ -185,14 +186,14 @@ impl WindowsCaptureBackend {
         let src_stride = mapped.RowPitch;
         let dst_stride = width * 4;
         let total_size = (dst_stride * height) as usize;
-        let mut data: Vec<u8> = Vec::with_capacity(total_size);
+        let mut data: Vec<u8> = vec![0u8; total_size];
 
         unsafe {
             let src_ptr = mapped.pData as *const u8;
+            let dst_ptr = data.as_mut_ptr();
             if src_stride == dst_stride {
                 // Fast path: contiguous rows, single memcpy
-                std::ptr::copy_nonoverlapping(src_ptr, data.as_mut_ptr(), total_size);
-                data.set_len(total_size);
+                std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, total_size);
             } else {
                 // Slow path: row pitch differs (e.g. GPU padding)
                 for y in 0..height {
@@ -200,11 +201,10 @@ impl WindowsCaptureBackend {
                     let dst_offset = (y * dst_stride) as usize;
                     std::ptr::copy_nonoverlapping(
                         src_ptr.add(src_offset),
-                        data.as_mut_ptr().add(dst_offset),
+                        dst_ptr.add(dst_offset),
                         dst_stride as usize,
                     );
                 }
-                data.set_len(total_size);
             }
         }
 

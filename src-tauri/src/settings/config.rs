@@ -242,12 +242,16 @@ pub fn default_cs2_gsi_port() -> u16 {
 /// Map a user-facing resolution label to dimensions.
 /// Returns `(0, 0)` for "native" — callers should use capture-source dimensions.
 pub fn resolution_dimensions(label: &str) -> (u32, u32) {
-    match label.to_ascii_lowercase().as_str() {
-        "native" => (0, 0),
-        "720p" => (1280, 720),
-        "1440p" => (2560, 1440),
-        "2160p" | "4k" => (3840, 2160),
-        _ => (1920, 1080),
+    if label.eq_ignore_ascii_case("native") {
+        (0, 0)
+    } else if label.eq_ignore_ascii_case("720p") {
+        (1280, 720)
+    } else if label.eq_ignore_ascii_case("1440p") {
+        (2560, 1440)
+    } else if label.eq_ignore_ascii_case("2160p") || label.eq_ignore_ascii_case("4k") {
+        (3840, 2160)
+    } else {
+        (1920, 1080)
     }
 }
 

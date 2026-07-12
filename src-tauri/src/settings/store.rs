@@ -50,9 +50,11 @@ impl SettingsStore {
             .map_err(|e| SettingsError::Serialize(e.to_string()))?;
 
         // Atomic write: write to .tmp, then rename
+        // On Windows, rename fails if the target already exists, so remove it first.
         let tmp_path = self.path.with_extension("json.tmp");
         std::fs::write(&tmp_path, &json)
             .map_err(|e| SettingsError::Io(format!("Failed to write settings: {e}")))?;
+        let _ = std::fs::remove_file(&self.path);
         std::fs::rename(&tmp_path, &self.path)
             .map_err(|e| SettingsError::Io(format!("Failed to commit settings: {e}")))?;
 
@@ -60,6 +62,7 @@ impl SettingsStore {
     }
 
     /// Return the file path (useful for diagnostics).
+    #[allow(dead_code)]
     pub fn path(&self) -> &PathBuf {
         &self.path
     }

@@ -3,6 +3,7 @@ import { X, Monitor, HardDrive, Film } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settings";
 import { useRecordingStore } from "@/stores/recording";
+import { formatDuration } from "@/stores/clips";
 import RecordingControls from "@/components/common/RecordingControls";
 import ScreenPreview from "@/components/common/ScreenPreview";
 import SourceSelector from "@/components/common/SourceSelector";
@@ -27,12 +28,6 @@ export default function HomePage() {
   useEffect(() => {
     if (!loaded) loadSettings();
   }, [loaded, loadSettings]);
-
-  function formatElapsed(secs: number): string {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  }
 
   const handleSourceChange = useCallback(async (targetJson: string) => {
     try {
@@ -103,7 +98,7 @@ export default function HomePage() {
             {isRecording
               ? framesReceived === 0
                 ? "Recording — waiting for frames..."
-                : `${formatElapsed(recordingElapsedSeconds)} · ${formatElapsed(bufferTimeSeconds)} buffered`
+                : `${formatDuration(recordingElapsedSeconds)} · ${formatDuration(bufferTimeSeconds)} buffered`
               : "Idle"}
           </p>
 

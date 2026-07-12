@@ -28,6 +28,7 @@ struct DesktopExchangeResponse {
 
 #[derive(Deserialize)]
 struct DesktopUser {
+    #[allow(dead_code)]
     id: String,
     email: String,
     display_name: String,
@@ -109,7 +110,7 @@ impl AuthManager {
                     _ => {}
                 }
 
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         });
     }

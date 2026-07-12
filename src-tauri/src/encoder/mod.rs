@@ -20,6 +20,7 @@ use std::path::Path;
 #[derive(Debug, thiserror::Error)]
 pub enum EncodeError {
     #[error("Encoder not available on this platform")]
+    #[allow(dead_code)]
     UnsupportedPlatform,
 
     #[error("Failed to initialize encoder: {0}")]
@@ -32,6 +33,7 @@ pub enum EncodeError {
     OutputFailed(String),
 
     #[error("Unsupported codec: {0}")]
+    #[allow(dead_code)]
     UnsupportedCodec(String),
 }
 
@@ -101,6 +103,7 @@ pub fn create_encoder() -> Box<dyn Encoder> {
 /// include SPS/PPS in its output bitstream or media type.
 ///
 /// Returns AVCC-formatted NAL data (4-byte big-endian length prefix).
+#[allow(dead_code)]
 pub fn generate_sps_pps(width: u32, height: u32, _fps: u32) -> (Vec<u8>, Vec<u8>) {
     let sps = build_sps_nal(width, height);
     let pps = build_pps_nal();
@@ -118,6 +121,51 @@ pub fn generate_sps_pps(width: u32, height: u32, _fps: u32) -> (Vec<u8>, Vec<u8>
 }
 
 /// Build a complete H.264 Baseline SPS NAL unit (without AVCC wrapper).
+// ---- H.264 bit-writing helpers ----
+#[allow(dead_code)]
+fn w(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u8) {
+    *by = (*by << 1) | (val & 1);
+    *bi += 1;
+    if *bi == 8 {
+        b.push(*by);
+        *by = 0;
+        *bi = 0;
+    }
+}
+
+#[allow(dead_code)]
+fn ue(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u32) {
+    let mut tmp = val + 1;
+    let mut leading = 0u32;
+    let mut suffix = Vec::new();
+    while tmp > 1 {
+        suffix.push((tmp & 1) as u8);
+        tmp >>= 1;
+        leading += 1;
+    }
+    for _ in 0..leading {
+        w(b, by, bi, 0);
+    }
+    w(b, by, bi, 1);
+    for &v in suffix.iter().rev() {
+        w(b, by, bi, v);
+    }
+}
+
+#[allow(dead_code)]
+fn u1(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u8) {
+    w(b, by, bi, val);
+}
+
+#[allow(dead_code)]
+fn trailing(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8) {
+    u1(b, by, bi, 1);
+    while *bi != 0 {
+        u1(b, by, bi, 0);
+    }
+}
+
+#[allow(dead_code)]
 fn build_sps_nal(width: u32, height: u32) -> Vec<u8> {
     let pic_width_in_mbs = width.div_ceil(16);
     let pic_height_in_map_units = height.div_ceil(16);
@@ -137,46 +185,6 @@ fn build_sps_nal(width: u32, height: u32) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
     let mut byte: u8 = 0;
     let mut bit: u8 = 0;
-
-    fn w(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u8) {
-        *by = (*by << 1) | (val & 1);
-        *bi += 1;
-        if *bi == 8 {
-            b.push(*by);
-            *by = 0;
-            *bi = 0;
-        }
-    }
-
-    fn ue(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u32) {
-        let code_num = val;
-        let mut tmp = code_num + 1;
-        let mut leading = 0u32;
-        let mut suffix = Vec::new();
-        while tmp > 1 {
-            suffix.push((tmp & 1) as u8);
-            tmp >>= 1;
-            leading += 1;
-        }
-        for _ in 0..leading {
-            w(b, by, bi, 0);
-        }
-        w(b, by, bi, 1);
-        for &v in suffix.iter().rev() {
-            w(b, by, bi, v);
-        }
-    }
-
-    fn u1(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u8) {
-        w(b, by, bi, val);
-    }
-
-    fn trailing(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8) {
-        u1(b, by, bi, 1);
-        while *bi != 0 {
-            u1(b, by, bi, 0);
-        }
-    }
 
     // NAL unit header: forbidden=0, nal_ref_idc=3, nal_unit_type=7 (SPS)
     w(&mut buf, &mut byte, &mut bit, 0);
@@ -259,50 +267,11 @@ fn build_sps_nal(width: u32, height: u32) -> Vec<u8> {
 }
 
 /// Build a complete H.264 Baseline PPS NAL unit (without AVCC wrapper).
+#[allow(dead_code)]
 fn build_pps_nal() -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
     let mut byte: u8 = 0;
     let mut bit: u8 = 0;
-
-    fn w(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u8) {
-        *by = (*by << 1) | (val & 1);
-        *bi += 1;
-        if *bi == 8 {
-            b.push(*by);
-            *by = 0;
-            *bi = 0;
-        }
-    }
-
-    fn ue(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u32) {
-        let code_num = val;
-        let mut tmp = code_num + 1;
-        let mut leading = 0u32;
-        let mut suffix = Vec::new();
-        while tmp > 1 {
-            suffix.push((tmp & 1) as u8);
-            tmp >>= 1;
-            leading += 1;
-        }
-        for _ in 0..leading {
-            w(b, by, bi, 0);
-        }
-        w(b, by, bi, 1);
-        for &v in suffix.iter().rev() {
-            w(b, by, bi, v);
-        }
-    }
-
-    fn u1(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8, val: u8) {
-        w(b, by, bi, val);
-    }
-
-    fn trailing(b: &mut Vec<u8>, by: &mut u8, bi: &mut u8) {
-        u1(b, by, bi, 1);
-        while *bi != 0 {
-            u1(b, by, bi, 0);
-        }
-    }
 
     // NAL unit header: forbidden=0, nal_ref_idc=3, nal_unit_type=8 (PPS)
     w(&mut buf, &mut byte, &mut bit, 0);
@@ -411,6 +380,7 @@ mod tests {
 // Fallback encoder for unsupported platforms
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub struct UnsupportedEncoder;
 
 impl Encoder for UnsupportedEncoder {

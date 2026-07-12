@@ -284,7 +284,7 @@ export default function LibraryPage() {
                 uploadingClip={uploadingClip}
                 onDelete={handleDelete}
                 onUpload={handleUpload}
-                onNavigate={(filename) => navigate(`/clip/${filename}`, { state: { clip } })}
+                onNavigate={(filename) => navigate(`/clip/${filename}`)}
                 onCopyShare={copyShareUrl}
                 onShowConfirm={setShowConfirm}
                 onHideConfirm={() => setShowConfirm(null)}
