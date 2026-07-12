@@ -30,7 +30,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
   return (
     <div
       onClick={() => onNavigate(clip.filename)}
-      className="group aspect-video bg-surface rounded-2xl border border-white/10 overflow-hidden relative cursor-pointer transition hover:scale-[1.02]"
+      className="group aspect-video bg-surface rounded-2xl border border-border overflow-hidden relative cursor-pointer transition hover:scale-[1.02]"
     >
       <ClipThumbnail path={clip.path} filename={clip.filename} />
 
@@ -235,7 +235,7 @@ export default function LibraryPage() {
               placeholder="Search clips..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface border border-white/10 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+              className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface border border-border rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
             />
           </div>
           <Button variant="secondary" size="sm">

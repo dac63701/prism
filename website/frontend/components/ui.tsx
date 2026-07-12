@@ -44,7 +44,7 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return (
     <div
       className={cn(
-        "rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] shadow-lg shadow-black/20",
+        "rounded-3xl border border-border bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] shadow-lg shadow-black/20",
         className
       )}
       {...props}
@@ -56,7 +56,7 @@ export function Panel({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
   return (
     <div
       className={cn(
-        "rounded-2xl border border-white/10 bg-white/[0.03]",
+        "rounded-2xl border border-border bg-white/[0.03]",
         className
       )}
       {...props}
@@ -69,7 +69,7 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        "w-full rounded-xl border border-white/10 bg-[#09111f] px-4 py-3 text-sm text-white placeholder:text-zinc-500",
+        "w-full rounded-xl border border-border bg-[#09111f] px-4 py-3 text-sm text-white placeholder:text-zinc-500",
         "focus:border-blue-400/70 focus:outline-none focus:ring-2 focus:ring-blue-500/20",
         props.className
       )}

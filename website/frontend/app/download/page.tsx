@@ -99,7 +99,7 @@ export default async function DownloadPage() {
 
         {!release ? (
           <div className="relative z-10 mx-auto mt-8 max-w-md text-center">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-5 text-sm text-zinc-400">
+            <div className="rounded-2xl border border-border bg-white/[0.03] px-6 py-5 text-sm text-zinc-400">
               No releases published yet. Check back soon or
               {" "}
               <a

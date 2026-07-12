@@ -201,7 +201,7 @@ export function AuthCard({
         ) : null}
 
         {isRegister ? (
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-zinc-400">
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-white/[0.03] px-4 py-3 text-xs text-zinc-400">
             <ShieldCheck className="h-4 w-4 shrink-0 text-blue-300" />
             Passwords are hashed with Argon2id. We never store plain text.
           </div>

@@ -37,7 +37,7 @@ function CloudStatus() {
 
 export default function Sidebar() {
   return (
-    <aside className="w-56 h-screen flex flex-col bg-[#050816]/95 border-r border-white/5">
+    <aside className="w-56 h-screen flex flex-col bg-[#07101f]/90 border-r border-border">
       <div className="px-5 pt-6 pb-5">
         <div className="flex items-center gap-3">
           <PrismLogo className="h-10 w-10" />
@@ -56,24 +56,24 @@ export default function Sidebar() {
             end={item.to === "/"}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition active:scale-[0.98]",
+                "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition active:scale-[0.98]",
                 isActive
                   ? "bg-surface text-white"
                   : "text-zinc-400 hover:text-white hover:bg-white/5"
               )
             }
           >
-            <item.icon className="size-4 shrink-0" />
+            <item.icon className="size-4 shrink-0 text-blue-300" />
             <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="px-5 py-3 border-t border-white/5">
+      <div className="px-5 py-3 border-t border-border">
         <RecordingIndicator />
       </div>
 
-      <div className="px-5 py-3 border-t border-white/5 space-y-1">
+      <div className="px-5 py-3 border-t border-border space-y-1">
         <CloudStatus />
         <p className="text-[11px] text-zinc-600">Prism v0.1.0</p>
       </div>

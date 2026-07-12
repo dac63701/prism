@@ -59,7 +59,7 @@ export default function PresetSlider({
                 "rounded-full border px-2.5 py-1 text-[11px] transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
                 active
                   ? "border-accent bg-accent text-white"
-                  : "border-white/10 bg-surface text-zinc-400 hover:text-white hover:border-white/20"
+                  : "border-border bg-surface text-zinc-400 hover:text-white hover:border-border"
               )}
             >
               {option.label}

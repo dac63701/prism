@@ -59,19 +59,19 @@ export default async function SharePage({ params }: { params: Promise<{ shareId:
               <p className="mt-2 text-sm text-zinc-400">{clip.game || "Unknown game"}</p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
                 <div className="text-zinc-500">Creator</div>
                 <div className="mt-1 font-medium text-white">{data.user.display_name}</div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
                 <div className="text-zinc-500">Duration</div>
                 <div className="mt-1 font-medium text-white">{Math.round(clip.duration_secs)}s</div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
                 <div className="text-zinc-500">Resolution</div>
                 <div className="mt-1 font-medium text-white">{clip.width} × {clip.height}</div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
                 <div className="text-zinc-500">Views</div>
                 <div className="mt-1 font-medium text-white">Share link</div>
               </div>

@@ -109,7 +109,7 @@ export default function HomePage() {
 
           {/* Compact info bar */}
           {loaded && (
-            <div className="flex items-center gap-4 text-xs text-zinc-500 bg-white/[0.03] border border-white/10 rounded-full px-4 py-1.5">
+            <div className="flex items-center gap-4 text-xs text-zinc-500 bg-white/[0.03] border border-border rounded-full px-4 py-1.5">
               {targetLabel && (
                 <>
                   <span className="flex items-center gap-1.5">
@@ -135,7 +135,7 @@ export default function HomePage() {
 
       {/* ── Right: Source Selector ── */}
       <div className="w-64 shrink-0 pt-3 pb-5">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
           <SourceSelector
             value={captureTarget}
             onChange={handleSourceChange}

@@ -66,9 +66,9 @@ export default async function DashboardPage() {
               </div>
             </div>
             <div className="mt-4 space-y-3 text-sm text-zinc-300">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">Upload a clip and add a title/game.</div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">Generate an API key for the desktop app.</div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">Publish a share link or public profile.</div>
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">Upload a clip and add a title/game.</div>
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">Generate an API key for the desktop app.</div>
+              <div className="rounded-2xl border border-border bg-white/[0.03] p-4">Publish a share link or public profile.</div>
             </div>
           </Card>
 

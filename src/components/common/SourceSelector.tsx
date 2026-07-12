@@ -117,7 +117,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
       </div>
 
       {/* Tab buttons */}
-      <div className="flex gap-1 rounded-lg bg-surface border border-white/10 p-0.5">
+      <div className="flex gap-1 rounded-lg bg-surface border border-border p-0.5">
         <button
           onClick={() => setActiveTab("display")}
           className={cn(

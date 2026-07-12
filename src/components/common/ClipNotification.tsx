@@ -32,7 +32,7 @@ export default function ClipNotification() {
     <div
       className={cn(
         "fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl",
-        "bg-surface/95 border border-white/10 backdrop-blur-sm",
+        "bg-surface/95 border border-border backdrop-blur-sm",
         "shadow-2xl transition-all duration-300 ease-out",
         visible
           ? "translate-y-0 opacity-100"

@@ -13,7 +13,7 @@ const nav = [
 export function DashboardShell({ user, children }: { user: User; children: React.ReactNode }) {
   return (
     <div className="min-h-screen lg:flex">
-      <aside className="border-r border-white/5 bg-[#07101f]/90 lg:sticky lg:top-0 lg:h-screen lg:w-72">
+      <aside className="border-r border-border bg-[#07101f]/90 lg:sticky lg:top-0 lg:h-screen lg:w-72">
         <div className="flex h-full flex-col px-5 py-6">
           <Link href="/dashboard" className="mb-8 flex items-center gap-3">
             <PrismLogo className="h-11 w-11" />

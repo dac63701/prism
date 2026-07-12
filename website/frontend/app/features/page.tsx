@@ -192,7 +192,7 @@ export default function FeaturesPage() {
 
         {/* CTA */}
         <div className="relative z-10 mt-24 text-center">
-          <div className="mx-auto max-w-lg rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-8 shadow-lg shadow-black/20">
+          <div className="mx-auto max-w-lg rounded-3xl border border-border bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-8 shadow-lg shadow-black/20">
             <div className="flex justify-center">
               <PrismLogo />
             </div>

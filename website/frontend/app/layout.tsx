@@ -71,7 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         {children}
-        <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-500">
+        <footer className="border-t border-border py-8 text-center text-xs text-zinc-500">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 lg:px-8">
             <span className="flex items-center gap-2">
               <PrismLogo className="h-6 w-6" />

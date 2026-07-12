@@ -35,7 +35,7 @@ export default class ErrorBoundary extends React.Component<
       }
       return (
         <div className="h-full flex flex-col items-center justify-center px-6 text-center">
-          <div className="max-w-md p-6 rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] shadow-lg shadow-black/20">
+          <div className="max-w-md p-6 rounded-3xl border border-border bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] shadow-lg shadow-black/20">
             <h2 className="text-lg font-semibold text-white mb-2">
               Something went wrong
             </h2>

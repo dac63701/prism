@@ -5,7 +5,7 @@ import { PrismLogo } from "@/components/brand-icons";
 export function SiteShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#050816]/95">
+      <header className="sticky top-0 z-40 border-b border-border bg-[#050816]/95">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
           <Link href="/" className="flex items-center gap-3 font-semibold text-white">
             <PrismLogo />

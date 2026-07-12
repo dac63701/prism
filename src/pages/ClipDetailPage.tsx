@@ -152,7 +152,7 @@ export default function ClipDetailPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-6 pb-8">
-        <section className="relative aspect-video overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/30">
+        <section className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-black shadow-2xl shadow-black/30">
           {!playing && (
             <img src={posterSrc} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} />
           )}
@@ -228,13 +228,13 @@ export default function ClipDetailPage() {
           {editing ? (
             <div className="grid gap-4">
               <label className="grid gap-1.5 text-xs font-medium text-zinc-400">Name
-                <input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
+                <input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} className="rounded-xl border border-border bg-black/20 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
               </label>
               <label className="grid gap-1.5 text-xs font-medium text-zinc-400">Game
-                <input value={game} maxLength={120} onChange={(event) => setGame(event.target.value)} placeholder="e.g. Counter-Strike 2" className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
+                <input value={game} maxLength={120} onChange={(event) => setGame(event.target.value)} placeholder="e.g. Counter-Strike 2" className="rounded-xl border border-border bg-black/20 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
               </label>
               <label className="grid gap-1.5 text-xs font-medium text-zinc-400">Description
-                <textarea value={description} maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder="What happened in this clip?" rows={4} className="resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
+                <textarea value={description} maxLength={2000} onChange={(event) => setDescription(event.target.value)} placeholder="What happened in this clip?" rows={4} className="resize-y rounded-xl border border-border bg-black/20 px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none transition-colors focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" />
               </label>
               {editorError && <p className="text-xs text-red-400">{editorError}</p>}
               <div className="flex justify-end gap-2">

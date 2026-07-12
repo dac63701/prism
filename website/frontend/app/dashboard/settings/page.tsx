@@ -23,7 +23,7 @@ export default function SettingsPage() {
       <Card className="space-y-4 p-6">
         <h2 className="text-lg font-semibold text-white">API keys</h2>
         <p className="text-sm text-zinc-400">Create a key for the desktop app to upload clips to the cloud.</p>
-        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-5 text-sm text-zinc-500">
+        <div className="rounded-2xl border border-dashed border-border bg-white/[0.03] p-5 text-sm text-zinc-500">
           API key management will appear here.
         </div>
       </Card>

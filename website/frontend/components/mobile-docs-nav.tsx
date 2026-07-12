@@ -8,9 +8,9 @@ interface Section {
 
 export function MobileDocsNav({ sections }: { sections: Section[] }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-[#050816]/95 p-3 lg:hidden">
+    <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-[#050816]/95 p-3 lg:hidden">
       <select
-        className="w-full rounded-xl border border-white/10 bg-surface px-4 py-3 text-sm text-white"
+        className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-white"
         onChange={(e) => {
           const el = document.getElementById(e.target.value);
           if (el) el.scrollIntoView({ behavior: "smooth" });

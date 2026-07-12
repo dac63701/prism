@@ -20,7 +20,7 @@ export default function SignInSuccessPage() {
       </div>
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
         <PrismLogo className="h-12 w-12" />
-        <div className="w-full rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-8 text-center shadow-lg shadow-black/20">
+        <div className="w-full rounded-3xl border border-border bg-[linear-gradient(180deg,rgba(16,25,46,0.95),rgba(8,13,26,0.95))] p-8 text-center shadow-lg shadow-black/20">
           <CheckCircle className="mx-auto mb-4 h-10 w-10 text-green-400" />
           <h1 className="text-2xl font-semibold tracking-tight text-white">
             Signed in to Prism

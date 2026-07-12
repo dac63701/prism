@@ -60,14 +60,14 @@ export default function LandingPage() {
 
           <Card className="overflow-hidden p-5">
             <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+              <div className="flex items-center justify-between rounded-2xl border border-border bg-white/[0.03] px-4 py-3">
                 <div>
                   <div className="text-sm text-zinc-400">Shared clip</div>
                   <div className="text-lg font-semibold text-white">Ace round finish</div>
                 </div>
                 <Badge>Public</Badge>
               </div>
-              <div className="aspect-video overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(14,20,38,0.9),rgba(44,76,144,0.5))]">
+              <div className="aspect-video overflow-hidden rounded-2xl border border-border bg-[linear-gradient(135deg,rgba(14,20,38,0.9),rgba(44,76,144,0.5))]">
                 <div className="flex h-full items-end justify-between p-5 text-sm text-white/80">
                   <div className="space-y-1">
                     <div className="text-xs uppercase tracking-[0.3em] text-blue-200/60">Prism share link</div>

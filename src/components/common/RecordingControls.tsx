@@ -43,8 +43,8 @@ export default function RecordingControls() {
           disabled={saving || !isRecording}
           className={cn(
             "size-11 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95",
-            "bg-surface border border-white/10 text-zinc-400",
-            "hover:bg-white/5 hover:text-zinc-200 hover:border-white/20",
+            "bg-surface border border-border text-zinc-400",
+            "hover:bg-white/5 hover:text-zinc-200 hover:border-border",
             "disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:text-zinc-400",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
             !isRecording && "opacity-0 pointer-events-none scale-75"
@@ -65,7 +65,7 @@ export default function RecordingControls() {
             starting && "opacity-70 cursor-wait",
             isRecording
               ? "bg-red-600 border-red-500 hover:bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35)]"
-              : "bg-surface border-white/10 hover:bg-white/5 hover:border-white/20"
+              : "bg-surface border-border hover:bg-white/5 hover:border-border"
           )}
           title={
             starting

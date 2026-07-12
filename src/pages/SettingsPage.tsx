@@ -199,7 +199,7 @@ export default function SettingsPage() {
             <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">RECORDING</span>
             <SectionHeading>Recording</SectionHeading>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+          <div className="mt-3 border-t border-border pt-3 space-y-1">
             <FieldRow label="Clip length">
               <span className="text-sm text-zinc-100 min-w-[4ch] text-right tabular-nums">
                 {s.recording.buffer_duration_secs}s
@@ -231,7 +231,7 @@ export default function SettingsPage() {
                     parseInt(e.target.value, 10) as never
                   )
                 }
-                className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                className="bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               >
                 <option value={24}>24</option>
                 <option value={30}>30</option>
@@ -245,7 +245,7 @@ export default function SettingsPage() {
                 onChange={(e) =>
                   void setField("recording", "resolution", e.target.value as never)
                 }
-                className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                className="bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               >
                 {RESOLUTION_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -277,7 +277,7 @@ export default function SettingsPage() {
                   })
                 }
                 placeholder="~/Videos/Prism"
-                className="w-64 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                className="w-64 bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               />
             </FieldRow>
 
@@ -298,7 +298,7 @@ export default function SettingsPage() {
             <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">HOTKEYS</span>
             <SectionHeading>Hotkeys</SectionHeading>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+          <div className="mt-3 border-t border-border pt-3 space-y-1">
             <FieldRow label="Save clip">
               <HotkeyCaptureInput
                 value={s.hotkeys.save_clip}
@@ -347,7 +347,7 @@ export default function SettingsPage() {
             <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">GENERAL</span>
             <SectionHeading>General</SectionHeading>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+          <div className="mt-3 border-t border-border pt-3 space-y-1">
             <FieldRow label="Launch at startup">
               <ToggleSwitch
                 checked={s.general.launch_at_startup}
@@ -396,7 +396,7 @@ export default function SettingsPage() {
                     (parseInt(e.target.value, 10) || 4000) as never
                   )
                 }
-                className="w-24 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus-visible:border-blue-400/70"
+                className="w-24 bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus-visible:border-blue-400/70"
               />
             </FieldRow>
             <p className="pt-1 text-xs text-zinc-500">
@@ -411,7 +411,7 @@ export default function SettingsPage() {
             <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">AUTO-CLIPPING</span>
             <SectionHeading>Automatic Highlights</SectionHeading>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+          <div className="mt-3 border-t border-border pt-3 space-y-1">
             <FieldRow label="Enable auto-clipping">
               <ToggleSwitch
                 checked={s.auto_clip.enabled}
@@ -467,7 +467,7 @@ export default function SettingsPage() {
                 const isDetected = detectedGame?.name === game.game_name;
                 const method = game.game_name === "Counter-Strike 2" ? "Official GSI" : "Private process audio";
                 return (
-                  <div key={game.game_name} className="rounded-2xl border border-white/10 bg-surface/70 p-4">
+                  <div key={game.game_name} className="rounded-2xl border border-border bg-surface/70 p-4">
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2">
@@ -505,7 +505,7 @@ export default function SettingsPage() {
                               "rounded-lg border px-2.5 py-1 text-xs transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-400/70",
                               selected
                                 ? "border-blue-400/50 bg-blue-500/15 text-blue-200"
-                                : "border-white/10 bg-white/[0.03] text-zinc-500 hover:text-zinc-300"
+                                : "border-border bg-white/[0.03] text-zinc-500 hover:text-zinc-300"
                             )}
                           >
                             {event.label}
@@ -523,7 +523,7 @@ export default function SettingsPage() {
                           max={120}
                           value={game.kill_clip_duration}
                           onChange={(e) => updateAutoClipGame(game.game_name, { kill_clip_duration: parseInt(e.target.value, 10) || 20 })}
-                          className="mt-1 w-full bg-surface border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus-visible:border-blue-400/70"
+                          className="mt-1 w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus-visible:border-blue-400/70"
                         />
                       </label>
                       <label className="text-xs text-zinc-500">
@@ -534,7 +534,7 @@ export default function SettingsPage() {
                           max={120}
                           value={game.death_clip_duration}
                           onChange={(e) => updateAutoClipGame(game.game_name, { death_clip_duration: parseInt(e.target.value, 10) || 30 })}
-                          className="mt-1 w-full bg-surface border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus-visible:border-blue-400/70"
+                          className="mt-1 w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus-visible:border-blue-400/70"
                         />
                       </label>
                       <label className="text-xs text-zinc-500">
@@ -545,7 +545,7 @@ export default function SettingsPage() {
                           max={120}
                           value={game.combat_event_duration}
                           onChange={(e) => updateAutoClipGame(game.game_name, { combat_event_duration: parseInt(e.target.value, 10) || 20 })}
-                          className="mt-1 w-full bg-surface border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus-visible:border-blue-400/70"
+                          className="mt-1 w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus-visible:border-blue-400/70"
                         />
                       </label>
                     </div>
@@ -575,7 +575,7 @@ export default function SettingsPage() {
             <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">CLOUD</span>
             <SectionHeading>Cloud Upload</SectionHeading>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+          <div className="mt-3 border-t border-border pt-3 space-y-1">
             <FieldRow label="Server URL">
               <input
                 type="text"
@@ -588,7 +588,7 @@ export default function SettingsPage() {
                   })
                 }
                 placeholder="https://clips.example.com"
-                className="w-64 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                className="w-64 bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               />
             </FieldRow>
 
@@ -647,7 +647,7 @@ export default function SettingsPage() {
                         value={authCode}
                         onChange={(e) => setAuthCode(e.target.value)}
                         placeholder="Paste auth code here..."
-                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                        className="w-full bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
                       />
                       <div className="flex items-center gap-2">
                         <Button
@@ -694,7 +694,7 @@ export default function SettingsPage() {
                     (parseInt(e.target.value, 10) || 1) as never,
                   )
                 }
-                className="bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
+                className="bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
               >
                 <option value={1}>1 (sequential)</option>
                 <option value={2}>2</option>
@@ -710,7 +710,7 @@ export default function SettingsPage() {
             <span className="text-xs uppercase tracking-[0.28em] text-blue-300/70">STORAGE</span>
             <SectionHeading>Storage</SectionHeading>
           </div>
-          <div className="mt-3 border-t border-white/5 pt-3 space-y-1">
+          <div className="mt-3 border-t border-border pt-3 space-y-1">
             <FieldRow label="Max clips (GB)">
               <input
                 type="number"
@@ -724,7 +724,7 @@ export default function SettingsPage() {
                     (parseInt(e.target.value, 10) || 0) as never
                   )
                 }
-                className="w-24 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70 [&::-webkit-inner-spin-button]:opacity-50"
+                className="w-24 bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70 [&::-webkit-inner-spin-button]:opacity-50"
               />
               <span className="text-xs text-zinc-500">(0 = unlimited)</span>
             </FieldRow>
@@ -745,7 +745,7 @@ export default function SettingsPage() {
                     },
                   });
                 }}
-                className="w-24 bg-surface border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70 [&::-webkit-inner-spin-button]:opacity-50"
+                className="w-24 bg-surface border border-border rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70 [&::-webkit-inner-spin-button]:opacity-50"
               />
               <span className="text-xs text-zinc-500">(empty = disabled)</span>
             </FieldRow>
