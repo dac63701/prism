@@ -24,12 +24,15 @@ pub enum EncodeError {
     UnsupportedPlatform,
 
     #[error("Failed to initialize encoder: {0}")]
+    #[allow(dead_code)]
     InitFailed(String),
 
     #[error("Encoding frame failed: {0}")]
+    #[allow(dead_code)]
     EncodeFailed(String),
 
     #[error("Failed to write output file: {0}")]
+    #[allow(dead_code)]
     OutputFailed(String),
 
     #[error("Unsupported codec: {0}")]
@@ -60,6 +63,7 @@ pub trait Encoder: Send {
 ///
 /// Falls back to `config_fps` when fewer than 2 frames are available or the
 /// timestamps are degenerate.
+#[allow(dead_code)]
 pub fn compute_timescale(frames: &[StoredFrame], config_fps: u32) -> u32 {
     if frames.len() < 2 {
         return config_fps.max(1);

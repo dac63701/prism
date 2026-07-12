@@ -23,13 +23,16 @@ pub struct EncoderConfig {
     #[allow(dead_code)]
     pub bitrate_kbps: u32,
     /// Output frame rate
+    #[allow(dead_code)]
     pub fps: u32,
     /// Keyframe interval (0 = automatic)
     #[allow(dead_code)]
     pub keyframe_interval: u32,
     /// Output video width in pixels
+    #[allow(dead_code)]
     pub target_width: u32,
     /// Output video height in pixels
+    #[allow(dead_code)]
     pub target_height: u32,
 }
 

@@ -26,6 +26,7 @@ impl CaptureBackend for LinuxCaptureBackend {
     }
 }
 
+#[allow(dead_code)]
 pub fn enumerate_sources() -> CaptureSources {
     CaptureSources {
         displays: vec![],

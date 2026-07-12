@@ -142,6 +142,7 @@ impl RingBuffer {
     /// Scan all stored frames (regardless of timestamp) for H.264 SPS (NAL type 7)
     /// and PPS (NAL type 8) in AVCC format (4-byte big-endian length prefix per NAL).
     /// Returns the first matching pair, or `None`.
+    #[allow(dead_code)]
     pub fn find_sps_pps_anywhere(&self) -> Option<(Vec<u8>, Vec<u8>)> {
         for frame in &self.frames {
             if frame.pixel_format != crate::capture::PixelFormat::H264 {

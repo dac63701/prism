@@ -103,6 +103,7 @@ impl BufferManager {
     }
 
     /// Scan all buffered H.264 frames for SPS/PPS NAL units.
+    #[allow(dead_code)]
     pub fn find_sps_pps_anywhere(&self) -> Option<(Vec<u8>, Vec<u8>)> {
         self.buffer.find_sps_pps_anywhere()
     }

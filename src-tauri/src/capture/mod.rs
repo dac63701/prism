@@ -111,9 +111,11 @@ pub enum CaptureError {
     UnsupportedPlatform,
 
     #[error("Failed to start capture stream: {0}")]
+    #[allow(dead_code)]
     StartFailed(String),
 
     #[error("Capture stream error: {0}")]
+    #[allow(dead_code)]
     StreamError(String),
 
     #[error("No frame available")]
@@ -196,6 +198,7 @@ pub struct LatestFrame {
 }
 
 impl LatestFrame {
+    #[allow(dead_code)]
     pub const fn new() -> Self {
         Self {
             inner: Mutex::new(None),
