@@ -81,9 +81,8 @@ pub fn trigger_auto_clip(app: &AppHandle, moment: GameMoment) {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let settings = handle.state::<SettingsManager>().get();
-        let recorder = handle.state::<parking_lot::Mutex<Recorder>>();
-        let recording = recorder.lock().is_recording();
-        if !recording {
+        let recorder = handle.state::<Recorder>();
+        if !recorder.is_recording() {
             return;
         }
         if let Err(error) = save_clip_internal(&handle, &recorder, &settings, duration, filename) {

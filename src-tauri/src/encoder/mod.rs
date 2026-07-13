@@ -54,28 +54,48 @@ pub trait Encoder: Send {
     ) -> Result<(), EncodeError>;
 }
 
-/// Compute the effective MP4 timescale from actual frame timestamps.
+/// Microsecond precision prevents capture-timestamp rounding from accumulating
+/// into visible drift on long clips.
+pub const MP4_TIMESCALE: u32 = 1_000_000;
+
+/// Build contiguous MP4 sample timing from absolute capture timestamps.
 ///
-/// Uses the wall-clock timestamps on the first and last frame to derive the
-/// true capture rate, rather than relying on `config.fps` (which can diverge
-/// from the actual capture rate due to display refresh limits, FPS-limiters,
-/// or encoder back-pressure).
-///
-/// Falls back to `config_fps` when fewer than 2 frames are available or the
-/// timestamps are degenerate.
-#[allow(dead_code)]
-pub fn compute_timescale(frames: &[StoredFrame], config_fps: u32) -> u32 {
-    if frames.len() < 2 {
-        return config_fps.max(1);
-    }
-    let first_ts = frames[0].timestamp;
-    let last_ts = frames[frames.len() - 1].timestamp;
-    let actual_duration_ns = last_ts.duration_since(first_ts).as_nanos() as f64;
-    if actual_duration_ns <= 0.0 {
-        return config_fps.max(1);
-    }
-    let actual_fps = (frames.len() as f64) / (actual_duration_ns / 1_000_000_000.0);
-    (actual_fps.round() as u32).max(1)
+/// `mp4` writes the sample table from `Mp4Sample::duration`; it does not retain
+/// `start_time`. Deriving each duration from rounded absolute timestamps avoids
+/// accumulating a rounding error for every frame.
+pub(crate) fn mp4_sample_timing(frames: &[StoredFrame], config_fps: u32) -> Vec<(u64, u32)> {
+    let Some(first) = frames.first() else {
+        return Vec::new();
+    };
+    let nominal_duration = (u64::from(MP4_TIMESCALE) + u64::from(config_fps.max(1)) / 2)
+        / u64::from(config_fps.max(1));
+
+    let start_times: Vec<u64> = frames
+        .iter()
+        .map(|frame| {
+            let nanos = frame
+                .timestamp
+                .saturating_duration_since(first.timestamp)
+                .as_nanos();
+            ((nanos + 500) / 1_000) as u64
+        })
+        .collect();
+
+    start_times
+        .iter()
+        .enumerate()
+        .map(|(index, &start_time)| {
+            let next_start = start_times
+                .get(index + 1)
+                .copied()
+                .unwrap_or_else(|| start_time.saturating_add(nominal_duration));
+            let duration = next_start
+                .saturating_sub(start_time)
+                .max(1)
+                .min(u64::from(u32::MAX)) as u32;
+            (start_time, duration)
+        })
+        .collect()
 }
 
 /// Extract SPS and PPS NAL units from AVCC-format H.264 frames.
@@ -370,6 +390,41 @@ fn build_pps_nal() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capture::PixelFormat;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    fn timing_frame(timestamp: Instant) -> StoredFrame {
+        StoredFrame {
+            data: Arc::new(Vec::new()),
+            width: 1,
+            height: 1,
+            stride: 0,
+            pixel_format: PixelFormat::H264,
+            timestamp,
+            is_sync: true,
+        }
+    }
+
+    #[test]
+    fn mp4_sample_timing_does_not_accumulate_fractional_frame_drift() {
+        // 59.94 fps is intentionally not an even number of microseconds per frame.
+        let interval_ns = 16_683_333u64;
+        let start = Instant::now();
+        let frames: Vec<_> = (0..6_000)
+            .map(|index| timing_frame(start + Duration::from_nanos(interval_ns * index)))
+            .collect();
+
+        let timing = mp4_sample_timing(&frames, 60);
+        let leading_duration: u64 = timing[..timing.len() - 1]
+            .iter()
+            .map(|(_, duration)| u64::from(*duration))
+            .sum();
+        let expected_span = ((u128::from(interval_ns) * 5_999 + 500) / 1_000) as u64;
+
+        assert_eq!(leading_duration, expected_span);
+        assert_eq!(timing.last().unwrap().1, 16_667);
+    }
 
     #[test]
     fn test_generate_sps_pps_1080p() {

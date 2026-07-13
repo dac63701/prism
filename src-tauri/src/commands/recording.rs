@@ -1,7 +1,5 @@
 //! Recording IPC commands — start, stop, save clip, status.
 
-use parking_lot::Mutex;
-
 use tauri::{AppHandle, Emitter, State};
 
 use std::path::Path;
@@ -17,18 +15,16 @@ use crate::settings::SettingsManager;
 #[tauri::command]
 pub async fn start_recording(
     app: AppHandle,
-    recorder: State<'_, Mutex<Recorder>>,
+    recorder: State<'_, Recorder>,
 ) -> Result<String, String> {
     eprintln!("[recording] start_recording command invoked");
 
-    let rec = recorder.lock();
-
-    rec.start_recording().map_err(|e| {
+    recorder.start_recording().map_err(|e| {
         eprintln!("[recording] start_recording failed: {e}");
         e
     })?;
 
-    rec.start_polling(app.clone());
+    recorder.start_polling(app.clone());
     // Always emit the event — polling spawn status is internal
     let _ = app.emit("recording-state-changed", true);
 
@@ -38,16 +34,10 @@ pub async fn start_recording(
 
 /// Stop recording.
 #[tauri::command]
-pub async fn stop_recording(
-    app: AppHandle,
-    recorder: State<'_, Mutex<Recorder>>,
-) -> Result<(), String> {
+pub async fn stop_recording(app: AppHandle, recorder: State<'_, Recorder>) -> Result<(), String> {
     eprintln!("[recording] stop_recording command invoked");
 
-    {
-        let rec = recorder.lock();
-        rec.stop_recording()?;
-    }
+    recorder.stop_recording()?;
 
     let _ = app.emit("recording-state-changed", false);
     eprintln!("[recording] stop_recording command succeeded");
@@ -56,9 +46,8 @@ pub async fn stop_recording(
 
 /// Check whether recording is active.
 #[tauri::command]
-pub async fn is_recording(recorder: State<'_, Mutex<Recorder>>) -> Result<bool, String> {
-    let rec = recorder.lock();
-    Ok(rec.is_recording())
+pub async fn is_recording(recorder: State<'_, Recorder>) -> Result<bool, String> {
+    Ok(recorder.is_recording())
 }
 
 /// Trigger a clip save — extracts frames under the recorder lock (briefly),
@@ -66,7 +55,7 @@ pub async fn is_recording(recorder: State<'_, Mutex<Recorder>>) -> Result<bool, 
 #[tauri::command]
 pub async fn save_clip(
     app: AppHandle,
-    recorder: State<'_, Mutex<Recorder>>,
+    recorder: State<'_, Recorder>,
     settings_mgr: State<'_, SettingsManager>,
     duration_secs: u32,
 ) -> Result<String, String> {
@@ -85,17 +74,13 @@ pub async fn save_clip(
 /// extract-then-encode behavior used by the manual Tauri command.
 pub(crate) fn save_clip_internal(
     app: &AppHandle,
-    recorder: &Mutex<Recorder>,
+    recorder: &Recorder,
     settings: &crate::settings::config::AppSettings,
     duration: u32,
     filename: String,
 ) -> Result<String, String> {
-    // Step 1: Extract frames under lock (brief — frame copy only)
-    let clip_data = {
-        let rec = recorder.lock();
-        rec.extract_clip_data(duration)?
-    };
-    // LOCK RELEASED — polling and other commands can proceed
+    // Step 1: Extract frames under the recorder's brief internal lock.
+    let clip_data = recorder.extract_clip_data(duration)?;
 
     if clip_data.frames.is_empty() {
         return Err("No frames available to clip".into());
@@ -228,11 +213,8 @@ fn prepare_h264_clip_frames(
 /// Get a live preview frame as a JPEG base64 data URL.
 /// Returns `null` when not recording or no frame available.
 #[tauri::command]
-pub async fn get_preview_frame(
-    recorder: State<'_, Mutex<Recorder>>,
-) -> Result<Option<String>, String> {
-    let rec = recorder.lock();
-    Ok(rec.get_preview_frame())
+pub async fn get_preview_frame(recorder: State<'_, Recorder>) -> Result<Option<String>, String> {
+    Ok(recorder.get_preview_frame())
 }
 
 #[cfg(test)]
@@ -294,25 +276,22 @@ mod tests {
 
 /// Get the current frame count in the ring buffer.
 #[tauri::command]
-pub async fn get_buffer_info(
-    recorder: State<'_, Mutex<Recorder>>,
-) -> Result<serde_json::Value, String> {
-    let rec = recorder.lock();
-    let fc = rec.frame_count();
-    let fr = rec.total_frames_received();
-    let fps = rec.cached_fps();
-    let clip_len = rec.available_clip_secs();
-    let actual_buffer_time = rec.buffer_time_secs();
-    let elapsed = rec.recording_elapsed_secs();
+pub async fn get_buffer_info(recorder: State<'_, Recorder>) -> Result<serde_json::Value, String> {
+    let fc = recorder.frame_count();
+    let fr = recorder.total_frames_received();
+    let fps = recorder.cached_fps();
+    let clip_len = recorder.available_clip_secs();
+    let actual_buffer_time = recorder.buffer_time_secs();
+    let elapsed = recorder.recording_elapsed_secs();
     Ok(serde_json::json!({
         "frame_count": fc,
         "buffer_time_seconds": clip_len,
         "clip_length_seconds": clip_len,
         "actual_buffer_time_seconds": actual_buffer_time,
-        "configured_duration_seconds": rec.buffer_duration_secs(),
-        "is_recording": rec.is_recording(),
+        "configured_duration_seconds": recorder.buffer_duration_secs(),
+        "is_recording": recorder.is_recording(),
         "frames_received": fr,
-        "preview_available": rec.preview_available(),
+        "preview_available": recorder.preview_available(),
         "polling_active": true,
         "recording_elapsed_seconds": elapsed,
         "fps": fps,
@@ -332,7 +311,7 @@ pub async fn get_capture_sources() -> Result<CaptureSources, String> {
 #[tauri::command]
 pub async fn set_capture_target(
     app: AppHandle,
-    recorder: State<'_, Mutex<Recorder>>,
+    recorder: State<'_, Recorder>,
     settings_mgr: State<'_, SettingsManager>,
     target_json: String,
 ) -> Result<(), String> {
@@ -348,21 +327,18 @@ pub async fn set_capture_target(
         .map_err(|e| format!("Failed to save settings: {e}"))?;
 
     // Reconfigure recorder with new target
-    {
-        let rec = recorder.lock();
-        let was_recording = rec.is_recording();
-        if was_recording {
-            rec.stop_recording().ok();
-            rec.reconfigure_target(target);
-            let started = rec.start_recording();
-            if started.is_ok() {
-                rec.start_polling(app.clone());
-            }
-            let _ = app.emit("recording-state-changed", started.is_ok());
-        } else {
-            rec.reconfigure_target(target);
-            let _ = app.emit("recording-state-changed", false);
+    let was_recording = recorder.is_recording();
+    if was_recording {
+        recorder.stop_recording().ok();
+        recorder.reconfigure_target(target);
+        let started = recorder.start_recording();
+        if started.is_ok() {
+            recorder.start_polling(app.clone());
         }
+        let _ = app.emit("recording-state-changed", started.is_ok());
+    } else {
+        recorder.reconfigure_target(target);
+        let _ = app.emit("recording-state-changed", false);
     }
 
     Ok(())

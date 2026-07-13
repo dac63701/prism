@@ -6,7 +6,6 @@
 pub mod vt_encoder;
 
 use std::path::Path;
-use std::time::Duration;
 
 use apple_cf::iosurface::IOSurface;
 use bytes::Bytes;
@@ -110,9 +109,8 @@ impl Encoder for MacEncoder {
         );
 
         // Encode each frame
-        let crate_timescale = crate::encoder::compute_timescale(frames, config.fps);
-        let timescale = crate_timescale as i32;
-        let first_ts = frames[0].timestamp;
+        let timescale = crate::encoder::MP4_TIMESCALE as i32;
+        let timing = crate::encoder::mp4_sample_timing(frames, config.fps);
         let mut encoded_samples: Vec<EncodedFrame> = Vec::with_capacity(frames.len());
 
         for (i, frame) in frames.iter().enumerate() {
@@ -182,7 +180,7 @@ impl Encoder for MacEncoder {
 
             // Encode via the crate's method — it wraps our IOSurface into a
             // CVPixelBuffer and passes it to VTCompressionSessionEncodeFrame.
-            let presentation_time = (i as i64, timescale);
+            let presentation_time = (timing[i].0 as i64, timescale);
             let encoded = session
                 .encode(&surface, presentation_time)
                 .map_err(|e| EncodeError::EncodeFailed(format!("VT encode frame {i}: {e}")))?;
@@ -257,8 +255,7 @@ impl Encoder for MacEncoder {
             }
             let sample = &encoded_samples[frame_idx];
 
-            let delta = frame.timestamp.duration_since(first_ts);
-            let start_time = (delta.as_secs_f64() * timescale as f64).round() as u64;
+            let start_time = timing[frame_idx].0;
             let duration = {
                 let next_delta = if written_idx + 1 < written_samples.len() {
                     // Find the next original frame index that has output
@@ -267,16 +264,16 @@ impl Encoder for MacEncoder {
                         next_idx += 1;
                     }
                     if next_idx < frames.len() {
-                        frames[next_idx].timestamp.duration_since(frame.timestamp)
+                        frames[next_idx]
+                            .timestamp
+                            .saturating_duration_since(frame.timestamp)
                     } else {
-                        Duration::from_secs_f64(1.0 / timescale as f64)
+                        std::time::Duration::from_micros(timing[frame_idx].1 as u64)
                     }
                 } else {
-                    Duration::from_secs_f64(1.0 / timescale as f64)
+                    std::time::Duration::from_micros(timing[frame_idx].1 as u64)
                 };
-                (next_delta.as_secs_f64() * timescale as f64)
-                    .round()
-                    .max(1.0) as u64
+                (next_delta.as_micros() as u64).max(1)
             };
 
             let is_sync = written_idx == 0
@@ -285,7 +282,7 @@ impl Encoder for MacEncoder {
 
             let mp4_sample = mp4::Mp4Sample {
                 start_time,
-                duration: duration as u32,
+                duration: duration.min(u64::from(u32::MAX)) as u32,
                 rendering_offset: 0,
                 is_sync,
                 bytes: Bytes::copy_from_slice(&sample.data),
@@ -373,7 +370,8 @@ fn mux_h264_clip(
 
     use mp4::{AvcConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
 
-    let timescale = crate::encoder::compute_timescale(frames, config.fps);
+    let timescale = crate::encoder::MP4_TIMESCALE;
+    let timing = crate::encoder::mp4_sample_timing(frames, config.fps);
 
     let mp4_config = Mp4Config {
         major_brand: "isom".parse().unwrap(),
@@ -410,7 +408,6 @@ fn mux_h264_clip(
         .add_track(&track_config)
         .map_err(|e| EncodeError::OutputFailed(format!("add_track: {e}")))?;
 
-    let first_ts = frames[0].timestamp;
     for (i, frame) in frames.iter().enumerate() {
         if frame.pixel_format != PixelFormat::H264 {
             return Err(EncodeError::EncodeFailed(
@@ -418,22 +415,11 @@ fn mux_h264_clip(
             ));
         }
 
-        let delta = frame.timestamp.duration_since(first_ts);
-        let start_time = (delta.as_secs_f64() * timescale as f64).round() as u64;
-        let duration = {
-            let next_delta = if i + 1 < frames.len() {
-                frames[i + 1].timestamp.duration_since(frame.timestamp)
-            } else {
-                Duration::from_secs_f64(1.0 / timescale as f64)
-            };
-            (next_delta.as_secs_f64() * timescale as f64)
-                .round()
-                .max(1.0) as u64
-        };
+        let (start_time, duration) = timing[i];
 
         let sample = mp4::Mp4Sample {
             start_time,
-            duration: duration as u32,
+            duration,
             rendering_offset: 0,
             is_sync: frame.is_sync,
             bytes: Bytes::copy_from_slice(&frame.data),

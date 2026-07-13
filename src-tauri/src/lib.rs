@@ -10,8 +10,6 @@ mod settings;
 mod tray;
 mod upload;
 
-use parking_lot::Mutex;
-
 use auth::AuthManager;
 use recording::Recorder;
 use settings::SettingsManager;
@@ -75,8 +73,7 @@ pub fn run() {
 
             // Initialize recorder
             let settings = app.state::<SettingsManager>().get();
-            let recorder = Mutex::new(Recorder::new(&settings));
-            app.manage(recorder);
+            app.manage(Recorder::new(&settings));
 
             // Initialize auth manager
             let auth_mgr = AuthManager::new();
@@ -195,26 +192,19 @@ pub fn run() {
                     .start_polling(app_handle.clone());
 
                 // Auto-start recording if enabled
-                let rec_state = app_handle.state::<Mutex<Recorder>>();
+                let recorder = app_handle.state::<Recorder>();
                 if let Some(settings) = app_handle.try_state::<SettingsManager>() {
                     let s = settings.get();
                     if s.recording.always_on_recording {
-                        {
-                            let guard = rec_state.lock();
-                            let _ = guard.start_recording();
-                        }
+                        let _ = recorder.start_recording();
                         let _ = app_handle.emit("recording-state-changed", true);
-                        {
-                            let guard = rec_state.lock();
-                            guard.start_polling(app_handle.clone());
-                        }
+                        recorder.start_polling(app_handle.clone());
                     }
                 }
             }
             RunEvent::ExitRequested { .. } => {
-                if let Some(rec) = app_handle.try_state::<Mutex<Recorder>>() {
-                    let guard = rec.lock();
-                    let _ = guard.stop_recording();
+                if let Some(recorder) = app_handle.try_state::<Recorder>() {
+                    let _ = recorder.stop_recording();
                 }
             }
             _ => {}

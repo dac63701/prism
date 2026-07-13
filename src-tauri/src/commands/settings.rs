@@ -1,6 +1,5 @@
 //! Settings IPC commands — get, update, reset.
 
-use parking_lot::Mutex;
 use tauri::State;
 
 use crate::hotkey;
@@ -22,11 +21,10 @@ pub async fn get_settings(manager: State<'_, SettingsManager>) -> Result<AppSett
 pub async fn update_settings(
     app: tauri::AppHandle,
     manager: State<'_, SettingsManager>,
-    recorder: State<'_, Mutex<Recorder>>,
+    recorder: State<'_, Recorder>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
     let updated = manager.set(&app, settings).map_err(|e| e.to_string())?;
-    let recorder = recorder.lock();
     if recorder.is_recording() {
         recorder.set_buffer_duration_secs(updated.recording.buffer_duration_secs);
     } else {
@@ -41,10 +39,9 @@ pub async fn update_settings(
 pub async fn reset_settings(
     app: tauri::AppHandle,
     manager: State<'_, SettingsManager>,
-    recorder: State<'_, Mutex<Recorder>>,
+    recorder: State<'_, Recorder>,
 ) -> Result<AppSettings, String> {
     let updated = manager.reset(&app).map_err(|e| e.to_string())?;
-    let recorder = recorder.lock();
     if recorder.is_recording() {
         recorder.set_buffer_duration_secs(updated.recording.buffer_duration_secs);
     } else {

@@ -3,7 +3,6 @@
 //! Provides [`Recorder`] as Tauri managed state so commands and other modules
 //! can control recording and trigger clip saves.
 
-use parking_lot::Mutex as PlMutex;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -323,13 +322,12 @@ impl Recorder {
         tauri::async_runtime::spawn(async move {
             loop {
                 let (running, interval) = {
-                    let state = app_handle.state::<PlMutex<Recorder>>();
-                    let guard = state.lock();
-                    if !guard.is_recording() {
+                    let recorder = app_handle.state::<Recorder>();
+                    if !recorder.is_recording() {
                         (false, std::time::Duration::ZERO)
                     } else {
-                        guard.poll_and_push();
-                        (true, guard.poll_interval())
+                        recorder.poll_and_push();
+                        (true, recorder.poll_interval())
                     }
                 };
                 if !running {
