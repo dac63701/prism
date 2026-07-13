@@ -1,7 +1,7 @@
 //! Shared event-to-clip bridge for all supported game detectors.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Mutex as StdMutex;
 use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -13,13 +13,13 @@ use crate::settings::config::PerGameAutoClip;
 use crate::settings::SettingsManager;
 
 pub struct AutoClipTrigger {
-    last_triggered: Mutex<HashMap<String, Instant>>,
+    last_triggered: StdMutex<HashMap<String, Instant>>,
 }
 
 impl AutoClipTrigger {
     pub fn new() -> Self {
         Self {
-            last_triggered: Mutex::new(HashMap::new()),
+            last_triggered: StdMutex::new(HashMap::new()),
         }
     }
 
@@ -81,11 +81,8 @@ pub fn trigger_auto_clip(app: &AppHandle, moment: GameMoment) {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let settings = handle.state::<SettingsManager>().get();
-        let recorder = handle.state::<Mutex<Recorder>>();
-        let recording = recorder
-            .lock()
-            .map(|recorder| recorder.is_recording())
-            .unwrap_or(false);
+        let recorder = handle.state::<parking_lot::Mutex<Recorder>>();
+        let recording = recorder.lock().is_recording();
         if !recording {
             return;
         }

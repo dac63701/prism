@@ -10,7 +10,7 @@ mod settings;
 mod tray;
 mod upload;
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use auth::AuthManager;
 use recording::Recorder;
@@ -199,11 +199,13 @@ pub fn run() {
                 if let Some(settings) = app_handle.try_state::<SettingsManager>() {
                     let s = settings.get();
                     if s.recording.always_on_recording {
-                        if let Ok(guard) = rec_state.lock() {
+                        {
+                            let guard = rec_state.lock();
                             let _ = guard.start_recording();
                         }
                         let _ = app_handle.emit("recording-state-changed", true);
-                        if let Ok(guard) = rec_state.lock() {
+                        {
+                            let guard = rec_state.lock();
                             guard.start_polling(app_handle.clone());
                         }
                     }
@@ -211,9 +213,8 @@ pub fn run() {
             }
             RunEvent::ExitRequested { .. } => {
                 if let Some(rec) = app_handle.try_state::<Mutex<Recorder>>() {
-                    if let Ok(guard) = rec.lock() {
-                        let _ = guard.stop_recording();
-                    }
+                    let guard = rec.lock();
+                    let _ = guard.stop_recording();
                 }
             }
             _ => {}
