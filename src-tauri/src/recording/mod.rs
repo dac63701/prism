@@ -599,6 +599,7 @@ impl Recorder {
     }
 
     #[cfg(target_os = "macos")]
+    #[allow(clippy::type_complexity)]
     fn process_macos_frame(
         (
             frame,
