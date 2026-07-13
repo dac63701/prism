@@ -86,6 +86,10 @@ impl AuthManager {
 
             loop {
                 if start.elapsed().as_secs() > 300 {
+                    let _ = app_handle.emit(
+                        "auth-error",
+                        "Sign in timed out — please try again",
+                    );
                     break;
                 }
 
@@ -107,7 +111,17 @@ impl AuthManager {
                             }
                         }
                     }
-                    _ => {}
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        eprintln!(
+                            "[auth] poll returned {} {} — will retry",
+                            status, body
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("[auth] poll request failed: {e}");
+                    }
                 }
 
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;

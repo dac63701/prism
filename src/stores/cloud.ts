@@ -91,14 +91,28 @@ export const useCloudStore = create<CloudState>((set) => {
         return;
       }
       set({ loading: true, uploadError: null });
-      await invoke("cloud_login");
-      set({ loading: false });
+      try {
+        await invoke("cloud_login");
+      } catch (err) {
+        const msg = typeof err === "string" ? err : "Sign in failed";
+        set({ uploadError: msg });
+        console.error("[cloud] login failed:", err);
+      } finally {
+        set({ loading: false });
+      }
     },
 
     logout: async () => {
       set({ loading: true });
-      await invoke("cloud_logout");
-      set({ authenticated: false, email: "", loading: false, uploadError: null });
+      try {
+        await invoke("cloud_logout");
+        set({ authenticated: false, email: "", loading: false, uploadError: null });
+      } catch (err) {
+        const msg = typeof err === "string" ? err : "Sign out failed";
+        set({ uploadError: msg });
+        console.error("[cloud] logout failed:", err);
+        set({ loading: false });
+      }
     },
 
     checkStatus: async () => {
