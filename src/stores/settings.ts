@@ -94,10 +94,14 @@ export const useSettingsStore = create<SettingsState>((set) => {
   // Register event listener once; store unlisten for cleanup
   (async () => {
     if (unlistenSettings) return; // already registered
-    const unlisten = await listen<AppSettings>("settings-changed", (event) => {
-      set({ settings: event.payload });
-    });
-    unlistenSettings = unlisten;
+    try {
+      const unlisten = await listen<AppSettings>("settings-changed", (event) => {
+        set({ settings: event.payload });
+      });
+      unlistenSettings = unlisten;
+    } catch (err) {
+      console.error("[settings] Failed to set up event listeners:", err);
+    }
   })();
 
   return {

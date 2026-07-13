@@ -75,7 +75,9 @@ export const useCloudStore = create<CloudState>((set) => {
       });
     }
   };
-  setupListeners();
+  setupListeners().catch((err) => {
+    console.error("[cloud] Failed to set up event listeners:", err);
+  });
 
   return {
     authenticated: false,
