@@ -56,6 +56,7 @@ pub trait Encoder: Send {
 
 /// Microsecond precision prevents capture-timestamp rounding from accumulating
 /// into visible drift on long clips.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub const MP4_TIMESCALE: u32 = 1_000_000;
 
 /// Build contiguous MP4 sample timing from absolute capture timestamps.
@@ -63,6 +64,7 @@ pub const MP4_TIMESCALE: u32 = 1_000_000;
 /// `mp4` writes the sample table from `Mp4Sample::duration`; it does not retain
 /// `start_time`. Deriving each duration from rounded absolute timestamps avoids
 /// accumulating a rounding error for every frame.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) fn mp4_sample_timing(frames: &[StoredFrame], config_fps: u32) -> Vec<(u64, u32)> {
     let Some(first) = frames.first() else {
         return Vec::new();
@@ -406,6 +408,7 @@ mod tests {
         }
     }
 
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     #[test]
     fn mp4_sample_timing_does_not_accumulate_fractional_frame_drift() {
         // 59.94 fps is intentionally not an even number of microseconds per frame.
