@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Filter, Film, Trash2, FolderOpen, Play, Upload, Check, Link2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -147,7 +147,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
   );
 }
 
-const MemoClipCard = React.memo(ClipCard);
+const MemoClipCard = memo(ClipCard);
 
 export default function LibraryPage() {
   const navigate = useNavigate();
@@ -162,7 +162,6 @@ export default function LibraryPage() {
   const copyShareUrl = useCloudStore((s) => s.copyShareUrl);
   const cloudAuthed = useCloudStore((s) => s.authenticated);
   const uploadError = useCloudStore((s) => s.uploadError);
-  const clearUploadError = useCloudStore((s) => s.clearUploadError);
 
   const [search, setSearch] = useState("");
   const [showConfirm, setShowConfirm] = useState<string | null>(null);
@@ -238,7 +237,7 @@ export default function LibraryPage() {
               className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface border border-border rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400/70"
             />
           </div>
-          <Button variant="secondary" size="sm">
+          <Button variant="secondary" size="sm" onClick={() => {}}>
             <Filter className="size-4" />
             Filter
           </Button>
@@ -247,12 +246,6 @@ export default function LibraryPage() {
         {uploadError && (
           <div className="mt-3 flex items-start gap-2 px-4 py-2.5 rounded-lg bg-red-950/60 border border-red-900/60">
             <p className="text-xs text-red-300 flex-1">{uploadError}</p>
-            <button
-              onClick={clearUploadError}
-              className="p-0.5 rounded text-red-400 hover:text-red-200 transition active:scale-90 shrink-0"
-            >
-              <span className="text-xs font-medium">Dismiss</span>
-            </button>
           </div>
         )}
       </header>

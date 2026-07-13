@@ -3,6 +3,7 @@
 //! Provides [`Recorder`] as Tauri managed state so commands and other modules
 //! can control recording and trigger clip saves.
 
+use parking_lot::Mutex as PlMutex;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -187,11 +188,12 @@ impl Recorder {
     }
 
     /// Apply new settings at runtime (re-creates buffer, updates config).
-    #[allow(dead_code)]
     pub fn reconfigure(&self, settings: &AppSettings) {
         let rs = &settings.recording;
         self.cached_fps.store(rs.fps, Ordering::SeqCst);
-        let mut guard = self.inner.lock().expect("recorder lock poisoned");
+        let Ok(mut guard) = self.inner.lock() else {
+            return;
+        };
         if let Some(inner) = guard.as_mut() {
             // Update output directory
             inner.output_dir = resolve_output_dir(&rs.output_directory);
@@ -255,7 +257,10 @@ impl Recorder {
             return Ok(());
         }
 
-        let mut guard = self.inner.lock().expect("recorder lock poisoned");
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|e| format!("Recorder lock poisoned: {e}"))?;
         let inner = guard.as_mut().ok_or("Recorder not initialized")?;
 
         inner
@@ -277,7 +282,9 @@ impl Recorder {
         self.polling_spawned.store(false, Ordering::SeqCst);
         self.frames_received.store(0, Ordering::SeqCst);
 
-        let mut guard = self.inner.lock().expect("recorder lock poisoned");
+        let Ok(mut guard) = self.inner.lock() else {
+            return Ok(());
+        };
         if let Some(inner) = guard.as_mut() {
             inner
                 .backend
@@ -321,11 +328,8 @@ impl Recorder {
         tauri::async_runtime::spawn(async move {
             loop {
                 let (running, interval) = {
-                    let state = app_handle.state::<std::sync::Mutex<Recorder>>();
-                    let guard = match state.lock() {
-                        Ok(g) => g,
-                        Err(_) => break,
-                    };
+                    let state = app_handle.state::<PlMutex<Recorder>>();
+                    let guard = state.lock();
                     if !guard.is_recording() {
                         (false, std::time::Duration::ZERO)
                     } else {
@@ -856,7 +860,7 @@ impl Recorder {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /// Resolve the output directory: use user-configured path or default to Videos/Prism.
-pub(crate) fn resolve_output_dir(configured: &str) -> PathBuf {
+pub fn resolve_output_dir(configured: &str) -> PathBuf {
     if !configured.is_empty() {
         return PathBuf::from(configured);
     }
@@ -864,6 +868,18 @@ pub(crate) fn resolve_output_dir(configured: &str) -> PathBuf {
     dirs::video_dir()
         .map(|d| d.join("Prism"))
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Best-effort read MP4 duration from the file header using the mp4 crate.
+pub fn read_mp4_duration(path: &std::path::Path) -> Option<u32> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path).ok()?;
+    let size = file.metadata().ok()?.len();
+    let reader = BufReader::new(file);
+    let mp4 = mp4::Mp4Reader::read_header(reader, size).ok()?;
+    Some(mp4.duration().as_secs() as u32)
 }
 
 /// Get a formatted timestamp string for filenames.

@@ -25,6 +25,7 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 

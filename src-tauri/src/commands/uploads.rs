@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::recording::chrono_now_formatted;
+use crate::recording::{chrono_now_formatted, read_mp4_duration};
 use crate::settings::SettingsManager;
 use crate::upload::queue::{UploadMetadata, UploadQueue};
 
@@ -107,17 +107,6 @@ pub async fn retry_upload(
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-fn read_mp4_duration(path: &PathBuf) -> Option<u32> {
-    use std::fs::File;
-    use std::io::BufReader;
-
-    let file = File::open(path).ok()?;
-    let size = file.metadata().ok()?.len();
-    let reader = BufReader::new(file);
-    let mp4 = mp4::Mp4Reader::read_header(reader, size).ok()?;
-    Some(mp4.duration().as_secs() as u32)
-}
 
 fn read_mp4_resolution(path: &PathBuf) -> Option<(u32, u32)> {
     use std::fs::File;

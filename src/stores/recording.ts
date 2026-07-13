@@ -11,10 +11,10 @@ const SAVE_CLIP_TIMEOUT_SECS = 15;
 interface RecordingState {
   isRecording: boolean;
   framesReceived: number;
-  previewAvailable: boolean;
   saving: boolean;
   starting: boolean;
   lastClipPath: string | null;
+  lastClipSavedAt: number | null;
   error: string | null;
   bufferTimeSeconds: number;
   recordingElapsedSeconds: number;
@@ -43,7 +43,7 @@ export const useRecordingStore = create<RecordingState>((set) => {
     if (!unlistenClipSaved) {
       unlistenClipSaved = await listen<string>("clip-saved", (event) => {
         console.log("[recording] event: clip-saved =", event.payload);
-        set({ lastClipPath: event.payload, saving: false });
+        set({ lastClipPath: event.payload, lastClipSavedAt: Date.now(), saving: false });
         void useClipsStore.getState().loadClips();
 
         const settings = useSettingsStore.getState().settings;
@@ -63,10 +63,10 @@ export const useRecordingStore = create<RecordingState>((set) => {
   return {
     isRecording: false,
     framesReceived: 0,
-    previewAvailable: false,
     saving: false,
     starting: false,
     lastClipPath: null,
+    lastClipSavedAt: null,
     error: null,
     bufferTimeSeconds: 0,
     recordingElapsedSeconds: 0,
@@ -122,13 +122,11 @@ export const useRecordingStore = create<RecordingState>((set) => {
           buffer_time_seconds: number;
           is_recording: boolean;
           frames_received: number;
-          preview_available: boolean;
           recording_elapsed_seconds: number;
         }>("get_buffer_info");
         set({
           isRecording: info.is_recording,
           framesReceived: info.frames_received,
-          previewAvailable: info.preview_available,
           bufferTimeSeconds: info.buffer_time_seconds,
           recordingElapsedSeconds: info.recording_elapsed_seconds,
         });

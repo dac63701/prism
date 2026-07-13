@@ -16,7 +16,7 @@ use videotoolbox::session::Codec as VtCodec;
 use crate::buffer::StoredFrame;
 use crate::capture::PixelFormat;
 use crate::encoder::codecs::{Codec, EncoderConfig};
-use crate::encoder::{EncodeError, Encoder};
+use crate::encoder::{extract_sps_pps, EncodeError, Encoder};
 
 /// macOS VideoToolbox-backed hardware encoder.
 pub struct MacEncoder;
@@ -401,43 +401,6 @@ fn mux_h264_clip(
         .map_err(|e| EncodeError::OutputFailed(format!("write_end: {e}")))?;
 
     Ok(())
-}
-
-/// Extract SPS and PPS NAL units from AVCC-format H.264 frames.
-/// Scans every frame for NAL types 7 (SPS) and 8 (PPS).
-pub(crate) fn extract_sps_pps(frames: &[StoredFrame]) -> Result<(Vec<u8>, Vec<u8>), EncodeError> {
-    for frame in frames {
-        if frame.pixel_format != PixelFormat::H264 {
-            continue;
-        }
-        let data = &frame.data;
-        let mut offset = 0;
-        let mut sps = Vec::new();
-        let mut pps = Vec::new();
-
-        while offset + 4 <= data.len() {
-            let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
-            offset += 4;
-            if offset + nal_len > data.len() {
-                break;
-            }
-            let nal_type = data[offset] & 0x1F;
-            match nal_type {
-                7 => sps = data[offset..offset + nal_len].to_vec(),
-                8 => pps = data[offset..offset + nal_len].to_vec(),
-                _ => {}
-            }
-            offset += nal_len;
-        }
-
-        if !sps.is_empty() && !pps.is_empty() {
-            return Ok((sps, pps));
-        }
-    }
-
-    Err(EncodeError::EncodeFailed(
-        "No SPS/PPS found in H.264 stream".into(),
-    ))
 }
 
 pub(crate) fn resize_bgra_frame(

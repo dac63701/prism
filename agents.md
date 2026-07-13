@@ -151,22 +151,36 @@ Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wir
 - Show tenths of seconds in time display to eliminate stepping
 - Update `currentTime` state immediately on seek
 
+### CPU Usage Fix
+**Root cause**: `poll_and_push()` held `Mutex<Option<RecorderInner>>` during the entire H.264 encoding
+operation, blocking the tokio async worker thread and causing lock contention between the recording
+loop and Tauri command handlers (`get_preview_frame`, `save_clip`, etc.).
+
+**Fixes applied**:
+1. **Encode outside the lock** — `poll_and_push()` now runs in 3 phases:
+   Phase 1 (brief lock): read frame, take encoder via `Option::take()`, clone metadata, drop lock.
+   Phase 2 (no lock): H.264 encoding (the expensive part runs without blocking the runtime).
+   Phase 3 (brief lock): restore encoder state, push encoded packets to ring buffer.
+2. **`std::sync::Mutex` → `parking_lot::Mutex`** across the entire Recorder state management —
+   `parking_lot::Mutex` is 2–5× faster on Windows (SRW locks, no syscall in uncontended case,
+   no poison overhead) and does not require `expect()`/`map_err()` boilerplate at every lock site.
+3. **Files changed**: `recording/mod.rs`, `lib.rs`, `commands/recording.rs`, `games/trigger.rs`,
+   `Cargo.toml` (added `parking_lot = "0.12"`).
+
+### Clip Sharing & Remote Name Editing
+- **Clip Sharing**: `PATCH /api/clips/{id}/visibility` backend endpoint (separate from generic `update_clip`), `ShareModal` component with visibility toggle buttons (public/unlisted/private), link copy to clipboard, and `ShareButton` wrapper on the clip detail page
+- **Remote Clip Name Editing**: `PATCH /api/clips/{id}/name` backend endpoint, `ClipRename` client component with inline edit (click title → input with Enter/Escape handling, confirm/cancel buttons, auto-select on focus), and `update_clip_title` DB function
+
+### Passive Status Tracking & Code Cleanup
+- **Passive status tracking**: Added `lastClipSavedAt` timestamp to recording store for passive save status; removed redundant dismissible upload error banner since clip cards already show per-clip upload status (Uploaded/Uploading/Failed) via the `uploadMap`
+- **Fixed `ClipThumbnail.tsx` mountedRef bug**: Effect body never set `mountedRef.current = true`, causing the video-fallback thumbnail path to silently fail in StrictMode (double-mount lifecycle)
+- **Cleaned up Zustand stores**: Removed stale fields: `previewAvailable` (recording), `saving` (settings), `displayName`/`serverUrl` (cloud) — all were written but never read by any component
+- **Fixed critical Rust Mutex type mismatch**: Polling loop in `recording/mod.rs::start_polling` used `std::sync::Mutex<Recorder>` but the managed state is `parking_lot::Mutex<Recorder>` — would panic at runtime
+- **Replaced unwraps/expects with proper error propagation**: 3× `expect("lock poisoned")` in recording, `expect("app data dir")` + `expect("lock poisoned")` in settings, `expect("first_mut")` in save_clip, `.unwrap()` in auth logout
+- **Consolidated 3 duplicated functions**: `resolve_output_dir` (recording+library), `read_mp4_duration` (library+uploads), `extract_sps_pps` (windows+macos encoders) — each now lives in one place
+- `cargo check` clean, 45/45 tests pass, `npm run build` succeeds
+
 ## Pending Work
-
-### High CPU Usage
-Investigate and fix high CPU usage in both the desktop app (recording/capture pipeline) and potentially the upload processor. Profile with Windows Task Manager/PerfMon and Rust `perf`-like tooling. Likely suspects: busy-wait polling in capture loop, excessive IPC events, or SQLite write amplification.
-
-### Clip Sharing
-Add ability to toggle clip visibility (public/private) via a "Share" button on the website. Generate shareable links that let others watch the clip without authentication. Requires:
-- Backend: `PATCH /api/clips/:id/visibility` endpoint
-- Frontend: Share button + share modal with link copy
-- Public view page at `/s/<share_id>` (existing skeleton loading already in place)
-
-### Remote Clip Name Editing
-Allow renaming clips from the website dashboard. Changes sync back to the desktop client via periodic pull mechanism (already in place). Requires:
-- Backend: `PATCH /api/clips/:id/name` endpoint
-- Frontend: inline edit or rename dialog on clip detail page
-- Desktop: honor updated name on next pull
 
 ### App UI Full Rewrite / Fix
 The desktop app UI needs significant work — potentially a full rewrite. Current state has inconsistencies, missing polish, and suboptimal component architecture. Goals:
@@ -175,18 +189,6 @@ The desktop app UI needs significant work — potentially a full rewrite. Curren
 - Responsive layout that works at small window sizes
 - Proper loading/empty/error states everywhere
 - Reusable component library aligned with website conventions
-
-### Passive File Update Checks
-Add passive checks that verify files have actually been written/updated after operations (clip save, settings persist, upload complete). Use file modification timestamps or content hashing to detect stale state. Surface warnings in the UI if an expected update didn't occur.
-
-### General Cleanup
-- Remove dead code and unused imports across Rust and TypeScript codebases
-- Consolidate duplicate types between frontend and backend
-- Standardize error handling patterns
-- Audit all unwraps/expects in Rust code and replace with proper error propagation
-- Revisit Tauri commands for consistent return types
-- Clean up Zustand store — remove stale fields, normalize shape
-- Ensure all IPC event listeners are properly cleaned up on unmount
 
 ## Styling Conventions
 

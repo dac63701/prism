@@ -5,9 +5,7 @@ import { useSettingsStore } from "@/stores/settings";
 
 interface CloudState {
   authenticated: boolean;
-  displayName: string;
   email: string;
-  serverUrl: string;
   uploads: UploadTask[];
   loading: boolean;
   uploadError: string | null;
@@ -81,9 +79,7 @@ export const useCloudStore = create<CloudState>((set) => {
 
   return {
     authenticated: false,
-    displayName: "",
     email: "",
-    serverUrl: "",
     uploads: [],
     loading: false,
     uploadError: null,
@@ -102,7 +98,7 @@ export const useCloudStore = create<CloudState>((set) => {
     logout: async () => {
       set({ loading: true });
       await invoke("cloud_logout");
-      set({ authenticated: false, displayName: "", email: "", loading: false, uploadError: null });
+      set({ authenticated: false, email: "", loading: false, uploadError: null });
     },
 
     checkStatus: async () => {
@@ -112,9 +108,7 @@ export const useCloudStore = create<CloudState>((set) => {
           !!settings.cloud.access_token &&
           (await invoke<boolean>("cloud_verify_auth"));
         set({
-          serverUrl: settings.cloud.server_url,
           authenticated: valid,
-          displayName: valid ? settings.cloud.account_display_name : "",
           email: valid ? settings.cloud.account_email : "",
         });
       } catch (err) {

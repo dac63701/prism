@@ -78,6 +78,45 @@ pub fn compute_timescale(frames: &[StoredFrame], config_fps: u32) -> u32 {
     (actual_fps.round() as u32).max(1)
 }
 
+/// Extract SPS and PPS NAL units from AVCC-format H.264 frames.
+///
+/// Scans every frame for NAL types 7 (SPS) and 8 (PPS). Skips non-H.264
+/// frames (NV12 fallback data can't be parsed as AVCC).
+pub(crate) fn extract_sps_pps(frames: &[StoredFrame]) -> Result<(Vec<u8>, Vec<u8>), EncodeError> {
+    for frame in frames {
+        if frame.pixel_format != crate::capture::PixelFormat::H264 {
+            continue;
+        }
+        let data = &frame.data;
+        let mut offset = 0;
+        let mut sps = Vec::new();
+        let mut pps = Vec::new();
+
+        while offset + 4 <= data.len() {
+            let nal_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+            offset += 4;
+            if offset + nal_len > data.len() {
+                break;
+            }
+            let nal_type = data[offset] & 0x1F;
+            match nal_type {
+                7 => sps = data[offset..offset + nal_len].to_vec(),
+                8 => pps = data[offset..offset + nal_len].to_vec(),
+                _ => {}
+            }
+            offset += nal_len;
+        }
+
+        if !sps.is_empty() && !pps.is_empty() {
+            return Ok((sps, pps));
+        }
+    }
+
+    Err(EncodeError::EncodeFailed(
+        "No SPS/PPS found in H.264 stream".into(),
+    ))
+}
+
 /// Create the platform-appropriate hardware encoder.
 pub fn create_encoder() -> Box<dyn Encoder> {
     #[cfg(target_os = "macos")]

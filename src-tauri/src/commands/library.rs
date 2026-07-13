@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::recording::{read_mp4_duration, resolve_output_dir};
 use crate::settings::SettingsManager;
 
 /// A clip entry returned to the frontend.
@@ -264,15 +265,6 @@ pub async fn open_clip_location(settings_mgr: State<'_, SettingsManager>) -> Res
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn resolve_output_dir(configured: &str) -> PathBuf {
-    if !configured.is_empty() {
-        return PathBuf::from(configured);
-    }
-    dirs::video_dir()
-        .map(|d| d.join("Prism"))
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
 fn metadata_path(clip_path: &Path) -> PathBuf {
     clip_path.with_extension("mp4.json")
 }
@@ -347,21 +339,6 @@ fn format_unix_timestamp(time: std::time::SystemTime) -> String {
         mins,
         secs_rem
     )
-}
-
-/// Best-effort read MP4 duration from the file header using the mp4 crate.
-fn read_mp4_duration(path: &PathBuf) -> Option<u32> {
-    // The mp4 crate's Mp4Reader reads the header and gives duration in seconds
-    use std::fs::File;
-    use std::io::BufReader;
-
-    let file = File::open(path).ok()?;
-    let size = file.metadata().ok()?.len();
-    let reader = BufReader::new(file);
-    let mp4 = mp4::Mp4Reader::read_header(reader, size).ok()?;
-    // duration() returns a Duration
-    let duration = mp4.duration();
-    Some(duration.as_secs() as u32)
 }
 
 #[cfg(test)]

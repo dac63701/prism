@@ -1,6 +1,6 @@
 //! Recording IPC commands — start, stop, save clip, status.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use tauri::{AppHandle, Emitter, State};
 
@@ -21,10 +21,7 @@ pub async fn start_recording(
 ) -> Result<String, String> {
     eprintln!("[recording] start_recording command invoked");
 
-    let rec = recorder.lock().map_err(|e| {
-        eprintln!("[recording] lock error: {e}");
-        format!("Lock error: {e}")
-    })?;
+    let rec = recorder.lock();
 
     rec.start_recording().map_err(|e| {
         eprintln!("[recording] start_recording failed: {e}");
@@ -48,10 +45,7 @@ pub async fn stop_recording(
     eprintln!("[recording] stop_recording command invoked");
 
     {
-        let rec = recorder.lock().map_err(|e| {
-            eprintln!("[recording] lock error: {e}");
-            format!("Lock error: {e}")
-        })?;
+        let rec = recorder.lock();
         rec.stop_recording()?;
     }
 
@@ -63,7 +57,7 @@ pub async fn stop_recording(
 /// Check whether recording is active.
 #[tauri::command]
 pub async fn is_recording(recorder: State<'_, Mutex<Recorder>>) -> Result<bool, String> {
-    let rec = recorder.lock().map_err(|e| e.to_string())?;
+    let rec = recorder.lock();
     Ok(rec.is_recording())
 }
 
@@ -98,10 +92,7 @@ pub(crate) fn save_clip_internal(
 ) -> Result<String, String> {
     // Step 1: Extract frames under lock (brief — frame copy only)
     let clip_data = {
-        let rec = recorder.lock().map_err(|e| {
-            eprintln!("[recording] save_clip lock error: {e}");
-            format!("Lock error: {e}")
-        })?;
+        let rec = recorder.lock();
         rec.extract_clip_data(duration)?
     };
     // LOCK RELEASED — polling and other commands can proceed
@@ -207,9 +198,9 @@ fn prepare_h264_clip_frames(
         .collect();
 
     if !sps.is_empty() && !pps.is_empty() {
-        let first = h264_frames
-            .first_mut()
-            .expect("the selected sync frame is H.264");
+        let first = h264_frames.first_mut().ok_or_else(|| {
+            "No H.264 frames available after filtering — clip may contain only raw NV12 fallback data".to_string()
+        })?;
         let mut data = Vec::with_capacity(sps.len() + pps.len() + first.data.len());
         data.extend_from_slice(sps);
         data.extend_from_slice(pps);
@@ -226,7 +217,7 @@ fn prepare_h264_clip_frames(
 pub async fn get_preview_frame(
     recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<Option<String>, String> {
-    let rec = recorder.lock().map_err(|e| e.to_string())?;
+    let rec = recorder.lock();
     Ok(rec.get_preview_frame())
 }
 
@@ -292,7 +283,7 @@ mod tests {
 pub async fn get_buffer_info(
     recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<serde_json::Value, String> {
-    let rec = recorder.lock().map_err(|e| e.to_string())?;
+    let rec = recorder.lock();
     let fc = rec.frame_count();
     let fr = rec.total_frames_received();
     let clip_len = rec.buffer_duration_secs();
@@ -342,7 +333,7 @@ pub async fn set_capture_target(
 
     // Reconfigure recorder with new target
     {
-        let rec = recorder.lock().map_err(|e| e.to_string())?;
+        let rec = recorder.lock();
         let was_recording = rec.is_recording();
         if was_recording {
             rec.stop_recording().ok();
@@ -414,12 +405,8 @@ fn extract_thumbnail_from_clip_frames(
 ) -> Result<(), String> {
     let frame = frames
         .iter()
-        .find(|f| {
-            f.pixel_format == PixelFormat::Nv12 || f.pixel_format == PixelFormat::Bgra
-        })
-        .ok_or_else(|| {
-            "No NV12 or BGRA frame in clip data for thumbnail generation".to_string()
-        })?;
+        .find(|f| f.pixel_format == PixelFormat::Nv12 || f.pixel_format == PixelFormat::Bgra)
+        .ok_or_else(|| "No NV12 or BGRA frame in clip data for thumbnail generation".to_string())?;
     let captured = crate::capture::CapturedFrame {
         data: frame.data.clone(),
         width: frame.width,

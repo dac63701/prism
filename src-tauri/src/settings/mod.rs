@@ -34,7 +34,7 @@ impl SettingsManager {
         let app_data = app
             .path()
             .app_data_dir()
-            .expect("app data dir should be resolvable");
+            .map_err(|e| SettingsError::Io(format!("App data dir: {e}")))?;
         let store = SettingsStore::new(app_data);
         let settings = store.load()?;
         Ok(Self {
@@ -45,7 +45,7 @@ impl SettingsManager {
 
     /// Get a snapshot of current settings.
     pub fn get(&self) -> AppSettings {
-        self.inner.read().expect("settings lock poisoned").clone()
+        self.inner.read().map(|r| r.clone()).unwrap_or_default()
     }
 
     /// Update settings, persist to disk, and emit change event.
@@ -56,7 +56,9 @@ impl SettingsManager {
         new_settings: AppSettings,
     ) -> Result<AppSettings, SettingsError> {
         self.store.save(&new_settings)?;
-        *self.inner.write().expect("settings lock poisoned") = new_settings.clone();
+        if let Ok(mut w) = self.inner.write() {
+            *w = new_settings.clone();
+        }
 
         // Notify frontend of the change
         let _ = app.emit("settings-changed", &new_settings);

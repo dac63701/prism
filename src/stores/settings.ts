@@ -83,7 +83,6 @@ interface SettingsState {
   settings: AppSettings;
   loading: boolean;
   loaded: boolean;
-  saving: boolean;
   loadSettings: () => Promise<void>;
   updateSettings: (settings: AppSettings) => Promise<void>;
   resetSettings: () => Promise<void>;
@@ -105,7 +104,6 @@ export const useSettingsStore = create<SettingsState>((set) => {
     settings: getDefaultSettings(),
     loading: false,
     loaded: false,
-    saving: false,
 
     loadSettings: async () => {
       set({ loading: true });
@@ -119,27 +117,23 @@ export const useSettingsStore = create<SettingsState>((set) => {
     },
 
     updateSettings: async (settings: AppSettings) => {
-      set({ saving: true });
       try {
         const updated = await invoke<AppSettings>("update_settings", {
           settings,
         });
-        set({ settings: updated, saving: false });
+        set({ settings: updated });
       } catch (err) {
         console.error("Failed to update settings:", err);
-        set({ saving: false });
         throw err;
       }
     },
 
     resetSettings: async () => {
-      set({ saving: true });
       try {
         const settings = await invoke<AppSettings>("reset_settings");
-        set({ settings, saving: false });
+        set({ settings });
       } catch (err) {
         console.error("Failed to reset settings:", err);
-        set({ saving: false });
       }
     },
   };

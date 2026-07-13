@@ -268,10 +268,11 @@ impl AuthManager {
 
         {
             let mgr = app.state::<AuthManager>();
-            let mut state = mgr.state.lock().map_err(|e| e.to_string()).unwrap();
-            state.authenticated = false;
-            state.display_name.clear();
-            state.email.clear();
+            if let Ok(mut state) = mgr.state.lock() {
+                state.authenticated = false;
+                state.display_name.clear();
+                state.email.clear();
+            };
         }
 
         let _ = app.emit("auth-state-changed", false);
