@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { SyntheticEvent } from "react";
 import { Film } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -17,9 +16,9 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
   const thumbSrc = convertFileSrc(path.replace(/\.mp4$/, "_thumb.jpg"));
   const videoSrc = convertFileSrc(path);
   const cacheKey = `${path}-thumb`;
-  const [mode, setMode] = useState<"img" | "video" | "failed">(() =>
-    thumbnailCache.has(cacheKey) ? "video" : "img"
-  );
+  const [imgFailed, setImgFailed] = useState(() => {
+    return !thumbnailCache.has(cacheKey) ? false : true;
+  });
   const [videoThumb, setVideoThumb] = useState<string | null>(
     () => thumbnailCache.get(cacheKey) ?? null
   );
@@ -27,16 +26,6 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
 
   useEffect(() => {
     return () => { mountedRef.current = false; };
-  }, []);
-
-  const handleImgError = useCallback(() => {
-    setMode("video");
-  }, []);
-
-  const handleImgLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
-    // Existing clips may still have the previous 320px server thumbnail.
-    // Recreate those from the video once and keep the sharper result in memory.
-    if (event.currentTarget.naturalWidth < 960) setMode("video");
   }, []);
 
   const captureFrame = useCallback(() => {
@@ -54,10 +43,7 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
     };
     video.onseeked = () => {
       if (!mountedRef.current) return;
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        setMode("failed");
-        return;
-      }
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
       const scale = Math.min(
         MAX_THUMBNAIL_WIDTH / video.videoWidth,
         MAX_THUMBNAIL_HEIGHT / video.videoHeight,
@@ -67,50 +53,42 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
       canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
       canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
       const ctx = canvas.getContext("2d");
-      if (!ctx) { setMode("failed"); return; }
+      if (!ctx) return;
       try {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
         thumbnailCache.set(cacheKey, dataUrl);
         setVideoThumb(dataUrl);
-      } catch {
-        setMode("failed");
-      }
-    };
-    video.onerror = () => {
-      if (mountedRef.current) setMode("failed");
+      } catch { /* canvas draw failed */ }
     };
   }, [videoSrc, cacheKey]);
 
-  // Auto-trigger video fallback when mode switches to "video" and no cached thumb
+  // Auto-trigger video fallback when thumbnail image fails
+  const handleImgError = useCallback(() => {
+    setImgFailed(true);
+  }, []);
+
   useEffect(() => {
-    if (mode === "video" && !videoThumb && !thumbnailCache.has(cacheKey)) {
+    if (imgFailed && !videoThumb && !thumbnailCache.has(cacheKey)) {
       captureFrame();
     }
-  }, [mode, videoThumb, captureFrame, cacheKey]);
+  }, [imgFailed, videoThumb, captureFrame, cacheKey]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-surface to-bg">
-      {mode === "img" ? (
+      {!imgFailed ? (
         <img
           src={thumbSrc}
           alt={`${filename} thumbnail`}
           className="h-full w-full object-cover"
           onError={handleImgError}
-          onLoad={handleImgLoad}
         />
-      ) : mode === "video" ? (
-        videoThumb ? (
-          <img
-            src={videoThumb}
-            alt={`${filename} thumbnail`}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Film className="size-8 text-zinc-700" />
-          </div>
-        )
+      ) : videoThumb ? (
+        <img
+          src={videoThumb}
+          alt={`${filename} thumbnail`}
+          className="h-full w-full object-cover"
+        />
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-3 text-center">
           <Film className="size-8 text-zinc-700 mb-2" />

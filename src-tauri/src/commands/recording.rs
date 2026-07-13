@@ -135,7 +135,24 @@ pub(crate) fn save_clip_internal(
     std::fs::create_dir_all(&clip_data.output_dir)
         .map_err(|e| format!("Failed to create output directory: {e}"))?;
 
-    // Step 4: Keep only a decodable H.264 sequence. Raw fallback frames cannot
+    // Step 4: Generate server-side thumbnail (before frames are moved into
+    // prepare_h264_clip_frames). Try preview_frame first, then fall back to
+    // extracting a usable frame from the clip data.
+    let thumb_stem = output_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let thumb_path = output_path.with_file_name(format!("{}_thumb.jpg", thumb_stem));
+    let thumb_result = match clip_data.preview_frame.as_ref() {
+        Some(preview) => generate_thumbnail(preview, &thumb_path)
+            .or_else(|_| extract_thumbnail_from_clip_frames(&clip_data.frames, &thumb_path)),
+        None => extract_thumbnail_from_clip_frames(&clip_data.frames, &thumb_path),
+    };
+    if let Err(e) = thumb_result {
+        eprintln!("[recording] thumbnail generation failed: {e}");
+    }
+
+    // Step 5: Keep only a decodable H.264 sequence. Raw fallback frames cannot
     // be mixed into an H.264 MP4 track, and decoding must begin at a sync frame.
     eprintln!(
         "[recording] save_clip: {} frames, sps={} pps={}",
@@ -146,7 +163,7 @@ pub(crate) fn save_clip_internal(
     let frames_with_sps =
         prepare_h264_clip_frames(clip_data.frames, &clip_data.sps, &clip_data.pps)?;
 
-    // Step 5: Encode (NO lock held — polling continues)
+    // Step 6: Encode (NO lock held — polling continues)
     eprintln!(
         "[recording] save_clip encoding {} frames to {}",
         frames_with_sps.len(),
@@ -157,18 +174,6 @@ pub(crate) fn save_clip_internal(
         .encode_clip(&frames_with_sps, &output_path, &enc_config)
         .map_err(|e| format!("Encoding failed: {e}"))?;
     eprintln!("[recording] save_clip encoding complete");
-
-    // Step 6: Generate server-side thumbnail from latest captured frame
-    if let Some(preview) = &clip_data.preview_frame {
-        let thumb_stem = output_path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy();
-        let thumb_path = output_path.with_file_name(format!("{}_thumb.jpg", thumb_stem));
-        if let Err(e) = generate_thumbnail(preview, &thumb_path) {
-            eprintln!("[recording] thumbnail generation failed: {e}");
-        }
-    }
 
     let output_str = output_path.to_string_lossy().to_string();
     let _ = app.emit("clip-saved", &output_str);
@@ -399,6 +404,31 @@ fn generate_thumbnail(
         .map_err(|e| format!("JPEG encode failed: {e}"))?;
 
     Ok(())
+}
+
+/// Fallback: extract a thumbnail from the first usable NV12/BGRA frame in
+/// the clip data when no preview_frame was available.
+fn extract_thumbnail_from_clip_frames(
+    frames: &[crate::buffer::StoredFrame],
+    thumb_path: &Path,
+) -> Result<(), String> {
+    let frame = frames
+        .iter()
+        .find(|f| {
+            f.pixel_format == PixelFormat::Nv12 || f.pixel_format == PixelFormat::Bgra
+        })
+        .ok_or_else(|| {
+            "No NV12 or BGRA frame in clip data for thumbnail generation".to_string()
+        })?;
+    let captured = crate::capture::CapturedFrame {
+        data: frame.data.clone(),
+        width: frame.width,
+        height: frame.height,
+        stride: frame.stride,
+        pixel_format: frame.pixel_format,
+        timestamp: frame.timestamp,
+    };
+    generate_thumbnail(&captured, thumb_path)
 }
 
 fn thumbnail_dimensions(width: u32, height: u32) -> (u32, u32) {

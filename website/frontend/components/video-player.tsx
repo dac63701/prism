@@ -21,7 +21,8 @@ function formatTime(secs: number): string {
   if (!Number.isFinite(secs) || secs < 0) return "0:00";
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  const tenths = Math.floor((secs - Math.floor(secs)) * 10);
+  return `${m}:${s.toString().padStart(2, "0")}.${tenths}`;
 }
 
 const SKIP_SECONDS = 5;
@@ -36,6 +37,27 @@ export default function VideoPlayer({ src, poster, onError }: VideoPlayerProps) 
   const [showControls, setShowControls] = useState(true);
   const [videoError, setVideoError] = useState("");
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const updateTime = useCallback(() => {
+    const video = videoRef.current;
+    if (video && !video.paused && Number.isFinite(video.currentTime)) {
+      setCurrentTime(video.currentTime);
+      rafRef.current = requestAnimationFrame(updateTime);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (playing) {
+      rafRef.current = requestAnimationFrame(updateTime);
+    } else {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [playing, updateTime]);
 
   const togglePlay = useCallback(async () => {
     const video = videoRef.current;
@@ -52,6 +74,7 @@ export default function VideoPlayer({ src, poster, onError }: VideoPlayerProps) 
     const video = videoRef.current;
     if (!video) return;
     video.currentTime = Math.max(0, Math.min(time, video.duration || 0));
+    setCurrentTime(video.currentTime);
   }, []);
 
   const toggleFullscreen = useCallback(async () => {
@@ -123,7 +146,6 @@ export default function VideoPlayer({ src, poster, onError }: VideoPlayerProps) 
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
-        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => {
           const d = e.currentTarget.duration;
           setDuration(Number.isFinite(d) ? d : 0);
@@ -200,7 +222,7 @@ export default function VideoPlayer({ src, poster, onError }: VideoPlayerProps) 
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs tabular-nums text-white/75">
-              {formatTime(Math.floor(currentTime))} / {formatTime(Math.floor(duration))}
+              {formatTime(currentTime)} / {formatTime(duration)}
             </span>
             <button
               onClick={() => void toggleFullscreen()}
