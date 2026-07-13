@@ -141,6 +141,16 @@ Resolution/bitrate dropdown, HotkeyCaptureInput, hotkey re-registration, all wir
 - **Part B (monitor switching)**: ✅ DONE — encoder reset on stop (Win + Mac), emit on error,
   frontend error surfacing.
 
+### Thumbnail Reliability
+- Generate thumbnail from clip data frames when `preview_frame` is unavailable
+- Remove unreliable `naturalWidth < 960` check in `ClipThumbnail` component
+- Simplify fallback: trust JPEG thumbnail, only fall back to video capture on img error
+
+### Smooth Video Progress
+- Replace `onTimeUpdate` (~4Hz) with `requestAnimationFrame` loop (~60fps)
+- Show tenths of seconds in time display to eliminate stepping
+- Update `currentTime` state immediately on seek
+
 ## Pending Work
 
 ### High CPU Usage
