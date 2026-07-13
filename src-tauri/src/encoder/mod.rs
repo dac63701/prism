@@ -82,6 +82,7 @@ pub fn compute_timescale(frames: &[StoredFrame], config_fps: u32) -> u32 {
 ///
 /// Scans every frame for NAL types 7 (SPS) and 8 (PPS). Skips non-H.264
 /// frames (NV12 fallback data can't be parsed as AVCC).
+#[allow(dead_code)]
 pub(crate) fn extract_sps_pps(frames: &[StoredFrame]) -> Result<(Vec<u8>, Vec<u8>), EncodeError> {
     for frame in frames {
         if frame.pixel_format != crate::capture::PixelFormat::H264 {
