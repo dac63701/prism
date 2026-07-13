@@ -1,8 +1,10 @@
 //! Settings IPC commands — get, update, reset.
 
+use parking_lot::Mutex;
 use tauri::State;
 
 use crate::hotkey;
+use crate::recording::Recorder;
 use crate::settings::config::AppSettings;
 use crate::settings::SettingsManager;
 
@@ -14,16 +16,22 @@ pub async fn get_settings(manager: State<'_, SettingsManager>) -> Result<AppSett
 
 /// Update settings with new values.
 /// Returns the updated settings on success.
-/// Recording state is never touched here — only the on/off button
-/// controls start/stop. New capture settings (resolution, FPS, etc.)
-/// take effect on the next recording session or app restart.
+/// Recording is never started or stopped here. The clip duration applies
+/// immediately; other capture settings apply before the next session.
 #[tauri::command]
 pub async fn update_settings(
     app: tauri::AppHandle,
     manager: State<'_, SettingsManager>,
+    recorder: State<'_, Mutex<Recorder>>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
     let updated = manager.set(&app, settings).map_err(|e| e.to_string())?;
+    let recorder = recorder.lock();
+    if recorder.is_recording() {
+        recorder.set_buffer_duration_secs(updated.recording.buffer_duration_secs);
+    } else {
+        recorder.reconfigure(&updated);
+    }
     hotkey::register_hotkeys(&app, &updated.hotkeys)?;
     Ok(updated)
 }
@@ -33,8 +41,15 @@ pub async fn update_settings(
 pub async fn reset_settings(
     app: tauri::AppHandle,
     manager: State<'_, SettingsManager>,
+    recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<AppSettings, String> {
     let updated = manager.reset(&app).map_err(|e| e.to_string())?;
+    let recorder = recorder.lock();
+    if recorder.is_recording() {
+        recorder.set_buffer_duration_secs(updated.recording.buffer_duration_secs);
+    } else {
+        recorder.reconfigure(&updated);
+    }
     hotkey::register_hotkeys(&app, &updated.hotkeys)?;
     Ok(updated)
 }

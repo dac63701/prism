@@ -95,14 +95,40 @@ impl RingBuffer {
         self.frames.push_back(frame);
     }
 
-    /// Return all frames within the last `duration` from `now`.
+    /// Update the frame-count limit, evicting old frames if it was reduced.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity;
+        while self.frames.len() > self.capacity {
+            if let Some(old) = self.frames.pop_front() {
+                self.total_bytes = self.total_bytes.saturating_sub(old.data.len());
+            }
+        }
+    }
+
+    /// Return frames from the requested window, including the last H.264 sync
+    /// frame before it when one is available. H.264 P-frames cannot be decoded
+    /// without that preceding keyframe, so starting at the cutoff would shorten
+    /// the saved clip by up to one GOP.
     pub fn clip_since(&self, duration: Duration, now: Instant) -> Vec<StoredFrame> {
         let cutoff = now.checked_sub(duration).unwrap_or(now);
-        self.frames
+        let requested_start = self
+            .frames
             .iter()
-            .filter(|f| f.timestamp >= cutoff)
-            .cloned()
-            .collect()
+            .position(|frame| frame.timestamp >= cutoff)
+            .unwrap_or(self.frames.len());
+        let start = self
+            .frames
+            .iter()
+            .take(requested_start)
+            .enumerate()
+            .rev()
+            .find_map(|(index, frame)| {
+                (frame.pixel_format == crate::capture::PixelFormat::H264 && frame.is_sync)
+                    .then_some(index)
+            })
+            .unwrap_or(requested_start);
+
+        self.frames.iter().skip(start).cloned().collect()
     }
 
     /// Return all frames (oldest first).
@@ -137,6 +163,17 @@ impl RingBuffer {
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.frames.is_empty()
+    }
+
+    /// Wall-clock span of all stored frames (seconds). Returns 0 if buffer is empty.
+    pub fn time_span_secs(&self) -> f64 {
+        match (self.frames.front(), self.frames.back()) {
+            (Some(first), Some(last)) => {
+                let span = last.timestamp.duration_since(first.timestamp);
+                span.as_secs_f64()
+            }
+            _ => 0.0,
+        }
     }
 
     /// Scan all stored frames (regardless of timestamp) for H.264 SPS (NAL type 7)
@@ -225,6 +262,33 @@ mod tests {
         let clip_time = now + Duration::from_secs(8);
         let clipped = buf.clip_since(Duration::from_secs(3), clip_time);
         assert_eq!(clipped.len(), 2);
+    }
+
+    #[test]
+    fn clip_since_keeps_sync_frame_before_cutoff() {
+        let mut buf = RingBuffer::new(12);
+        let now = Instant::now();
+        let mut sync = make_frame(now);
+        sync.pixel_format = PixelFormat::H264;
+        let sync = StoredFrame {
+            is_sync: true,
+            ..sync.into()
+        };
+        buf.push(sync);
+
+        for second in 1..=10 {
+            let mut frame = make_frame(now + Duration::from_secs(second));
+            frame.pixel_format = PixelFormat::H264;
+            buf.push(StoredFrame {
+                is_sync: false,
+                ..frame.into()
+            });
+        }
+
+        let clipped = buf.clip_since(Duration::from_secs(8), now + Duration::from_secs(10));
+        assert_eq!(clipped.len(), 11);
+        assert!(clipped[0].is_sync);
+        assert_eq!(clipped[0].timestamp, now);
     }
 
     #[test]

@@ -114,7 +114,7 @@ pub(crate) fn save_clip_internal(
         codec: Codec::H264,
         bitrate_kbps: rs.bitrate_kbps,
         fps: rs.fps,
-        keyframe_interval: rs.fps.saturating_mul(2),
+        keyframe_interval: rs.fps,
         target_width,
         target_height,
     };
@@ -183,6 +183,7 @@ fn prepare_h264_clip_frames(
     sps: &[u8],
     pps: &[u8],
 ) -> Result<Vec<crate::buffer::StoredFrame>, String> {
+    let total = frames.len();
     let first_sync = frames
         .iter()
         .position(|frame| frame.pixel_format == PixelFormat::H264 && frame.is_sync)
@@ -191,11 +192,24 @@ fn prepare_h264_clip_frames(
                 .to_string()
         })?;
 
+    let dropped_before_sync = first_sync;
     let mut h264_frames: Vec<_> = frames
         .into_iter()
         .skip(first_sync)
         .filter(|frame| frame.pixel_format == PixelFormat::H264)
         .collect();
+
+    let dropped_non_h264 = total
+        .saturating_sub(first_sync)
+        .saturating_sub(h264_frames.len());
+    if dropped_before_sync > 0 || dropped_non_h264 > 0 {
+        eprintln!(
+            "[recording] prepare_h264_clip_frames: {total} total, \
+             {dropped_before_sync} dropped before sync, {dropped_non_h264} non-H.264 dropped, \
+             {} H.264 frames kept",
+            h264_frames.len()
+        );
+    }
 
     if !sps.is_empty() && !pps.is_empty() {
         let first = h264_frames.first_mut().ok_or_else(|| {
@@ -286,14 +300,16 @@ pub async fn get_buffer_info(
     let rec = recorder.lock();
     let fc = rec.frame_count();
     let fr = rec.total_frames_received();
-    let clip_len = rec.buffer_duration_secs();
     let fps = rec.cached_fps();
-    let buffer_time = if fps > 0 { fc as f64 / fps as f64 } else { 0.0 };
+    let clip_len = rec.available_clip_secs();
+    let actual_buffer_time = rec.buffer_time_secs();
     let elapsed = rec.recording_elapsed_secs();
     Ok(serde_json::json!({
         "frame_count": fc,
-        "buffer_time_seconds": buffer_time,
+        "buffer_time_seconds": clip_len,
         "clip_length_seconds": clip_len,
+        "actual_buffer_time_seconds": actual_buffer_time,
+        "configured_duration_seconds": rec.buffer_duration_secs(),
         "is_recording": rec.is_recording(),
         "frames_received": fr,
         "preview_available": rec.preview_available(),

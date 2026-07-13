@@ -19,7 +19,7 @@ export function getDefaultHotkeys() {
 export function getDefaultSettings(): AppSettings {
   return {
     recording: {
-      buffer_duration_secs: 60,
+      buffer_duration_secs: 30,
       fps: 60,
       bitrate_kbps: 8000,
       resolution: "1080p",

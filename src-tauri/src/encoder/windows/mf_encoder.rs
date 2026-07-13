@@ -82,7 +82,7 @@ impl MfH264Encoder {
         height: u32,
         fps: u32,
         bitrate_kbps: u32,
-        _keyframe_interval: u32,
+        keyframe_interval: u32,
     ) -> Result<Self, EncodeError> {
         ensure_mf()?;
 
@@ -152,6 +152,12 @@ impl MfH264Encoder {
             output_type
                 .SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, pixel_aspect)
                 .map_err(|e| EncodeError::InitFailed(format!("SetUINT64 pixel aspect out: {e}")))?;
+            // Bound the GOP so a clip can begin from a nearby sync frame.
+            // Otherwise the MFT chooses its own interval and clip extraction
+            // may need to discard several seconds before the next keyframe.
+            output_type
+                .SetUINT32(&MF_MT_MAX_KEYFRAME_SPACING, keyframe_interval.max(1))
+                .map_err(|e| EncodeError::InitFailed(format!("SetUINT32 keyframe spacing: {e}")))?;
 
             transform
                 .SetOutputType(0, &output_type, 0)

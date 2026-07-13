@@ -61,12 +61,15 @@ impl BufferManager {
     /// Hard frame-count ceiling — prevents unbounded slot allocation even
     /// with small frame sizes. 7 minutes of 60 fps = 25,200 frames.
     const MAX_FRAME_CAPACITY: usize = 30_000;
+    /// Keep enough frames before the requested window to include an H.264
+    /// sync frame. Encoders are configured with a one-second keyframe interval.
+    const SYNC_FRAME_LEAD_SECS: u32 = 1;
 
     /// Create a new buffer manager with the given config and estimated resolution.
     pub fn new(config: BufferConfig, _width: u32, _height: u32) -> Self {
         // Frame-capacity ceiling: at most MAX_FRAME_CAPACITY or config capacity,
         // whichever is smaller.
-        let capacity = config.capacity().clamp(60, Self::MAX_FRAME_CAPACITY);
+        let capacity = Self::storage_capacity(&config);
         let buffer = RingBuffer::with_byte_budget(capacity, Self::SHADOW_BUFFER_BYTES);
 
         Self { buffer, config }
@@ -76,6 +79,15 @@ impl BufferManager {
     /// Accepts either `CapturedFrame` (raw capture data) or `StoredFrame` (encoded packet).
     pub fn push_frame(&mut self, frame: impl Into<StoredFrame>) {
         self.buffer.push(frame);
+    }
+
+    /// Apply a new requested clip duration while preserving buffered frames.
+    /// Capture FPS changes take effect on the next recording session; this uses
+    /// the active FPS so the frame capacity remains a duration-based limit.
+    pub fn set_duration_secs(&mut self, duration_secs: u32) {
+        self.config.max_duration_secs = duration_secs;
+        self.buffer
+            .set_capacity(Self::storage_capacity(&self.config));
     }
 
     /// Save a clip from the last N seconds of buffer.
@@ -102,9 +114,23 @@ impl BufferManager {
         self.buffer.len()
     }
 
+    /// Wall-clock span of buffered frames in seconds (from oldest to newest).
+    pub fn time_span_secs(&self) -> f64 {
+        self.buffer.time_span_secs()
+    }
+
     /// Scan all buffered H.264 frames for SPS/PPS NAL units.
     #[allow(dead_code)]
     pub fn find_sps_pps_anywhere(&self) -> Option<(Vec<u8>, Vec<u8>)> {
         self.buffer.find_sps_pps_anywhere()
+    }
+
+    fn storage_capacity(config: &BufferConfig) -> usize {
+        config
+            .capacity()
+            .saturating_add(
+                (Self::SYNC_FRAME_LEAD_SECS as usize).saturating_mul(config.fps as usize),
+            )
+            .clamp(60, Self::MAX_FRAME_CAPACITY)
     }
 }

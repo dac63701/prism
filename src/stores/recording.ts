@@ -97,7 +97,7 @@ export const useRecordingStore = create<RecordingState>((set) => {
       try {
         const path = await Promise.race([
           invoke<string>("save_clip", {
-            durationSecs: durationSecs ?? 30,
+            durationSecs: durationSecs ?? 0,
           }),
           new Promise<string>((_, reject) =>
             setTimeout(

@@ -9,6 +9,7 @@ pub mod mf_encoder;
 use bytes::Bytes;
 use mp4::{AvcConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
 use std::path::Path;
+use std::time::Duration;
 
 use crate::buffer::StoredFrame;
 use crate::encoder::codecs::EncoderConfig;
@@ -74,7 +75,8 @@ impl Encoder for WindowsEncoder {
             .add_track(&track_config)
             .map_err(|e| EncodeError::OutputFailed(format!("add_track: {e}")))?;
 
-        // Write each frame's compressed data as an MP4 sample
+        // Write each frame with actual capture timestamps for accurate MP4 duration.
+        let first_ts = frames[0].timestamp;
         for (i, frame) in frames.iter().enumerate() {
             if frame.pixel_format != crate::capture::PixelFormat::H264 {
                 return Err(EncodeError::EncodeFailed(
@@ -82,9 +84,22 @@ impl Encoder for WindowsEncoder {
                 ));
             }
 
+            let delta = frame.timestamp.duration_since(first_ts);
+            let start_time = (delta.as_secs_f64() * timescale as f64).round() as u64;
+            let duration = {
+                let next_delta = if i + 1 < frames.len() {
+                    frames[i + 1].timestamp.duration_since(frame.timestamp)
+                } else {
+                    Duration::from_secs_f64(1.0 / timescale as f64)
+                };
+                (next_delta.as_secs_f64() * timescale as f64)
+                    .round()
+                    .max(1.0) as u64
+            };
+
             let sample = mp4::Mp4Sample {
-                start_time: i as u64,
-                duration: 1,
+                start_time,
+                duration: duration as u32,
                 rendering_offset: 0,
                 is_sync: frame.is_sync,
                 bytes: Bytes::copy_from_slice(&frame.data),
