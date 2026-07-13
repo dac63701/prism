@@ -188,6 +188,7 @@ impl Recorder {
     }
 
     /// Apply new settings at runtime (re-creates buffer, updates config).
+    #[allow(dead_code)]
     pub fn reconfigure(&self, settings: &AppSettings) {
         let rs = &settings.recording;
         self.cached_fps.store(rs.fps, Ordering::SeqCst);
