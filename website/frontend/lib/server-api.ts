@@ -58,3 +58,19 @@ export function listAdminUsers(search = "") {
 export function getAdminUser(id: string) {
   return serverFetch<AdminUserDetail>(`/api/admin/users/${id}`, { method: "GET" });
 }
+
+export function updateClipVisibility(id: string, visibility: "public" | "private" | "unlisted") {
+  return serverFetch<{ id: string; visibility: string }>(`/api/clips/${id}/visibility`, {
+    method: "PATCH",
+    body: JSON.stringify({ visibility }),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function updateClipName(id: string, title: string) {
+  return serverFetch<{ id: string; title: string }>(`/api/clips/${id}/name`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+    headers: { "Content-Type": "application/json" },
+  });
+}

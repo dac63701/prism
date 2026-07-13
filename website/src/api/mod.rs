@@ -45,6 +45,14 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
             "/api/clips/{id}/regenerate-share",
             routing::post(clips::regenerate_share),
         )
+        .route(
+            "/api/clips/{id}/visibility",
+            routing::patch(clips::update_clip_visibility),
+        )
+        .route(
+            "/api/clips/{id}/name",
+            routing::patch(clips::update_clip_name),
+        )
         .route("/api/s/{share_id}/meta", routing::get(public::share_meta))
         .route("/api/u/{username}", routing::get(public::profile_meta))
         .route("/api/media/{*path}", routing::get(public::serve_media))

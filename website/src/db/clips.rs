@@ -214,7 +214,6 @@ pub async fn list_clips(
     Ok((clips, total))
 }
 
-#[allow(dead_code)]
 pub async fn update_clip_visibility(
     pool: &PgPool,
     id: Uuid,
@@ -227,6 +226,19 @@ pub async fn update_clip_visibility(
     .bind(id)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+pub async fn update_clip_title(
+    pool: &PgPool,
+    id: Uuid,
+    title: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE clips SET title = $1, updated_at = NOW() WHERE id = $2")
+        .bind(title)
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

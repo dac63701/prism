@@ -98,8 +98,9 @@ export function formatSize(bytes: number): string {
 
 /// Format duration in seconds to mm:ss.
 export function formatDuration(secs: number): string {
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
+  const total = Math.max(0, Math.floor(secs));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 

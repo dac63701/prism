@@ -319,6 +319,68 @@ pub async fn delete_clip(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+pub struct UpdateClipVisibilityRequest {
+    visibility: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateClipNameRequest {
+    title: String,
+}
+
+pub async fn update_clip_visibility(
+    State(pool): State<PgPool>,
+    auth: AuthUser,
+    Path(clip_id): Path<Uuid>,
+    Json(body): Json<UpdateClipVisibilityRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let clip = db::clips::get_clip(&pool, clip_id)
+        .await?
+        .ok_or(AppError::NotFound("Clip not found".into()))?;
+
+    if clip.user_id != auth.user_id && auth.role != "admin" {
+        return Err(AppError::NotFound("Clip not found".into()));
+    }
+
+    if !matches!(body.visibility.as_str(), "public" | "private" | "unlisted") {
+        return Err(AppError::BadRequest("Invalid visibility".into()));
+    }
+
+    db::clips::update_clip_visibility(&pool, clip_id, &body.visibility).await?;
+
+    Ok(Json(serde_json::json!({
+        "id": clip_id,
+        "visibility": body.visibility,
+    })))
+}
+
+pub async fn update_clip_name(
+    State(pool): State<PgPool>,
+    auth: AuthUser,
+    Path(clip_id): Path<Uuid>,
+    Json(body): Json<UpdateClipNameRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let clip = db::clips::get_clip(&pool, clip_id)
+        .await?
+        .ok_or(AppError::NotFound("Clip not found".into()))?;
+
+    if clip.user_id != auth.user_id && auth.role != "admin" {
+        return Err(AppError::NotFound("Clip not found".into()));
+    }
+
+    if body.title.trim().is_empty() {
+        return Err(AppError::BadRequest("Title cannot be empty".into()));
+    }
+
+    db::clips::update_clip_title(&pool, clip_id, body.title.trim()).await?;
+
+    Ok(Json(serde_json::json!({
+        "id": clip_id,
+        "title": body.title.trim(),
+    })))
+}
+
 pub async fn regenerate_share(
     State(pool): State<PgPool>,
     auth: AuthUser,

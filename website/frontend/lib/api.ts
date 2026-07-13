@@ -80,6 +80,20 @@ export async function deleteClip(id: string) {
   });
 }
 
+export async function updateClipVisibility(id: string, visibility: "public" | "private" | "unlisted") {
+  return jsonFetch<{ id: string; visibility: string }>(`/api/clips/${id}/visibility`, {
+    method: "PATCH",
+    body: JSON.stringify({ visibility }),
+  });
+}
+
+export async function updateClipName(id: string, title: string) {
+  return jsonFetch<{ id: string; title: string }>(`/api/clips/${id}/name`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
 
 export async function getShareMeta(shareId: string) {
   return jsonFetch<{ clip: ClipDetail; user: User }>(`/api/s/${shareId}/meta`, { method: "GET" });
