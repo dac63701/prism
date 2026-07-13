@@ -71,21 +71,52 @@ pub async fn upload_clip(
                     .map_err(|e| AppError::BadRequest(format!("Failed to read file: {e}")))?
                     .to_vec();
             }
-            "title" => title = field.text().await.unwrap_or_default(),
-            "game" => game = field.text().await.unwrap_or_default(),
-            "duration_secs" => {
-                duration_secs = field
-                    .text()
-                    .await
-                    .unwrap_or_default()
-                    .parse()
-                    .unwrap_or(0.0)
+            "title" => {
+                title = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read title field: {e}"))
+                })?;
             }
-            "width" => width = field.text().await.unwrap_or_default().parse().unwrap_or(0),
-            "height" => height = field.text().await.unwrap_or_default().parse().unwrap_or(0),
-            "codec" => codec = field.text().await.unwrap_or_default(),
+            "game" => {
+                game = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read game field: {e}"))
+                })?;
+            }
+            "duration_secs" => {
+                let text = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read duration_secs field: {e}"))
+                })?;
+                duration_secs = text.parse().unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse duration_secs value {text:?}: {e}");
+                    0.0
+                });
+            }
+            "width" => {
+                let text = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read width field: {e}"))
+                })?;
+                width = text.parse().unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse width value {text:?}: {e}");
+                    0
+                });
+            }
+            "height" => {
+                let text = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read height field: {e}"))
+                })?;
+                height = text.parse().unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse height value {text:?}: {e}");
+                    0
+                });
+            }
+            "codec" => {
+                codec = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read codec field: {e}"))
+                })?;
+            }
             "visibility" => {
-                let v = field.text().await.unwrap_or_default();
+                let v = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read visibility field: {e}"))
+                })?;
                 if matches!(v.as_str(), "public" | "private" | "unlisted") {
                     visibility = v;
                 }
@@ -112,32 +143,39 @@ pub async fn upload_clip(
 
     storage.store(&storage_path, &file_data).await?;
 
-    // Generate thumbnail
     let thumb_storage_path = format!("thumbs/{}/{}.jpg", auth.user_id, clip_id);
     let thumbnail_path = {
         let tmp_video = std::env::temp_dir().join(format!("prism_{}.mp4", clip_id));
         let tmp_thumb = std::env::temp_dir().join(format!("prism_{}_thumb.jpg", clip_id));
 
-        // Write video to temp file
-        let _ = tokio::fs::write(&tmp_video, &file_data).await;
-
-        // Generate thumbnail (ffmpeg or pattern fallback)
-        let _ = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 320);
-
-        // Read and store thumbnail
-        if let Ok(thumb_data) = tokio::fs::read(&tmp_thumb).await {
-            let _ = storage.store(&thumb_storage_path, &thumb_data).await;
+        if let Err(e) = tokio::fs::write(&tmp_video, &file_data).await {
+            tracing::warn!("Failed to write temp video for thumbnail: {e}");
         }
 
-        // Cleanup temp files
-        let _ = tokio::fs::remove_file(&tmp_video).await;
-        let _ = tokio::fs::remove_file(&tmp_thumb).await;
+        if let Err(e) = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 320) {
+            tracing::warn!("Failed to generate thumbnail: {e}");
+        }
 
-        // Only set thumbnail_path if the file was stored successfully
-        if storage.exists(&thumb_storage_path).await.unwrap_or(false) {
-            Some(thumb_storage_path)
-        } else {
-            None
+        if let Ok(thumb_data) = tokio::fs::read(&tmp_thumb).await {
+            if let Err(e) = storage.store(&thumb_storage_path, &thumb_data).await {
+                tracing::warn!("Failed to store thumbnail: {e}");
+            }
+        }
+
+        if let Err(e) = tokio::fs::remove_file(&tmp_video).await {
+            tracing::warn!("Failed to clean up temp video: {e}");
+        }
+        if let Err(e) = tokio::fs::remove_file(&tmp_thumb).await {
+            tracing::warn!("Failed to clean up temp thumb: {e}");
+        }
+
+        match storage.exists(&thumb_storage_path).await {
+            Ok(true) => Some(thumb_storage_path),
+            Ok(false) => None,
+            Err(e) => {
+                tracing::warn!("Failed to check thumbnail existence: {e}");
+                None
+            }
         }
     };
 
@@ -306,10 +344,14 @@ pub async fn delete_clip(
     }
 
     if let Some(thumb) = &clip.thumbnail_path {
-        let _ = storage.delete(thumb).await;
+        if let Err(e) = storage.delete(thumb).await {
+            tracing::warn!("Failed to delete thumbnail file {thumb}: {e}");
+        }
     }
 
-    let _ = storage.delete(&clip.storage_path).await;
+    if let Err(e) = storage.delete(&clip.storage_path).await {
+        tracing::warn!("Failed to delete clip file {}: {e}", clip.storage_path);
+    }
 
     db::clips::delete_clip(&pool, clip_id).await?;
     db::users::add_storage_used(&pool, auth.user_id, -clip.size_bytes).await?;

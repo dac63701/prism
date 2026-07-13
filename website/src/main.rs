@@ -103,7 +103,9 @@ async fn main() {
         eprintln!("=============");
     }));
 
-    dotenvy::dotenv().ok();
+    if let Err(e) = dotenvy::dotenv() {
+        tracing::warn!("Failed to load .env file: {e}");
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -126,8 +128,12 @@ async fn main() {
     {
         let clip_dir = std::path::Path::new(&config.storage_path).join("clips");
         let thumb_dir = std::path::Path::new(&config.storage_path).join("thumbs");
-        let _ = tokio::fs::create_dir_all(&clip_dir).await;
-        let _ = tokio::fs::create_dir_all(&thumb_dir).await;
+        if let Err(e) = tokio::fs::create_dir_all(&clip_dir).await {
+            tracing::warn!("Failed to create clip directory {}: {e}", clip_dir.display());
+        }
+        if let Err(e) = tokio::fs::create_dir_all(&thumb_dir).await {
+            tracing::warn!("Failed to create thumb directory {}: {e}", thumb_dir.display());
+        }
     }
 
     let site_origin: HeaderValue = config.site_url.parse().expect("Invalid SITE_URL");

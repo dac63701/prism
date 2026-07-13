@@ -157,7 +157,10 @@ fn hash_password(password: &str) -> Result<String, AppError> {
 fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
     let parsed = match PasswordHash::new(hash) {
         Ok(hash) => hash,
-        Err(_) => return Ok(false),
+        Err(e) => {
+            tracing::warn!("Failed to parse password hash: {e}");
+            return Ok(false);
+        },
     };
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
@@ -734,11 +737,17 @@ pub async fn delete_account(
         .await?;
     for clip in clips {
         if let Some(stored) = db::clips::get_clip(&pool, clip.id).await? {
-            let _ = storage.delete(&stored.storage_path).await;
-            if let Some(thumb) = &stored.thumbnail_path {
-                let _ = storage.delete(thumb).await;
+            if let Err(e) = storage.delete(&stored.storage_path).await {
+                tracing::warn!("Failed to delete clip file {} during account deletion: {e}", stored.storage_path);
             }
-            let _ = db::clips::delete_clip(&pool, stored.id).await;
+            if let Some(thumb) = &stored.thumbnail_path {
+                if let Err(e) = storage.delete(thumb).await {
+                    tracing::warn!("Failed to delete thumbnail {thumb} during account deletion: {e}");
+                }
+            }
+            if let Err(e) = db::clips::delete_clip(&pool, stored.id).await {
+                tracing::warn!("Failed to delete clip {} from DB during account deletion: {e}", stored.id);
+            }
         }
     }
 

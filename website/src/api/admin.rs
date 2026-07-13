@@ -166,11 +166,17 @@ pub async fn delete_user(
     for clip in &clips {
         let clip_detailed = db::clips::get_clip(&pool, clip.id).await?;
         if let Some(c) = clip_detailed {
-            let _ = storage.delete(&c.storage_path).await;
-            if let Some(thumb) = &c.thumbnail_path {
-                let _ = storage.delete(thumb).await;
+            if let Err(e) = storage.delete(&c.storage_path).await {
+                tracing::warn!("Failed to delete clip file {} during user deletion: {e}", c.storage_path);
             }
-            let _ = db::clips::delete_clip(&pool, c.id).await;
+            if let Some(thumb) = &c.thumbnail_path {
+                if let Err(e) = storage.delete(thumb).await {
+                    tracing::warn!("Failed to delete thumbnail {thumb} during user deletion: {e}");
+                }
+            }
+            if let Err(e) = db::clips::delete_clip(&pool, c.id).await {
+                tracing::warn!("Failed to delete clip {} from DB during user deletion: {e}", c.id);
+            }
         }
     }
 
@@ -238,9 +244,13 @@ pub async fn admin_delete_clip(
         .ok_or(AppError::NotFound("Clip not found".into()))?;
 
     if let Some(thumb) = &clip.thumbnail_path {
-        let _ = storage.delete(thumb).await;
+        if let Err(e) = storage.delete(thumb).await {
+            tracing::warn!("Failed to delete thumbnail {thumb}: {e}");
+        }
     }
-    let _ = storage.delete(&clip.storage_path).await;
+    if let Err(e) = storage.delete(&clip.storage_path).await {
+        tracing::warn!("Failed to delete clip file {}: {e}", clip.storage_path);
+    }
 
     db::users::add_storage_used(&pool, clip.user_id, -clip.size_bytes).await?;
     db::clips::delete_clip(&pool, clip_id).await?;
@@ -275,8 +285,7 @@ pub async fn get_logs(
     let count_sql = format!("SELECT COUNT(*) FROM activity_logs {}", where_sql);
     let total: (i64,) = sqlx::query_as(&count_sql)
         .fetch_one(&pool)
-        .await
-        .unwrap_or((0,));
+        .await?;
 
     let query_sql = format!(
         "SELECT id, user_id, action::text as action, level::text as level, ip_address, details, created_at
@@ -299,8 +308,7 @@ pub async fn get_logs(
 
     let logs: Vec<LogEntry> = sqlx::query_as(&query_sql)
         .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     Ok(Json(serde_json::json!({
         "logs": logs,
@@ -376,9 +384,6 @@ pub async fn update_config(
 // ── Health ─────────────────────────────────────────────────────────
 
 pub async fn health() -> Json<serde_json::Value> {
-    // Liveness probe — stateless so it always passes once the server is running.
-    // Database health is the responsibility of the Postgres container's own
-    // healthcheck and the depends_on condition between api → postgres.
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
