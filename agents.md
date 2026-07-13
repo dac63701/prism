@@ -4,7 +4,7 @@
 
 **Always run `npm run tauri build` after completing the full todo list.**
 
-The build produces `Prism_0.1.0_x64_en-US.msi` and `Prism_0.1.0_x64-setup.exe`.
+The build produces `Prism_0.2.3_x64_en-US.msi` and `Prism_0.2.3_x64-setup.exe`.
 Confirm the build succeeds before reporting completion.
 
 ## Development Commands
@@ -115,7 +115,7 @@ Confirm the build succeeds before reporting completion.
 - Clippy: `div_ceil`, `clamp`, `is_multiple_of`, `too_many_arguments`, `unwrap_or_default`, `unnecessary_unwrap`, `field_reassign_with_default`
 - Replace `gen_random_bytes` with `gen_random_uuid` to drop pgcrypto dependency
 - SPS/PPS encoding fallback + brand logo + cargo fmt
-- Optimize, consolidate, and cleanup project-wide (tagged v0.1.0)
+- Optimize, consolidate, and cleanup project-wide
 
 ### 4K 144Hz Monitor Buffering (FIXED)
 **Root cause**: The ScreenCaptureKit SCStream fires at the display's native refresh rate (144Hz),

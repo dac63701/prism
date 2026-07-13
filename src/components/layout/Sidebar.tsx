@@ -79,7 +79,7 @@ export default function Sidebar() {
 
       <div className="px-5 py-3 border-t border-border space-y-1">
         <CloudStatus />
-        <p className="text-[11px] text-zinc-600">Prism v0.1.0</p>
+        <p className="text-[11px] text-zinc-600">Prism v0.2.3</p>
       </div>
     </aside>
   );
