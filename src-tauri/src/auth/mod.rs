@@ -86,10 +86,7 @@ impl AuthManager {
 
             loop {
                 if start.elapsed().as_secs() > 300 {
-                    let _ = app_handle.emit(
-                        "auth-error",
-                        "Sign in timed out — please try again",
-                    );
+                    let _ = app_handle.emit("auth-error", "Sign in timed out — please try again");
                     break;
                 }
 
@@ -114,10 +111,7 @@ impl AuthManager {
                     Ok(resp) => {
                         let status = resp.status();
                         let body = resp.text().await.unwrap_or_default();
-                        eprintln!(
-                            "[auth] poll returned {} {} — will retry",
-                            status, body
-                        );
+                        eprintln!("[auth] poll returned {} {} — will retry", status, body);
                     }
                     Err(e) => {
                         eprintln!("[auth] poll request failed: {e}");
