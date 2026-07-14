@@ -128,7 +128,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
             <Button
               variant="destructive"
               size="xs"
-              onClick={() => onDelete(clip.filename)}
+              onClick={(e) => { e.stopPropagation(); onDelete(clip.filename); }}
               disabled={confirming}
             >
               {confirming ? "Deleting..." : "Delete"}
@@ -136,7 +136,7 @@ function ClipCard({ clip, task, showConfirm, confirming, uploadingClip, onDelete
             <Button
               variant="ghost"
               size="xs"
-              onClick={onHideConfirm}
+              onClick={(e) => { e.stopPropagation(); onHideConfirm(); }}
             >
               Cancel
             </Button>
