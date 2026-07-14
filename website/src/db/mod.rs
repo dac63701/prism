@@ -13,7 +13,9 @@ pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
         .connect(database_url)
         .await?;
 
-    sqlx::migrate!("src/db/migrations").run(&pool).await?;
+    if let Err(e) = sqlx::migrate!("src/db/migrations").run(&pool).await {
+        tracing::error!(error = %e, "database migration failed — continuing anyway");
+    }
 
     sqlx::query(
         r#"DO $$
