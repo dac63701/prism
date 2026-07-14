@@ -271,6 +271,32 @@ fn default_display_name(email: &str, fallback: &str) -> String {
 }
 
 /// Validate email format using a regex.
+async fn ensure_unique_display_name(
+    pool: &PgPool,
+    display_name: &str,
+    email: &str,
+) -> Result<String, AppError> {
+    let base = display_name.to_string();
+    if db::users::get_user_by_display_name(pool, &base).await?.is_none() {
+        return Ok(base);
+    }
+    // Append a short suffix from the email prefix to disambiguate
+    let prefix = email.split('@').next().unwrap_or("user");
+    let max_prefix_len = 12;
+    let short_prefix = if prefix.len() > max_prefix_len {
+        &prefix[..max_prefix_len]
+    } else {
+        prefix
+    };
+    let candidate = format!("{}_{}", &base, short_prefix);
+    if db::users::get_user_by_display_name(pool, &candidate).await?.is_none() {
+        return Ok(candidate);
+    }
+    // Last resort: append random hex suffix
+    let bytes: [u8; 3] = rand::thread_rng().gen();
+    Ok(format!("{}_{}", &base, hex::encode(bytes)))
+}
+
 fn is_valid_email(email: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
@@ -292,11 +318,17 @@ async fn sync_google_user(
     google: &GoogleUserInfo,
 ) -> Result<db::users::User, AppError> {
     let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
-    let display_name = google
-        .name
-        .clone()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| default_display_name(&google.email, "Prism User"));
+    let display_name = ensure_unique_display_name(
+        pool,
+        google
+            .name
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| default_display_name(&google.email, "Prism User"))
+            .as_str(),
+        &google.email,
+    )
+    .await?;
 
     if let Some(existing) = db::users::get_user_by_google_id(pool, &google.sub).await? {
         if existing.avatar_url.as_deref() != google.picture.as_deref() {
@@ -602,6 +634,9 @@ pub async fn register(
     let display_name = body
         .display_name
         .unwrap_or_else(|| default_display_name(&email, "Prism User"));
+
+    let display_name = ensure_unique_display_name(&pool, &display_name, &email).await?;
+
     let password_hash = hash_password(&body.password)?;
     let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
     let verification_token = generate_verification_token();
@@ -731,6 +766,12 @@ pub async fn login(
         ));
     }
 
+    if user.google_id.is_some() {
+        return Err(AppError::BadRequest(
+            "This account uses Google sign-in. Please sign in with Google.".into(),
+        ));
+    }
+
     match verify_password(&body.password, &user.password_hash) {
         Ok(true) => {}
         Ok(false) => return Err(AppError::Unauthorized),
@@ -800,6 +841,12 @@ pub async fn change_password(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
+    if user.google_id.is_some() {
+        return Err(AppError::BadRequest(
+            "Google-connected accounts cannot use passwords. Sign in with Google.".into(),
+        ));
+    }
+
     if !verify_password(&body.current_password, &user.password_hash)? {
         return Err(AppError::BadRequest("Current password is incorrect".into()));
     }
@@ -821,6 +868,22 @@ pub async fn update_profile(
     auth: AuthUser,
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
+    if body.display_name.is_empty() {
+        return Err(AppError::BadRequest("Display name cannot be empty".into()));
+    }
+
+    let current = db::users::get_user_by_id(&pool, auth.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if body.display_name != current.display_name {
+        if let Some(existing) = db::users::get_user_by_display_name(&pool, &body.display_name).await? {
+            if existing.id != auth.user_id {
+                return Err(AppError::Conflict("Display name already taken".into()));
+            }
+        }
+    }
+
     db::users::update_user_profile(&pool, auth.user_id, &body.display_name).await?;
 
     let user = db::users::get_user_by_id(&pool, auth.user_id)

@@ -28,6 +28,12 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: http://localhost:8080/api/auth/google/callback
       DESKTOP_SCHEME_URL: prism://auth/callback
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-noreply@prism.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Prism}
       RUST_LOG: info
     ports:
       - "8080:8080"

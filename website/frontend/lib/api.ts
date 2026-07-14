@@ -54,6 +54,17 @@ export async function register(email: string, password: string, display_name?: s
   });
 }
 
+export async function getCurrentUser() {
+  return jsonFetch<User>("/api/auth/me", { method: "GET" });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  return jsonFetch<{ status: string }>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
 export async function verifyEmail(token: string) {
   const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
     credentials: "include",

@@ -90,11 +90,10 @@ pub async fn create_google_user(
     google_id: &str,
     avatar_url: Option<&str>,
 ) -> Result<User, sqlx::Error> {
-    let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$ZGVtby1zYWx0$ZGVtby1oYXNo";
     create_user(
         pool,
         email,
-        password_hash,
+        "",
         display_name,
         max_storage_bytes,
         Some(google_id),
@@ -331,11 +330,13 @@ pub async fn link_google_account(
     google_id: &str,
     avatar_url: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET google_id = $1, avatar_url = $2, updated_at = NOW() WHERE id = $3")
-        .bind(google_id)
-        .bind(avatar_url)
-        .bind(id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE users SET google_id = $1, avatar_url = $2, password_hash = '', updated_at = NOW() WHERE id = $3",
+    )
+    .bind(google_id)
+    .bind(avatar_url)
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }

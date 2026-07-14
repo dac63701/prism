@@ -116,6 +116,7 @@ async fn main() {
     tracing::info!("Starting Prism Server v{}", env!("CARGO_PKG_VERSION"));
     tracing::info!(
         google_configured = %(!config.google_client_id.is_empty() && !config.google_client_secret.is_empty()),
+        smtp_configured = %!config.smtp_host.is_empty(),
         jwt_secret_len = config.jwt_secret.len(),
         "config loaded",
     );

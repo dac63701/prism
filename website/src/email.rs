@@ -1,8 +1,9 @@
 use lettre::{
+    message::header::ContentType,
     transport::smtp::authentication::Credentials,
+    transport::smtp::client::{Tls, TlsParameters},
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
 };
-use lettre::message::header::ContentType;
 
 use crate::config::Config;
 
@@ -157,13 +158,22 @@ pub async fn send_verification_email(
         .body(html)
         .map_err(|e| format!("Failed to build email: {e}"))?;
 
+    let tls_parameters = TlsParameters::new(config.smtp_host.clone())
+        .map_err(|e| format!("TLS parameters error: {e}"))?;
+
+    let tls = match config.smtp_port {
+        465 => Tls::Wrapper(tls_parameters),
+        _ => Tls::Required(tls_parameters),
+    };
+
     let creds = Credentials::new(config.smtp_username.clone(), config.smtp_password.clone());
 
-    let mailer: AsyncSmtpTransport<Tokio1Executor> = AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_host)
-        .map_err(|e| format!("SMTP relay error: {e}"))?
-        .port(config.smtp_port)
-        .credentials(creds)
-        .build();
+    let mailer: AsyncSmtpTransport<Tokio1Executor> =
+        AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&config.smtp_host)
+            .port(config.smtp_port)
+            .tls(tls)
+            .credentials(creds)
+            .build();
 
     mailer
         .send(email)
