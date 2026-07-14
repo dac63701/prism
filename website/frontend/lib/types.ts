@@ -9,6 +9,7 @@ export interface User {
   role: Role;
   storage_used_bytes: number;
   max_storage_bytes: number;
+  email_verified: boolean;
   created_at: string;
 }
 

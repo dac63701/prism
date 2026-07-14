@@ -2,17 +2,19 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Mail, ShieldCheck, Eye, EyeOff } from "lucide-react";
-import { login, register, googleLoginUrl } from "@/lib/api";
+import { ArrowRight, Mail, ShieldCheck, Eye, EyeOff, CheckCircle2, RefreshCw } from "lucide-react";
+import { login, register, googleLoginUrl, resendVerification } from "@/lib/api";
 import { Button, Card, Input } from "@/components/ui";
 import { GoogleLogo } from "@/components/brand-icons";
 
 export function AuthCard({
   desktop = false,
   mode = "login",
+  verified,
 }: {
   desktop?: boolean;
   mode?: "login" | "register";
+  verified?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,11 +24,14 @@ export function AuthCard({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
 
-    if (!email.includes("@")) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email)) {
       errs.email = "Enter a valid email address";
     }
 
@@ -52,11 +57,12 @@ export function AuthCard({
 
     try {
       if (mode === "register") {
-        await register(email, password, email.split("@")[0]);
+        const result = await register(email, password, email.split("@")[0]);
+        setRegisteredEmail(result.email);
       } else {
         await login(email, password);
+        window.location.href = "/dashboard";
       }
-      window.location.href = "/dashboard";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -64,7 +70,72 @@ export function AuthCard({
     }
   }
 
+  async function handleResend() {
+    if (!registeredEmail) return;
+    setResending(true);
+    setResendSent(false);
+    try {
+      await resendVerification(registeredEmail);
+      setResendSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend verification email");
+    } finally {
+      setResending(false);
+    }
+  }
+
   const isRegister = mode === "register";
+
+  // Show registration success screen
+  if (isRegister && registeredEmail) {
+    return (
+      <Card className="w-full max-w-sm p-6 sm:p-8">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <CheckCircle2 className="h-12 w-12 text-emerald-400" />
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-white">
+              Check your email
+            </h1>
+            <p className="text-sm leading-6 text-zinc-400">
+              We sent a verification link to{" "}
+              <span className="font-medium text-zinc-200">{registeredEmail}</span>
+            </p>
+          </div>
+          <div className="w-full rounded-2xl border border-blue-400/15 bg-blue-500/10 px-4 py-3 text-left text-sm text-blue-100">
+            <p>
+              Click the link in the email to verify your account. You won&apos;t be
+              able to sign in until your email is confirmed.
+            </p>
+          </div>
+
+          {resendSent ? (
+            <p className="text-xs text-emerald-400">Verification email resent!</p>
+          ) : (
+            <button
+              type="button"
+              disabled={resending}
+              onClick={handleResend}
+              className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${resending ? "animate-spin" : ""}`} />
+              {resending ? "Sending..." : "Resend verification email"}
+            </button>
+          )}
+
+          <div className="pt-2 text-xs text-zinc-500">
+            Wrong address?{" "}
+            <button
+              type="button"
+              onClick={() => setRegisteredEmail(null)}
+              className="text-blue-300 hover:text-blue-200"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-sm p-6 sm:p-8">
@@ -82,6 +153,13 @@ export function AuthCard({
           {desktop ? " Prism will open after login." : ""}
         </p>
       </div>
+
+      {verified && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-400/15 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Email verified! You can now sign in.
+        </div>
+      )}
 
       <div className="space-y-3">
         <a

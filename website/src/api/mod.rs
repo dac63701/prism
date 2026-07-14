@@ -14,6 +14,8 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
         .route("/api/auth/google", routing::get(auth::google_start))
         .route("/api/auth/google/callback", routing::get(auth::google_callback))
         .route("/api/auth/register", routing::post(auth::register))
+        .route("/api/auth/verify-email", routing::get(auth::verify_email))
+        .route("/api/auth/resend-verification", routing::post(auth::resend_verification))
         .route("/api/auth/login", routing::post(auth::login))
         .route("/api/auth/refresh", routing::post(auth::refresh))
         .route("/api/auth/logout", routing::post(auth::logout))

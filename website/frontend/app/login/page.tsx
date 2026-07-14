@@ -13,10 +13,11 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ desktop?: string }>;
+  searchParams?: Promise<{ desktop?: string; verified?: string }>;
 }) {
   const resolved = searchParams ? await searchParams : undefined;
   const desktop = resolved?.desktop === "1" || resolved?.desktop === "true";
+  const verified = resolved?.verified === "1";
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-[#050816] px-5">
@@ -30,7 +31,7 @@ export default async function LoginPage({
           <PrismLogo className="h-10 w-10" />
           <span className="text-3xl font-bold tracking-tight text-white">PRISM</span>
         </div>
-        <AuthCard desktop={desktop} mode="login" />
+        <AuthCard desktop={desktop} mode="login" verified={verified} />
       </div>
     </div>
   );

@@ -16,6 +16,8 @@ pub struct User {
     pub storage_used_bytes: i64,
     pub max_storage_bytes: i64,
     pub is_banned: bool,
+    pub email_verified_at: Option<DateTime<Utc>>,
+    pub verification_token: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -47,6 +49,11 @@ pub struct UserListItem {
     pub is_banned: bool,
 }
 
+const USER_COLUMNS: &str = r#"id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
+           storage_used_bytes, max_storage_bytes, is_banned,
+           email_verified_at, verification_token,
+           created_at, updated_at"#;
+
 pub async fn create_user(
     pool: &PgPool,
     email: &str,
@@ -55,13 +62,14 @@ pub async fn create_user(
     max_storage_bytes: i64,
     google_id: Option<&str>,
     avatar_url: Option<&str>,
+    verification_token: Option<&str>,
 ) -> Result<User, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes, google_id, avatar_url)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
-                      storage_used_bytes, max_storage_bytes, is_banned,
-                      created_at, updated_at"#,
+        &format!(
+            r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes, google_id, avatar_url, verification_token)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING {USER_COLUMNS}"#
+        ),
     )
     .bind(email)
     .bind(password_hash)
@@ -69,6 +77,7 @@ pub async fn create_user(
     .bind(max_storage_bytes)
     .bind(google_id)
     .bind(avatar_url)
+    .bind(verification_token)
     .fetch_one(pool)
     .await
 }
@@ -90,6 +99,7 @@ pub async fn create_google_user(
         max_storage_bytes,
         Some(google_id),
         avatar_url,
+        None,
     )
     .await
 }
@@ -99,10 +109,10 @@ pub async fn get_user_by_google_id(
     google_id: &str,
 ) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
-                   storage_used_bytes, max_storage_bytes, is_banned,
-                   created_at, updated_at
-           FROM users WHERE google_id = $1"#,
+        &format!(
+            r#"SELECT {USER_COLUMNS}
+               FROM users WHERE google_id = $1"#
+        ),
     )
     .bind(google_id)
     .fetch_optional(pool)
@@ -111,10 +121,10 @@ pub async fn get_user_by_google_id(
 
 pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
-                   storage_used_bytes, max_storage_bytes, is_banned,
-                   created_at, updated_at
-           FROM users WHERE email = $1"#,
+        &format!(
+            r#"SELECT {USER_COLUMNS}
+               FROM users WHERE email = $1"#
+        ),
     )
     .bind(email)
     .fetch_optional(pool)
@@ -123,10 +133,10 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
 
 pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
-                   storage_used_bytes, max_storage_bytes, is_banned,
-                   created_at, updated_at
-           FROM users WHERE id = $1"#,
+        &format!(
+            r#"SELECT {USER_COLUMNS}
+               FROM users WHERE id = $1"#
+        ),
     )
     .bind(id)
     .fetch_optional(pool)
@@ -138,14 +148,57 @@ pub async fn get_user_by_display_name(
     display_name: &str,
 ) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
-                   storage_used_bytes, max_storage_bytes, is_banned,
-                   created_at, updated_at
-           FROM users WHERE display_name = $1"#,
+        &format!(
+            r#"SELECT {USER_COLUMNS}
+               FROM users WHERE display_name = $1"#
+        ),
     )
     .bind(display_name)
     .fetch_optional(pool)
     .await
+}
+
+pub async fn get_user_by_verification_token(
+    pool: &PgPool,
+    token: &str,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        &format!(
+            r#"SELECT {USER_COLUMNS}
+               FROM users WHERE verification_token = $1"#
+        ),
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn verify_email(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET email_verified_at = NOW(), verification_token = NULL, updated_at = NOW() WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_verification_token(
+    pool: &PgPool,
+    user_id: Uuid,
+    token: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET verification_token = $1, updated_at = NOW() WHERE id = $2"#,
+    )
+    .bind(token)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn update_user_password(

@@ -18,9 +18,13 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use regex::Regex;
+use std::sync::OnceLock;
+
 use crate::auth::{jwt, AuthUser};
 use crate::config::Config;
 use crate::db;
+use crate::email;
 use crate::errors::AppError;
 use crate::storage::StorageBackend;
 
@@ -98,6 +102,16 @@ pub struct DesktopExchangeRequest {
     code: String,
 }
 
+#[derive(Deserialize)]
+pub struct VerifyEmailQuery {
+    token: String,
+}
+
+#[derive(Deserialize)]
+pub struct ResendVerificationRequest {
+    email: String,
+}
+
 #[derive(Serialize)]
 pub struct AuthResponse {
     user: UserResponse,
@@ -115,6 +129,7 @@ pub struct UserResponse {
     role: String,
     storage_used_bytes: i64,
     max_storage_bytes: i64,
+    email_verified: bool,
     created_at: String,
 }
 
@@ -190,6 +205,7 @@ fn user_to_response(user: &db::users::User) -> UserResponse {
         role: user.role.clone(),
         storage_used_bytes: user.storage_used_bytes,
         max_storage_bytes: user.max_storage_bytes,
+        email_verified: user.email_verified_at.is_some(),
         created_at: user.created_at.to_rfc3339(),
     }
 }
@@ -279,6 +295,22 @@ fn default_display_name(email: &str, fallback: &str) -> String {
         .to_string()
 }
 
+/// Validate email format using a regex.
+fn is_valid_email(email: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(
+            r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,253}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,253}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$"
+        ).expect("valid email regex")
+    });
+    re.is_match(email)
+}
+
+fn generate_verification_token() -> String {
+    let bytes: [u8; 32] = rand::thread_rng().gen();
+    hex::encode(bytes)
+}
+
 async fn sync_google_user(
     pool: &PgPool,
     config: &Config,
@@ -313,6 +345,10 @@ async fn sync_google_user(
         .await?;
         if existing_email_user.display_name != display_name {
             db::users::update_user_profile(pool, existing_email_user.id, &display_name).await?;
+        }
+        // Google-authenticated users are verified
+        if existing_email_user.email_verified_at.is_none() {
+            db::users::verify_email(pool, existing_email_user.id).await?;
         }
         return Ok(db::users::get_user_by_id(pool, existing_email_user.id)
             .await?
@@ -571,8 +607,10 @@ pub async fn register(
     State(pool): State<PgPool>,
     State(config): State<Config>,
     Json(body): Json<RegisterRequest>,
-) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
-    if body.email.is_empty() || !body.email.contains('@') {
+) -> Result<Json<serde_json::Value>, AppError> {
+    let email = body.email.trim().to_lowercase();
+
+    if email.is_empty() || !is_valid_email(&email) {
         return Err(AppError::BadRequest("Invalid email address".into()));
     }
     if body.password.len() < 8 {
@@ -581,30 +619,118 @@ pub async fn register(
         ));
     }
 
-    let existing = db::users::get_user_by_email(&pool, &body.email).await?;
+    let existing = db::users::get_user_by_email(&pool, &email).await?;
     if existing.is_some() {
         return Err(AppError::Conflict("Email already registered".into()));
     }
 
     let display_name = body
         .display_name
-        .unwrap_or_else(|| default_display_name(&body.email, "Prism User"));
+        .unwrap_or_else(|| default_display_name(&email, "Prism User"));
     let password_hash = hash_password(&body.password)?;
     let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
+    let verification_token = generate_verification_token();
 
     let user = db::users::create_user(
         &pool,
-        &body.email,
+        &email,
         &password_hash,
         &display_name,
         max_bytes,
         None,
         None,
+        Some(&verification_token),
     )
     .await?;
 
+    // Send verification email (non-blocking — log and continue on failure)
+    let send_result = email::send_verification_email(
+        &config,
+        &user.email,
+        &user.display_name,
+        &verification_token,
+    )
+    .await;
+
+    match send_result {
+        Ok(()) => tracing::info!(user_id = %user.id, "verification email sent"),
+        Err(e) => tracing::warn!(user_id = %user.id, error = %e, "failed to send verification email"),
+    }
+
     tracing::info!(user_id = %user.id, "user_registered");
-    Ok(issue_user_auth(&user, &config).await?)
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "message": "Account created. Please check your email to verify your account.",
+        "email": user.email,
+    })))
+}
+
+pub async fn verify_email(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Query(query): Query<VerifyEmailQuery>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    if query.token.is_empty() {
+        return Err(AppError::BadRequest("Missing verification token".into()));
+    }
+
+    let user = db::users::get_user_by_verification_token(&pool, &query.token)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired verification token".into()))?;
+
+    if user.email_verified_at.is_some() {
+        // Already verified — redirect to dashboard
+        return Ok(Redirect::temporary(&format!("{}/dashboard", config.site_url.trim_end_matches('/'))));
+    }
+
+    db::users::verify_email(&pool, user.id).await?;
+
+    tracing::info!(user_id = %user.id, "email_verified");
+
+    let redirect = format!("{}/login?verified=1", config.site_url.trim_end_matches('/'));
+    Ok(Redirect::temporary(&redirect))
+}
+
+pub async fn resend_verification(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Json(body): Json<ResendVerificationRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let email = body.email.trim().to_lowercase();
+
+    if email.is_empty() || !is_valid_email(&email) {
+        return Err(AppError::BadRequest("Invalid email address".into()));
+    }
+
+    let user = db::users::get_user_by_email(&pool, &email)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("No account found with this email".into()))?;
+
+    if user.email_verified_at.is_some() {
+        return Err(AppError::BadRequest("Email is already verified".into()));
+    }
+
+    let new_token = generate_verification_token();
+    db::users::set_verification_token(&pool, user.id, &new_token).await?;
+
+    let send_result = email::send_verification_email(
+        &config,
+        &user.email,
+        &user.display_name,
+        &new_token,
+    )
+    .await;
+
+    match send_result {
+        Ok(()) => tracing::info!(user_id = %user.id, "verification email resent"),
+        Err(e) => tracing::warn!(user_id = %user.id, error = %e, "failed to resend verification email"),
+    }
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "message": "Verification email sent. Please check your inbox.",
+    })))
 }
 
 pub async fn login(
@@ -623,6 +749,12 @@ pub async fn login(
 
     if user.is_banned {
         return Err(AppError::Forbidden);
+    }
+
+    if user.email_verified_at.is_none() {
+        return Err(AppError::BadRequest(
+            "Please verify your email before signing in. Check your inbox or request a new verification email.".into(),
+        ));
     }
 
     match verify_password(&body.password, &user.password_hash) {

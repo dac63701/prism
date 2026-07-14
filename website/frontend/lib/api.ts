@@ -48,9 +48,28 @@ export async function login(email: string, password: string) {
 }
 
 export async function register(email: string, password: string, display_name?: string) {
-  return jsonFetch<AuthResponse>("/api/auth/register", {
+  return jsonFetch<{ status: string; message: string; email: string }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password, display_name }),
+  });
+}
+
+export async function verifyEmail(token: string) {
+  const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
+    credentials: "include",
+    redirect: "manual",
+  });
+  if (response.status >= 400) {
+    const text = await response.text();
+    throw new Error(text || "Verification failed");
+  }
+  return response;
+}
+
+export async function resendVerification(email: string) {
+  return jsonFetch<{ status: string; message: string }>("/api/auth/resend-verification", {
+    method: "POST",
+    body: JSON.stringify({ email }),
   });
 }
 

@@ -29,6 +29,12 @@ pub struct Config {
     pub google_client_secret: String,
     pub google_redirect_uri: String,
     pub desktop_scheme_url: String,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_username: String,
+    pub smtp_password: String,
+    pub smtp_from_address: String,
+    pub smtp_from_name: String,
 }
 
 impl Config {
@@ -66,6 +72,12 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:8080/api/auth/google/callback".into()),
             desktop_scheme_url: env::var("DESKTOP_SCHEME_URL")
                 .unwrap_or_else(|_| "prism://auth/callback".into()),
+            smtp_host: env::var("SMTP_HOST").unwrap_or_default(),
+            smtp_port: env::var("SMTP_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(587),
+            smtp_username: env::var("SMTP_USERNAME").unwrap_or_default(),
+            smtp_password: env::var("SMTP_PASSWORD").unwrap_or_default(),
+            smtp_from_address: env::var("SMTP_FROM_ADDRESS").unwrap_or_else(|_| "noreply@prism.com".into()),
+            smtp_from_name: env::var("SMTP_FROM_NAME").unwrap_or_else(|_| "Prism".into()),
         }
     }
 

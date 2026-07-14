@@ -2,6 +2,7 @@ mod api;
 mod auth;
 mod config;
 mod db;
+mod email;
 mod errors;
 mod middleware;
 mod storage;
