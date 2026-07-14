@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # ── Runtime ──
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates ffmpeg
 
 WORKDIR /app
 COPY --from=backend /usr/local/bin/prism-server ./

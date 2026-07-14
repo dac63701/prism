@@ -49,20 +49,23 @@ fn generate_pattern_placeholder(
         std::fs::create_dir_all(parent)?;
     }
 
-    let mut img = image::RgbImage::new(dim.0.max(1), dim.1.max(1));
-    for y in 0..dim.1 {
-        for x in 0..dim.0 {
-            let r = ((x ^ y) % 256) as u8;
-            let g = ((x * y) % 256) as u8;
-            let b = ((x + y) % 256) as u8;
-            img.put_pixel(x, y, image::Rgb([r, g, b]));
+    let w = dim.0.max(1);
+    let h = dim.1.max(1);
+    let mut img = image::RgbImage::new(w, h);
+    for y in 0..h {
+        let t = y as f64 / h as f64;
+        for x in 0..w {
+            let cx = x as f64 / w as f64;
+            let diag = ((cx + t) * 0.5).clamp(0.0, 1.0);
+            let base = (70.0 + diag * 30.0) as u8;
+            img.put_pixel(x, y, image::Rgb([base, base.saturating_sub(10), base.saturating_sub(20)]));
         }
     }
 
     let file_out = std::fs::File::create(thumb_path)?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file_out, 80);
     encoder
-        .encode(&img, dim.0, dim.1, image::ExtendedColorType::Rgb8)
+        .encode(&img, w, h, image::ExtendedColorType::Rgb8)
         .map_err(|e| AppError::Internal(format!("JPEG encode failed: {e}")))?;
 
     Ok(())
