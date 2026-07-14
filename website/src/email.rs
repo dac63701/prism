@@ -126,10 +126,10 @@ pub async fn send_verification_email(
     token: &str,
 ) -> Result<(), String> {
     if config.smtp_host.is_empty() {
-        tracing::warn!(
-            "SMTP not configured — skipping verification email to {to_email}. Token: {token}"
+        tracing::error!(
+            "SMTP not configured — verification email NOT sent to {to_email}. Token: {token}"
         );
-        return Ok(());
+        return Err("SMTP is not configured. Set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD.".into());
     }
 
     let verify_url = format!(

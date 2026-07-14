@@ -643,18 +643,16 @@ pub async fn register(
     )
     .await?;
 
-    // Send verification email (non-blocking — log and continue on failure)
-    let send_result = email::send_verification_email(
+    // Send verification email
+    if let Err(e) = email::send_verification_email(
         &config,
         &user.email,
         &user.display_name,
         &verification_token,
     )
-    .await;
-
-    match send_result {
-        Ok(()) => tracing::info!(user_id = %user.id, "verification email sent"),
-        Err(e) => tracing::warn!(user_id = %user.id, error = %e, "failed to send verification email"),
+    .await
+    {
+        tracing::error!(user_id = %user.id, error = %e, "failed to send verification email");
     }
 
     tracing::info!(user_id = %user.id, "user_registered");
@@ -714,18 +712,19 @@ pub async fn resend_verification(
     let new_token = generate_verification_token();
     db::users::set_verification_token(&pool, user.id, &new_token).await?;
 
-    let send_result = email::send_verification_email(
+    email::send_verification_email(
         &config,
         &user.email,
         &user.display_name,
         &new_token,
     )
-    .await;
+    .await
+    .map_err(|e| {
+        tracing::error!(user_id = %user.id, error = %e, "failed to resend verification email");
+        AppError::Internal("Failed to send verification email. Please try again later.".into())
+    })?;
 
-    match send_result {
-        Ok(()) => tracing::info!(user_id = %user.id, "verification email resent"),
-        Err(e) => tracing::warn!(user_id = %user.id, error = %e, "failed to resend verification email"),
-    }
+    tracing::info!(user_id = %user.id, "verification email resent");
 
     Ok(Json(serde_json::json!({
         "status": "ok",
