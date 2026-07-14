@@ -4,6 +4,7 @@ export interface User {
   id: string;
   email: string;
   display_name: string;
+  real_name?: string;
   avatar_url?: string | null;
   google_connected?: boolean;
   role: Role;

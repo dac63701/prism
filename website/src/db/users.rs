@@ -12,6 +12,7 @@ pub struct User {
     pub google_id: Option<String>,
     pub avatar_url: Option<String>,
     pub display_name: String,
+    pub real_name: String,
     pub role: String,
     pub storage_used_bytes: i64,
     pub max_storage_bytes: i64,
@@ -52,7 +53,7 @@ pub struct UserListItem {
     pub is_banned: bool,
 }
 
-const USER_COLUMNS: &str = r#"id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
+const USER_COLUMNS: &str = r#"id, email, password_hash, google_id, avatar_url, display_name, real_name, role::text as role,
            storage_used_bytes, max_storage_bytes, is_banned,
            email_verified_at, verification_token, verification_code,
            totp_secret, totp_enabled,
@@ -288,7 +289,7 @@ pub async fn update_user_password(
     Ok(())
 }
 
-pub async fn update_user_profile(
+pub async fn update_user_display_name(
     pool: &PgPool,
     id: Uuid,
     display_name: &str,
@@ -298,6 +299,23 @@ pub async fn update_user_profile(
         .bind(id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn update_user_profile(
+    pool: &PgPool,
+    id: Uuid,
+    display_name: &str,
+    real_name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE users SET display_name = $1, real_name = $2, updated_at = NOW() WHERE id = $3",
+    )
+    .bind(display_name)
+    .bind(real_name)
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

@@ -66,7 +66,8 @@ pub struct ChangePasswordRequest {
 
 #[derive(Deserialize)]
 pub struct UpdateProfileRequest {
-    display_name: String,
+    display_name: Option<String>,
+    real_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -148,6 +149,7 @@ pub struct UserResponse {
     id: Uuid,
     email: String,
     display_name: String,
+    real_name: String,
     avatar_url: Option<String>,
     google_connected: bool,
     role: String,
@@ -206,6 +208,7 @@ fn user_to_response(user: &db::users::User) -> UserResponse {
         id: user.id,
         email: user.email.clone(),
         display_name: user.display_name.clone(),
+        real_name: user.real_name.clone(),
         avatar_url: user.avatar_url.clone(),
         google_connected: user.google_id.is_some(),
         role: user.role.clone(),
@@ -372,7 +375,7 @@ async fn sync_google_user(
             db::users::update_user_avatar(pool, existing.id, google.picture.as_deref()).await?;
         }
         if existing.display_name != display_name {
-            db::users::update_user_profile(pool, existing.id, &display_name).await?;
+            db::users::update_user_display_name(pool, existing.id, &display_name).await?;
         }
         return Ok(db::users::get_user_by_id(pool, existing.id)
             .await?
@@ -388,7 +391,8 @@ async fn sync_google_user(
         )
         .await?;
         if existing_email_user.display_name != display_name {
-            db::users::update_user_profile(pool, existing_email_user.id, &display_name).await?;
+            db::users::update_user_display_name(pool, existing_email_user.id, &display_name)
+                .await?;
         }
         // Google-authenticated users are verified
         if existing_email_user.email_verified_at.is_none() {
@@ -1122,23 +1126,34 @@ pub async fn update_profile(
     auth: AuthUser,
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    if body.display_name.is_empty() {
-        return Err(AppError::BadRequest("Display name cannot be empty".into()));
-    }
-
     let current = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    if body.display_name != current.display_name {
-        if let Some(existing) = db::users::get_user_by_display_name(&pool, &body.display_name).await? {
+    let display_name = body
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&current.display_name);
+    let real_name = body
+        .real_name
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&current.real_name);
+
+    if display_name.is_empty() {
+        return Err(AppError::BadRequest("Display name cannot be empty".into()));
+    }
+
+    if display_name != current.display_name {
+        if let Some(existing) = db::users::get_user_by_display_name(&pool, display_name).await? {
             if existing.id != auth.user_id {
                 return Err(AppError::Conflict("Display name already taken".into()));
             }
         }
     }
 
-    db::users::update_user_profile(&pool, auth.user_id, &body.display_name).await?;
+    db::users::update_user_profile(&pool, auth.user_id, display_name, real_name).await?;
 
     let user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?

@@ -75,6 +75,13 @@ export async function changePassword(currentPassword: string, newPassword: strin
   });
 }
 
+export async function updateProfile(displayName: string, realName: string) {
+  return jsonFetch<User>("/api/auth/update-profile", {
+    method: "POST",
+    body: JSON.stringify({ display_name: displayName, real_name: realName }),
+  });
+}
+
 export async function verifyEmail(token: string) {
   const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
     credentials: "include",

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, Input, SectionHeading, Button } from "@/components/ui";
-import { getCurrentUser, changePassword, tfaSetup, tfaEnable, tfaDisable } from "@/lib/api";
+import { getCurrentUser, changePassword, tfaSetup, tfaEnable, tfaDisable, updateProfile } from "@/lib/api";
 import type { User } from "@/lib/types";
 import { ShieldCheck, Eye, EyeOff, KeyRound, AlertCircle, Smartphone, CheckCircle2 } from "lucide-react";
 import QRCode from "qrcode";
@@ -15,8 +15,11 @@ export default function SettingsPage() {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [realName, setRealName] = useState("");
 
   // 2FA state
   const [tfaSecret, setTfaSecret] = useState("");
@@ -30,10 +33,38 @@ export default function SettingsPage() {
 
   useEffect(() => {
     getCurrentUser()
-      .then(setUser)
+      .then((currentUser) => {
+        setUser(currentUser);
+        setDisplayName(currentUser.display_name);
+        setRealName(currentUser.real_name ?? "");
+      })
       .catch(() => setError("Failed to load user data"))
       .finally(() => setLoadingUser(false));
   }, []);
+
+  async function handleProfileUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    if (!displayName.trim()) {
+      setError("Display name cannot be empty");
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      const updated = await updateProfile(displayName.trim(), realName.trim());
+      setUser(updated);
+      setDisplayName(updated.display_name);
+      setRealName(updated.real_name ?? "");
+      setSuccess("Profile updated successfully");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update profile");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -127,7 +158,52 @@ export default function SettingsPage() {
           <div className="h-5 w-40 animate-pulse rounded bg-white/10" />
           <div className="h-4 w-64 animate-pulse rounded bg-white/5" />
         </Card>
-      ) : user?.google_connected ? (
+      ) : (
+        <form onSubmit={handleProfileUpdate}>
+          <Card className="space-y-6 p-6">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Profile</h2>
+              <p className="mt-1 text-sm text-zinc-400">
+                Your display name is public. Your real name is only visible to you.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-sm text-zinc-300">Display name</span>
+                <Input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm text-zinc-300">Real name</span>
+                <Input
+                  value={realName}
+                  onChange={(e) => setRealName(e.target.value)}
+                  placeholder="Optional"
+                />
+              </label>
+            </div>
+            {error && (
+              <div className="flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {success}
+              </div>
+            )}
+            <Button type="submit" variant="secondary" disabled={savingProfile}>
+              {savingProfile ? "Saving..." : "Save profile"}
+            </Button>
+          </Card>
+        </form>
+      )}
+
+      {loadingUser ? null : user?.google_connected ? (
         <Card className="space-y-4 p-6">
           <div className="flex items-center gap-3">
             <KeyRound className="h-5 w-5 text-zinc-500" />
