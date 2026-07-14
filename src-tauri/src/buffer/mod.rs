@@ -93,15 +93,31 @@ impl BufferManager {
     /// Save a clip from the last N seconds of buffer.
     pub fn clip(&self, duration: Duration) -> Vec<StoredFrame> {
         #[cfg(target_os = "macos")]
-        let now = std::time::Instant::now();
+        {
+            let now = std::time::Instant::now();
+            let mut frames = self.buffer.clip_since(duration, now);
+            // Truncate to exactly `duration` seconds from the keyframe start.
+            // clip_since backdates to a keyframe before the cutoff, adding up to
+            // 1 GOP of overhead (~1 s).  Without truncation every clip would be
+            // `duration + keyframe_overhead` seconds.
+            if let Some(first) = frames.first() {
+                let end_ts = first.timestamp + duration;
+                if let Some(pos) = frames.iter().position(|f| f.timestamp > end_ts) {
+                    frames.truncate(pos);
+                }
+            }
+            frames
+        }
         #[cfg(not(target_os = "macos"))]
-        let now = self
-            .buffer
-            .all_frames()
-            .last()
-            .map(|f| f.timestamp)
-            .unwrap_or_else(std::time::Instant::now);
-        self.buffer.clip_since(duration, now)
+        {
+            let now = self
+                .buffer
+                .all_frames()
+                .last()
+                .map(|f| f.timestamp)
+                .unwrap_or_else(std::time::Instant::now);
+            self.buffer.clip_since(duration, now)
+        }
     }
 
     /// Save a clip from the entire buffer.
