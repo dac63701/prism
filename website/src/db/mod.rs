@@ -27,19 +27,5 @@ pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
-    // Run after sqlx migrations to avoid VersionMismatch errors on re-deploy.
-    // Both statements are idempotent via IF NOT EXISTS.
-    sqlx::query(
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ",
-    )
-    .execute(&pool)
-    .await?;
-
-    sqlx::query(
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token TEXT",
-    )
-    .execute(&pool)
-    .await?;
-
     Ok(pool)
 }
