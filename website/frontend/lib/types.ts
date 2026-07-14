@@ -10,6 +10,7 @@ export interface User {
   storage_used_bytes: number;
   max_storage_bytes: number;
   email_verified: boolean;
+  totp_enabled?: boolean;
   created_at: string;
 }
 

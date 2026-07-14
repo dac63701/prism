@@ -5,6 +5,8 @@ use uuid::Uuid;
 
 use crate::errors::AppError;
 
+pub const TEMP_2FA_EXPIRY_SECS: usize = 120;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccessClaims {
     pub sub: Uuid,
@@ -158,6 +160,47 @@ pub fn verify_refresh_token(token: &str, secret: &str) -> Result<RefreshClaims, 
     .map_err(|_| AppError::Unauthorized)?;
 
     if claims.typ != "refresh" {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(claims)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Temp2faClaims {
+    pub sub: Uuid,
+    pub role: String,
+    pub typ: String,
+    pub exp: usize,
+    pub iat: usize,
+}
+
+pub fn create_temp_2fa_token(user_id: Uuid, role: &str, secret: &str) -> Result<String, AppError> {
+    let now = chrono::Utc::now().timestamp() as usize;
+    let claims = Temp2faClaims {
+        sub: user_id,
+        role: role.to_string(),
+        typ: "2fa_temp".into(),
+        exp: now + TEMP_2FA_EXPIRY_SECS,
+        iat: now,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| AppError::Internal(format!("JWT encode error: {e}")))
+}
+
+pub fn verify_temp_2fa_token(token: &str, secret: &str) -> Result<Temp2faClaims, AppError> {
+    let claims = decode::<Temp2faClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map(|d| d.claims)
+    .map_err(|_| AppError::Unauthorized)?;
+
+    if claims.typ != "2fa_temp" {
         return Err(AppError::Unauthorized);
     }
     Ok(claims)

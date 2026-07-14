@@ -8,6 +8,8 @@ mod middleware;
 mod storage;
 mod thumbnail;
 
+use std::sync::Arc;
+
 use axum::{
     extract::{ConnectInfo, Request},
     http::{header, HeaderValue, Method, StatusCode},
@@ -25,7 +27,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: config::Config,
     pub storage: storage::local::LocalStorage,
-    pub rate_limiter: middleware::rate_limit::RateLimiter,
+    pub rate_limiter: Arc<middleware::rate_limit::RateLimiter>,
     pub desktop_code_cache: api::auth::DesktopCodeCache,
 }
 
@@ -35,7 +37,7 @@ impl Clone for AppState {
             pool: self.pool.clone(),
             config: self.config.clone(),
             storage: self.storage.clone(),
-            rate_limiter: middleware::rate_limit::RateLimiter::new(self.config.rate_limit_per_min),
+            rate_limiter: Arc::clone(&self.rate_limiter),
             desktop_code_cache: self.desktop_code_cache.clone(),
         }
     }
@@ -139,7 +141,7 @@ async fn main() {
     }
 
     let site_origin: HeaderValue = config.site_url.parse().expect("Invalid SITE_URL");
-    let rate_limiter = middleware::rate_limit::RateLimiter::new(config.rate_limit_per_min);
+    let rate_limiter = Arc::new(middleware::rate_limit::RateLimiter::new(config.rate_limit_per_min));
 
     let state = AppState {
         pool,
@@ -208,14 +210,14 @@ async fn main() {
     .parse()
     .expect("Invalid server address");
 
-    tracing::info!("Listening on http://{}", addr);
-
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .unwrap_or_else(|e| {
             eprintln!("FATAL: Failed to bind to {addr}: {e}");
             std::process::exit(1);
         });
+
+    tracing::info!("Listening on http://{}", listener.local_addr().unwrap_or(addr));
     if let Err(e) = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),

@@ -9,10 +9,20 @@ import type {
 
 type JsonRecord = Record<string, unknown>;
 
+function parseError(response: Response, text: string): string {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.error || parsed.message || text;
+  } catch {
+    return text || response.statusText;
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || response.statusText);
+    const message = parseError(response, text);
+    throw new Error(message);
   }
 
   return (await response.json()) as T;
@@ -41,7 +51,7 @@ export function googleLoginUrl(next = "/dashboard", desktop = false) {
 
 
 export async function login(email: string, password: string) {
-  return jsonFetch<AuthResponse>("/api/auth/login", {
+  return jsonFetch<AuthResponse | { requires_2fa: boolean; temp_token: string }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
@@ -81,6 +91,40 @@ export async function resendVerification(email: string) {
   return jsonFetch<{ status: string; message: string }>("/api/auth/resend-verification", {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyCode(email: string, code: string) {
+  return jsonFetch<AuthResponse>("/api/auth/verify-code", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
+  });
+}
+
+export async function tfaSetup() {
+  return jsonFetch<{ secret: string; uri: string }>("/api/auth/2fa/setup", {
+    method: "POST",
+  });
+}
+
+export async function tfaEnable(code: string) {
+  return jsonFetch<{ status: string }>("/api/auth/2fa/enable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function tfaDisable(code: string) {
+  return jsonFetch<{ status: string }>("/api/auth/2fa/disable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function tfaLogin(tempToken: string, code: string) {
+  return jsonFetch<AuthResponse>("/api/auth/2fa/login", {
+    method: "POST",
+    body: JSON.stringify({ temp_token: tempToken, code }),
   });
 }
 

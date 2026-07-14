@@ -7,7 +7,7 @@ use lettre::{
 
 use crate::config::Config;
 
-fn verification_email_html(username: &str, verify_url: &str, site_url: &str) -> String {
+fn verification_email_html(username: &str, verify_url: &str, verification_code: &str, site_url: &str) -> String {
     format!(r##"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -56,11 +56,25 @@ fn verification_email_html(username: &str, verify_url: &str, site_url: &str) -> 
                   </td>
                 </tr>
                 <tr>
-                  <td align="center" style="padding-bottom:20px;">
+                  <td align="center" style="padding-bottom:12px;">
                     <p style="margin:0;font-size:15px;line-height:1.6;color:#a1a1aa;">
                       Hi <strong style="color:#e4e4e7;">{username}</strong>,<br>
                       Click the button below to verify your email address and start saving your best moments.
                     </p>
+                  </td>
+                </tr>
+
+                <!-- Verification Code -->
+                <tr>
+                  <td align="center" style="padding-bottom:24px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                      <tr>
+                        <td style="background:#0f172a;border:1px solid #1f2a44;border-radius:16px;padding:20px 32px;">
+                          <p style="margin:0 0 8px 0;font-size:12px;text-transform:uppercase;letter-spacing:0.2em;color:#93c5fd;opacity:0.6;">Verification code</p>
+                          <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:0.15em;color:#e4e4e7;font-family:monospace;">{verification_code}</p>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
 
@@ -91,7 +105,7 @@ fn verification_email_html(username: &str, verify_url: &str, site_url: &str) -> 
                 <tr>
                   <td style="border-top:1px solid #1f2a44;padding-top:20px;">
                     <p style="margin:0;font-size:13px;line-height:1.5;color:#52525b;">
-                      This link expires in 24 hours. If you did not create an account on Prism, you can safely ignore this email.
+                      Enter the 6-digit code on the sign-in page to verify instantly. This code expires in 24 hours. If you did not create an account on Prism, you can safely ignore this email.
                     </p>
                   </td>
                 </tr>
@@ -115,6 +129,7 @@ fn verification_email_html(username: &str, verify_url: &str, site_url: &str) -> 
 </html>"##,
         username = username,
         verify_url = verify_url,
+        verification_code = verification_code,
         site_url = site_url,
         year = chrono::Utc::now().format("%Y"),
     )
@@ -125,10 +140,11 @@ pub async fn send_verification_email(
     to_email: &str,
     to_name: &str,
     token: &str,
+    code: &str,
 ) -> Result<(), String> {
     if config.smtp_host.is_empty() {
         tracing::error!(
-            "SMTP not configured — verification email NOT sent to {to_email}. Token: {token}"
+            "SMTP not configured — verification email NOT sent to {to_email}. Token: {token}, Code: {code}"
         );
         return Err("SMTP is not configured. Set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD.".into());
     }
@@ -139,7 +155,7 @@ pub async fn send_verification_email(
         token
     );
 
-    let html = verification_email_html(to_name, &verify_url, &config.site_url);
+    let html = verification_email_html(to_name, &verify_url, code, &config.site_url);
 
     let from_name = &config.smtp_from_name;
     let from_address = &config.smtp_from_address;

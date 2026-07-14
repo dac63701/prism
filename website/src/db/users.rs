@@ -18,6 +18,9 @@ pub struct User {
     pub is_banned: bool,
     pub email_verified_at: Option<DateTime<Utc>>,
     pub verification_token: Option<String>,
+    pub verification_code: Option<String>,
+    pub totp_secret: Option<String>,
+    pub totp_enabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -51,7 +54,8 @@ pub struct UserListItem {
 
 const USER_COLUMNS: &str = r#"id, email, password_hash, google_id, avatar_url, display_name, role::text as role,
            storage_used_bytes, max_storage_bytes, is_banned,
-           email_verified_at, verification_token,
+           email_verified_at, verification_token, verification_code,
+           totp_secret, totp_enabled,
            created_at, updated_at"#;
 
 pub async fn create_user(
@@ -63,11 +67,12 @@ pub async fn create_user(
     google_id: Option<&str>,
     avatar_url: Option<&str>,
     verification_token: Option<&str>,
+    verification_code: Option<&str>,
 ) -> Result<User, sqlx::Error> {
     sqlx::query_as::<_, User>(
         &format!(
-            r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes, google_id, avatar_url, verification_token)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
+            r#"INSERT INTO users (email, password_hash, display_name, max_storage_bytes, google_id, avatar_url, verification_token, verification_code)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING {USER_COLUMNS}"#
         ),
     )
@@ -78,6 +83,7 @@ pub async fn create_user(
     .bind(google_id)
     .bind(avatar_url)
     .bind(verification_token)
+    .bind(verification_code)
     .fetch_one(pool)
     .await
 }
@@ -98,6 +104,7 @@ pub async fn create_google_user(
         max_storage_bytes,
         Some(google_id),
         avatar_url,
+        None,
         None,
     )
     .await
@@ -177,7 +184,7 @@ pub async fn verify_email(
     user_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        r#"UPDATE users SET email_verified_at = NOW(), verification_token = NULL, updated_at = NOW() WHERE id = $1"#,
+        r#"UPDATE users SET email_verified_at = NOW(), verification_token = NULL, verification_code = NULL, updated_at = NOW() WHERE id = $1"#,
     )
     .bind(user_id)
     .execute(pool)
@@ -194,6 +201,74 @@ pub async fn set_verification_token(
         r#"UPDATE users SET verification_token = $1, updated_at = NOW() WHERE id = $2"#,
     )
     .bind(token)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_verification_code(
+    pool: &PgPool,
+    user_id: Uuid,
+    code: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET verification_code = $1, updated_at = NOW() WHERE id = $2"#,
+    )
+    .bind(code)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_user_by_verification_code(
+    pool: &PgPool,
+    email: &str,
+    code: &str,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        &format!(
+            r#"SELECT {USER_COLUMNS}
+               FROM users
+               WHERE email = $1 AND verification_code = $2"#
+        ),
+    )
+    .bind(email)
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn set_totp_secret(
+    pool: &PgPool,
+    user_id: Uuid,
+    secret: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET totp_secret = $1, updated_at = NOW() WHERE id = $2"#,
+    )
+    .bind(secret)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn enable_totp(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET totp_enabled = true, updated_at = NOW() WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn disable_totp(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET totp_enabled = false, totp_secret = NULL, updated_at = NOW() WHERE id = $1"#,
+    )
     .bind(user_id)
     .execute(pool)
     .await?;

@@ -20,6 +20,8 @@ use uuid::Uuid;
 use regex::Regex;
 use std::sync::OnceLock;
 
+use totp_rs::{Algorithm, Secret, TOTP};
+
 use crate::auth::{jwt, AuthUser};
 use crate::config::Config;
 use crate::db;
@@ -106,6 +108,34 @@ pub struct ResendVerificationRequest {
     email: String,
 }
 
+#[derive(Deserialize)]
+pub struct VerifyCodeRequest {
+    email: String,
+    code: String,
+}
+
+#[derive(Deserialize)]
+pub struct TfaSetupRequest {
+    code: String,
+}
+
+#[derive(Deserialize)]
+pub struct TfaDisableRequest {
+    code: String,
+}
+
+#[derive(Serialize)]
+pub struct TfaSetupResponse {
+    secret: String,
+    uri: String,
+}
+
+#[derive(Deserialize)]
+pub struct TfaLoginRequest {
+    temp_token: String,
+    code: String,
+}
+
 #[derive(Serialize)]
 pub struct AuthResponse {
     user: UserResponse,
@@ -124,6 +154,7 @@ pub struct UserResponse {
     storage_used_bytes: i64,
     max_storage_bytes: i64,
     email_verified: bool,
+    totp_enabled: bool,
     created_at: String,
 }
 
@@ -181,6 +212,7 @@ fn user_to_response(user: &db::users::User) -> UserResponse {
         storage_used_bytes: user.storage_used_bytes,
         max_storage_bytes: user.max_storage_bytes,
         email_verified: user.email_verified_at.is_some(),
+        totp_enabled: user.totp_enabled,
         created_at: user.created_at.to_rfc3339(),
     }
 }
@@ -310,6 +342,11 @@ fn is_valid_email(email: &str) -> bool {
 fn generate_verification_token() -> String {
     let bytes: [u8; 32] = rand::thread_rng().gen();
     hex::encode(bytes)
+}
+
+fn generate_verification_code() -> String {
+    let code: u32 = rand::thread_rng().gen_range(100_000..1_000_000);
+    code.to_string()
 }
 
 async fn sync_google_user(
@@ -640,6 +677,7 @@ pub async fn register(
     let password_hash = hash_password(&body.password)?;
     let max_bytes = (config.default_max_storage_gb * 1_073_741_824) as i64;
     let verification_token = generate_verification_token();
+    let verification_code = generate_verification_code();
 
     let user = db::users::create_user(
         &pool,
@@ -650,6 +688,7 @@ pub async fn register(
         None,
         None,
         Some(&verification_token),
+        Some(&verification_code),
     )
     .await?;
 
@@ -659,6 +698,7 @@ pub async fn register(
         &user.email,
         &user.display_name,
         &verification_token,
+        &verification_code,
     )
     .await
     {
@@ -700,6 +740,33 @@ pub async fn verify_email(
     Ok(Redirect::temporary(&redirect))
 }
 
+pub async fn verify_code(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Json(body): Json<VerifyCodeRequest>,
+) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
+    let email = body.email.trim().to_lowercase();
+    let code = body.code.trim();
+
+    if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
+        return Err(AppError::BadRequest("Invalid verification code".into()));
+    }
+
+    let user = db::users::get_user_by_verification_code(&pool, &email, code)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired verification code".into()))?;
+
+    if user.email_verified_at.is_some() {
+        return Err(AppError::BadRequest("Email is already verified".into()));
+    }
+
+    db::users::verify_email(&pool, user.id).await?;
+
+    tracing::info!(user_id = %user.id, "email_verified_via_code");
+
+    issue_user_auth(&user, &config).await
+}
+
 pub async fn resend_verification(
     State(pool): State<PgPool>,
     State(config): State<Config>,
@@ -720,13 +787,16 @@ pub async fn resend_verification(
     }
 
     let new_token = generate_verification_token();
+    let new_code = generate_verification_code();
     db::users::set_verification_token(&pool, user.id, &new_token).await?;
+    db::users::set_verification_code(&pool, user.id, &new_code).await?;
 
     email::send_verification_email(
         &config,
         &user.email,
         &user.display_name,
         &new_token,
+        &new_code,
     )
     .await
     .map_err(|e| {
@@ -746,7 +816,7 @@ pub async fn login(
     State(pool): State<PgPool>,
     State(config): State<Config>,
     Json(body): Json<LoginRequest>,
-) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), AppError> {
     let user = match db::users::get_user_by_email(&pool, &body.email).await {
         Ok(Some(u)) => u,
         Ok(None) => return Err(AppError::Unauthorized),
@@ -781,16 +851,200 @@ pub async fn login(
         }
     }
 
-    match issue_user_auth(&user, &config).await {
+    if user.totp_enabled {
+        let temp_token = jwt::create_temp_2fa_token(user.id, &user.role, &config.jwt_secret)?;
+        tracing::info!(user_id = %user.id, "2fa_challenge_issued");
+        return Ok((
+            HeaderMap::new(),
+            Json(serde_json::json!({
+                "requires_2fa": true,
+                "temp_token": temp_token,
+            })),
+        ));
+    }
+
+    let (headers, Json(auth_response)) = match issue_user_auth(&user, &config).await {
         Ok(response) => {
             tracing::info!(user_id = %user.id, "user_logged_in");
-            Ok(response)
+            response
         }
         Err(e) => {
             tracing::error!(user_id = %user.id, error = %e, "login_token_issuance_error");
-            Err(AppError::Internal("Failed to issue authentication tokens".into()))
+            return Err(AppError::Internal("Failed to issue authentication tokens".into()));
         }
+    };
+
+    let value = serde_json::to_value(&auth_response)
+        .map_err(|e| AppError::Internal(format!("JSON error: {e}")))?;
+    Ok((headers, Json(value)))
+}
+
+fn totp_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+pub async fn tfa_login(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Json(body): Json<TfaLoginRequest>,
+) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
+    let claims = jwt::verify_temp_2fa_token(&body.temp_token, &config.jwt_secret)?;
+
+    let user = db::users::get_user_by_id(&pool, claims.sub)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if !user.totp_enabled {
+        return Err(AppError::BadRequest("Two-factor authentication is not enabled for this account".into()));
     }
+
+    let secret_b32 = user.totp_secret.as_ref()
+        .ok_or(AppError::Internal("Missing 2FA secret".into()))?;
+
+    let secret_bytes = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret_b32)
+        .ok_or_else(|| AppError::Internal("Invalid TOTP secret encoding".into()))?;
+
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret_bytes,
+        Some("Prism".into()),
+        user.email.clone(),
+    )
+    .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
+
+    if !totp.check(&body.code, totp_now()) {
+        return Err(AppError::BadRequest("Invalid two-factor code".into()));
+    }
+
+    tracing::info!(user_id = %user.id, "2fa_login_success");
+    issue_user_auth(&user, &config).await
+}
+
+pub async fn tfa_setup(
+    State(pool): State<PgPool>,
+    State(_config): State<Config>,
+    auth: AuthUser,
+) -> Result<Json<TfaSetupResponse>, AppError> {
+    let user = db::users::get_user_by_id(&pool, auth.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if user.totp_enabled {
+        return Err(AppError::BadRequest("Two-factor authentication is already enabled".into()));
+    }
+
+    let secret = Secret::generate_secret();
+    let secret_bytes = secret.to_bytes()
+        .map_err(|e| AppError::Internal(format!("TOTP secret error: {e}")))?;
+    let secret_b32 = base32::encode(base32::Alphabet::Rfc4648 { padding: false }, &secret_bytes);
+
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret_bytes,
+        Some("Prism".into()),
+        user.email.clone(),
+    )
+    .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
+
+    let uri = totp.get_url();
+
+    db::users::set_totp_secret(&pool, user.id, Some(&secret_b32)).await?;
+
+    Ok(Json(TfaSetupResponse {
+        secret: secret_b32,
+        uri,
+    }))
+}
+
+pub async fn tfa_enable(
+    State(pool): State<PgPool>,
+    State(_config): State<Config>,
+    auth: AuthUser,
+    Json(body): Json<TfaSetupRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = db::users::get_user_by_id(&pool, auth.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if user.totp_enabled {
+        return Err(AppError::BadRequest("Two-factor authentication is already enabled".into()));
+    }
+
+    let secret_b32 = user.totp_secret.as_ref()
+        .ok_or(AppError::BadRequest("No 2FA secret found. Call setup first.".into()))?;
+
+    let secret_bytes = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret_b32)
+        .ok_or_else(|| AppError::Internal("Invalid TOTP secret encoding".into()))?;
+
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret_bytes,
+        Some("Prism".into()),
+        user.email.clone(),
+    )
+    .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
+
+    if !totp.check(&body.code, totp_now()) {
+        return Err(AppError::BadRequest("Invalid code. Make sure your authenticator app is configured correctly.".into()));
+    }
+
+    db::users::enable_totp(&pool, user.id).await?;
+    tracing::info!(user_id = %user.id, "2fa_enabled");
+
+    Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
+pub async fn tfa_disable(
+    State(pool): State<PgPool>,
+    State(_config): State<Config>,
+    auth: AuthUser,
+    Json(body): Json<TfaDisableRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = db::users::get_user_by_id(&pool, auth.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if !user.totp_enabled {
+        return Err(AppError::BadRequest("Two-factor authentication is not enabled".into()));
+    }
+
+    let secret_b32 = user.totp_secret.as_ref()
+        .ok_or(AppError::Internal("Missing 2FA secret".into()))?;
+
+    let secret_bytes = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret_b32)
+        .ok_or_else(|| AppError::Internal("Invalid TOTP secret encoding".into()))?;
+
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret_bytes,
+        Some("Prism".into()),
+        user.email.clone(),
+    )
+    .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
+
+    if !totp.check(&body.code, totp_now()) {
+        return Err(AppError::BadRequest("Invalid two-factor code".into()));
+    }
+
+    db::users::disable_totp(&pool, user.id).await?;
+    tracing::info!(user_id = %user.id, "2fa_disabled");
+
+    Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
 pub async fn refresh(

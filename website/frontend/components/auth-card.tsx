@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Mail, ShieldCheck, Eye, EyeOff, CheckCircle2, RefreshCw } from "lucide-react";
-import { login, register, googleLoginUrl, resendVerification } from "@/lib/api";
+import { ArrowRight, Mail, ShieldCheck, Eye, EyeOff, CheckCircle2, RefreshCw, KeyRound, Smartphone } from "lucide-react";
+import { login, register, googleLoginUrl, resendVerification, verifyCode, tfaLogin } from "@/lib/api";
 import { Button, Card, Input } from "@/components/ui";
 import { GoogleLogo } from "@/components/brand-icons";
 
@@ -27,6 +27,13 @@ export function AuthCard({
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendSent, setResendSent] = useState(false);
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [requires2fa, setRequires2fa] = useState(false);
+  const [tempToken, setTempToken] = useState("");
+  const [tfaCode, setTfaCode] = useState("");
+  const [verifyingTfa, setVerifyingTfa] = useState(false);
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
@@ -60,11 +67,27 @@ export function AuthCard({
         const result = await register(email, password, email.split("@")[0]);
         setRegisteredEmail(result.email);
       } else {
-        await login(email, password);
-        window.location.href = "/dashboard";
+        try {
+          const response = await login(email, password);
+          const data = response as unknown as Record<string, unknown>;
+          if (data?.requires_2fa === true && typeof data?.temp_token === "string") {
+            setRequires2fa(true);
+            setTempToken(data.temp_token as string);
+            setError(null);
+            return;
+          }
+          window.location.href = "/dashboard";
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Something went wrong";
+          if (msg.toLowerCase().includes("verify your email")) {
+            setShowCodeInput(true);
+          }
+          throw err;
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -81,6 +104,48 @@ export function AuthCard({
       setError(err instanceof Error ? err.message : "Failed to resend verification email");
     } finally {
       setResending(false);
+    }
+  }
+
+  async function handleVerifyCode() {
+    if (!email || verificationCode.length !== 6) return;
+    setVerifyingCode(true);
+    setError(null);
+    try {
+      await verifyCode(email, verificationCode);
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setVerifyingCode(false);
+    }
+  }
+
+  async function handleResendFromLogin() {
+    if (!email) return;
+    setResending(true);
+    setResendSent(false);
+    try {
+      await resendVerification(email);
+      setResendSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend verification email");
+    } finally {
+      setResending(false);
+    }
+  }
+
+  async function handleTfaLogin() {
+    if (!tempToken || tfaCode.length !== 6) return;
+    setVerifyingTfa(true);
+    setError(null);
+    try {
+      await tfaLogin(tempToken, tfaCode);
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Two-factor verification failed");
+    } finally {
+      setVerifyingTfa(false);
     }
   }
 
@@ -291,11 +356,88 @@ export function AuthCard({
           </p>
         ) : null}
 
+        {!isRegister && showCodeInput ? (
+          <div className="space-y-3 rounded-2xl border border-blue-400/15 bg-blue-500/10 p-4">
+            <div className="flex items-center gap-2 text-sm text-blue-100">
+              <KeyRound className="h-4 w-4 shrink-0" />
+              <span>Enter the 6-digit code from your email</span>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                className="flex-1 text-center font-mono text-lg tracking-widest"
+                maxLength={6}
+                disabled={verifyingCode}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={verificationCode.length !== 6 || verifyingCode}
+                onClick={handleVerifyCode}
+                className="shrink-0"
+              >
+                {verifyingCode ? "Verifying..." : "Verify"}
+              </Button>
+            </div>
+            {resendSent ? (
+              <p className="text-xs text-emerald-400">Code sent! Check your inbox.</p>
+            ) : (
+              <button
+                type="button"
+                disabled={resending}
+                onClick={handleResendFromLogin}
+                className="flex items-center gap-1.5 text-xs text-blue-300 hover:text-blue-200 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3 w-3 ${resending ? "animate-spin" : ""}`} />
+                {resending ? "Sending..." : "Resend code"}
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {!isRegister && requires2fa ? (
+          <div className="space-y-3 rounded-2xl border border-blue-400/15 bg-blue-500/10 p-4">
+            <div className="flex items-center gap-2 text-sm text-blue-100">
+              <Smartphone className="h-4 w-4 shrink-0" />
+              <span>Enter the code from your authenticator app</span>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={tfaCode}
+                onChange={(e) => setTfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                className="flex-1 text-center font-mono text-lg tracking-widest"
+                maxLength={6}
+                disabled={verifyingTfa}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={tfaCode.length !== 6 || verifyingTfa}
+                onClick={handleTfaLogin}
+                className="shrink-0"
+              >
+                {verifyingTfa ? "Verifying..." : "Verify"}
+              </Button>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setRequires2fa(false); setError(null); }}
+              className="text-xs text-zinc-500 hover:text-zinc-400"
+            >
+              Go back
+            </button>
+          </div>
+        ) : null}
+
         <Button
           type="submit"
           className="w-full"
           variant="secondary"
-          disabled={loading}
+          disabled={loading || requires2fa}
+          style={requires2fa ? { display: "none" } : undefined}
         >
           {loading
             ? isRegister
