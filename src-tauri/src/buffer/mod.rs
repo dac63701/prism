@@ -92,6 +92,9 @@ impl BufferManager {
 
     /// Save a clip from the last N seconds of buffer.
     pub fn clip(&self, duration: Duration) -> Vec<StoredFrame> {
+        #[cfg(target_os = "macos")]
+        let now = std::time::Instant::now();
+        #[cfg(not(target_os = "macos"))]
         let now = self
             .buffer
             .all_frames()
