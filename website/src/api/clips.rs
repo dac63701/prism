@@ -152,7 +152,7 @@ pub async fn upload_clip(
             tracing::warn!("Failed to write temp video for thumbnail: {e}");
         }
 
-        if let Err(e) = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 320) {
+        if let Err(e) = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 640) {
             tracing::warn!("Failed to generate thumbnail: {e}");
         }
 
