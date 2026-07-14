@@ -32,12 +32,6 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
             "/api/auth/update-profile",
             routing::post(auth::update_profile),
         )
-        .route("/api/auth/api-keys", routing::get(auth::list_api_keys))
-        .route("/api/auth/api-keys", routing::post(auth::create_api_key))
-        .route(
-            "/api/auth/api-keys/{id}",
-            routing::delete(auth::revoke_api_key),
-        )
         .route("/api/clips/upload", routing::post(clips::upload_clip))
         .route("/api/clips", routing::get(clips::list_clips))
         .route("/api/clips/{id}", routing::get(clips::get_clip))

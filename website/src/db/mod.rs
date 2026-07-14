@@ -1,7 +1,6 @@
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
-pub mod api_keys;
 pub mod clips;
 pub mod config;
 pub mod tags;

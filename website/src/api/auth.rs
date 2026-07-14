@@ -14,7 +14,6 @@ use axum::{
 use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -66,11 +65,6 @@ pub struct ChangePasswordRequest {
 #[derive(Deserialize)]
 pub struct UpdateProfileRequest {
     display_name: String,
-}
-
-#[derive(Deserialize)]
-pub struct CreateApiKeyRequest {
-    name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -133,12 +127,6 @@ pub struct UserResponse {
     created_at: String,
 }
 
-#[derive(Serialize)]
-pub struct ApiKeyCreatedResponse {
-    key: String,
-    key_id: Uuid,
-}
-
 #[derive(Deserialize)]
 struct TokenResponse {
     access_token: String,
@@ -180,19 +168,6 @@ fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())
-}
-
-fn generate_api_key() -> (String, String, String) {
-    let key_bytes: [u8; 32] = rand::thread_rng().gen();
-    let key_hex = hex::encode(key_bytes);
-    let full_key = format!("prism_{}", key_hex);
-    let prefix: String = key_hex.chars().take(12).collect();
-
-    let mut hasher = Sha256::new();
-    hasher.update(full_key.as_bytes());
-    let hash = hex::encode(hasher.finalize());
-
-    (full_key, hash, prefix)
 }
 
 fn user_to_response(user: &db::users::User) -> UserResponse {
@@ -884,47 +859,6 @@ pub async fn delete_account(
 
     db::users::delete_user(&pool, user.id).await?;
     tracing::info!(user_id = %user.id, "user_deleted");
-
-    Ok(Json(serde_json::json!({"status": "ok"})))
-}
-
-pub async fn list_api_keys(
-    State(pool): State<PgPool>,
-    auth: AuthUser,
-) -> Result<Json<Vec<db::api_keys::ApiKeyListItem>>, AppError> {
-    let keys = db::api_keys::list_api_keys(&pool, auth.user_id).await?;
-    Ok(Json(keys))
-}
-
-pub async fn create_api_key(
-    State(pool): State<PgPool>,
-    auth: AuthUser,
-    Json(body): Json<CreateApiKeyRequest>,
-) -> Result<Json<ApiKeyCreatedResponse>, AppError> {
-    let (full_key, hash, prefix) = generate_api_key();
-    let name = body.name.unwrap_or_default();
-
-    let key = db::api_keys::insert_api_key(&pool, auth.user_id, &name, &hash, &prefix).await?;
-
-    tracing::info!(user_id = %auth.user_id, key_id = %key.id, "api_key_created");
-
-    Ok(Json(ApiKeyCreatedResponse {
-        key: full_key,
-        key_id: key.id,
-    }))
-}
-
-pub async fn revoke_api_key(
-    State(pool): State<PgPool>,
-    auth: AuthUser,
-    axum::extract::Path(key_id): axum::extract::Path<Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let revoked = db::api_keys::revoke_api_key(&pool, key_id, auth.user_id).await?;
-    if !revoked {
-        return Err(AppError::NotFound("API key not found".into()));
-    }
-
-    tracing::info!(user_id = %auth.user_id, key_id = %key_id, "api_key_revoked");
 
     Ok(Json(serde_json::json!({"status": "ok"})))
 }

@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
-pub mod api_key;
 pub mod jwt;
 
 #[derive(Debug, Clone)]
@@ -118,24 +117,6 @@ where
         let pool = PgPool::from_ref(state);
 
         if let Some(key) = jwt::extract_session_token(parts) {
-            if key.starts_with("prism_") {
-                match api_key::verify_api_key(&pool, &key).await {
-                    Ok(user_id) => {
-                        return Ok(ApiKeyOrJwtAuth(AuthUser {
-                            user_id,
-                            role: "user".into(),
-                        }));
-                    }
-                    Err(_) => {
-                        return Err((
-                            StatusCode::UNAUTHORIZED,
-                            Json(json!({"error": "Invalid API key"})),
-                        )
-                            .into_response());
-                    }
-                }
-            }
-
             let config = Config::from_ref(state);
             match jwt::verify_access_token(&key, &config.jwt_secret) {
                 Ok(claims) => {
