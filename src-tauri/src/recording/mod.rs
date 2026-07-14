@@ -635,8 +635,7 @@ impl Recorder {
         let th = target_height.max(1);
         let (nv12, nv12_width, nv12_height): (Vec<u8>, u32, u32) =
             if frame.pixel_format == crate::capture::PixelFormat::Bgra {
-                if frame.width != target_width || frame.height != target_height
-                {
+                if frame.width != target_width || frame.height != target_height {
                     match resize_bgra_frame(
                         &frame.data,
                         frame.width,
