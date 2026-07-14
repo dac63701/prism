@@ -148,10 +148,14 @@ export async function getClip(id: string) {
 }
 
 export async function deleteClip(id: string) {
-  await fetch(`/api/clips/${id}`, {
+  const response = await fetch(`/api/clips/${id}`, {
     method: "DELETE",
     credentials: "include",
   });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(parseError(response, text));
+  }
 }
 
 export async function updateClipVisibility(id: string, visibility: "public" | "private" | "unlisted") {
@@ -187,8 +191,12 @@ export async function listAdminUsers(search = "") {
 }
 
 export async function deleteAdminUser(id: string) {
-  await fetch(`/api/admin/users/${id}`, {
+  const response = await fetch(`/api/admin/users/${id}`, {
     method: "DELETE",
     credentials: "include",
   });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(parseError(response, text));
+  }
 }
