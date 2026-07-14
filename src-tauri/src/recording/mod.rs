@@ -205,8 +205,8 @@ impl Recorder {
             inner.resolution_is_native = is_native_resolution(&rs.resolution);
             inner.native_bitrate_kbps = rs.bitrate_kbps;
             if inner.resolution_is_native {
-                inner.target_width = 0;
-                inner.target_height = 0;
+                inner.target_width = 1920;
+                inner.target_height = 1080;
             } else {
                 let (w, h) = resolution_dimensions(&rs.resolution);
                 inner.target_width = w;
@@ -635,8 +635,7 @@ impl Recorder {
         let th = target_height.max(1);
         let (nv12, nv12_width, nv12_height): (Vec<u8>, u32, u32) =
             if frame.pixel_format == crate::capture::PixelFormat::Bgra {
-                if !resolution_is_native
-                    && (frame.width != target_width || frame.height != target_height)
+                if frame.width != target_width || frame.height != target_height
                 {
                     match resize_bgra_frame(
                         &frame.data,

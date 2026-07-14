@@ -92,7 +92,12 @@ impl BufferManager {
 
     /// Save a clip from the last N seconds of buffer.
     pub fn clip(&self, duration: Duration) -> Vec<StoredFrame> {
-        let now = std::time::Instant::now();
+        let now = self
+            .buffer
+            .all_frames()
+            .last()
+            .map(|f| f.timestamp)
+            .unwrap_or_else(std::time::Instant::now);
         self.buffer.clip_since(duration, now)
     }
 
