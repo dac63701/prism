@@ -1,2 +1,0 @@
-ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token TEXT;
