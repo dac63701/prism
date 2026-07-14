@@ -692,8 +692,7 @@ pub async fn register(
     )
     .await?;
 
-    // Send verification email
-    if let Err(e) = email::send_verification_email(
+    email::send_verification_email(
         &config,
         &user.email,
         &user.display_name,
@@ -701,9 +700,10 @@ pub async fn register(
         &verification_code,
     )
     .await
-    {
+    .map_err(|e| {
         tracing::error!(user_id = %user.id, error = %e, "failed to send verification email");
-    }
+        AppError::Internal("Failed to send verification email. Please try again later.".into())
+    })?;
 
     tracing::info!(user_id = %user.id, "user_registered");
 
