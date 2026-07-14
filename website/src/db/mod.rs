@@ -27,5 +27,26 @@ pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+    // Ensures the columns exist even if migration 002 was corrupted
+    // in a stale Docker build. DO block swallows "duplicate_column"
+    // so these are safe to run every startup.
+    sqlx::query(
+        r#"DO $$ BEGIN
+               ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMPTZ;
+           EXCEPTION WHEN duplicate_column THEN NULL;
+           END $$;"#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"DO $$ BEGIN
+               ALTER TABLE users ADD COLUMN verification_token TEXT;
+           EXCEPTION WHEN duplicate_column THEN NULL;
+           END $$;"#,
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }
