@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listAdminUsers } from "@/lib/server-api";
 import { Card, Panel, SectionHeading } from "@/components/ui";
+import { DeleteUserButton } from "@/components/delete-user-button";
 
 export default async function AdminUsersPage({
   searchParams,
@@ -32,6 +33,7 @@ export default async function AdminUsersPage({
                 <Link href={`/admin/users/${user.id}`} className="text-blue-300 hover:text-blue-200">
                   Details
                 </Link>
+                <DeleteUserButton userId={user.id} userName={user.display_name || user.email} />
               </div>
             </Panel>
           ))}

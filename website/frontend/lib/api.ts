@@ -130,3 +130,10 @@ export async function listAdminUsers(search = "") {
     { method: "GET" }
   );
 }
+
+export async function deleteAdminUser(id: string) {
+  await fetch(`/api/admin/users/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+}
