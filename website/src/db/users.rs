@@ -25,6 +25,8 @@ pub struct User {
     pub two_factor_method: Option<String>,
     pub email_2fa_code: Option<String>,
     pub email_2fa_code_expires_at: Option<DateTime<Utc>>,
+    pub failed_login_attempts: i32,
+    pub locked_until: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -61,6 +63,7 @@ const USER_COLUMNS: &str = r#"id, email, password_hash, google_id, avatar_url, d
            email_verified_at, verification_token, verification_code,
            totp_secret, totp_enabled,
            two_factor_method, email_2fa_code, email_2fa_code_expires_at,
+           failed_login_attempts, locked_until,
            created_at, updated_at"#;
 
 pub async fn create_user(
@@ -431,6 +434,53 @@ pub async fn list_users(
     .await?;
 
     Ok((users, total))
+}
+
+pub async fn get_failed_login_attempts(pool: &PgPool, email: &str) -> Result<(i32, Option<DateTime<Utc>>), sqlx::Error> {
+    let row = sqlx::query_as::<_, (i32, Option<DateTime<Utc>>)>(
+        r#"SELECT failed_login_attempts, locked_until FROM users WHERE email = $1"#,
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.unwrap_or((0, None)))
+}
+
+pub async fn increment_failed_login_attempts(pool: &PgPool, email: &str, max_attempts: i32, lockout_minutes: i32) -> Result<(), sqlx::Error> {
+    let lock_until = Utc::now() + chrono::Duration::try_minutes(lockout_minutes as i64).unwrap();
+    sqlx::query(
+        r#"UPDATE users
+           SET failed_login_attempts = failed_login_attempts + 1,
+               locked_until = CASE WHEN failed_login_attempts + 1 >= $2 THEN $3 ELSE locked_until END,
+               updated_at = NOW()
+           WHERE email = $1"#,
+    )
+    .bind(email)
+    .bind(max_attempts)
+    .bind(lock_until)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn reset_failed_login_attempts(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET failed_login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE email = $1"#,
+    )
+    .bind(email)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn reset_failed_login_attempts_by_id(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"UPDATE users SET failed_login_attempts = 0, locked_until = NULL, updated_at = NOW() WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn delete_user(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {

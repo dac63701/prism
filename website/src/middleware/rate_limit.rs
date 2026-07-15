@@ -39,18 +39,21 @@ impl TokenBucket {
     }
 }
 
-/// Per-IP/user rate limiter using token bucket algorithm.
 pub struct RateLimiter {
     buckets: Mutex<HashMap<String, TokenBucket>>,
     capacity: f64,
+    auth_capacity: f64,
 }
 
 impl RateLimiter {
     pub fn new(requests_per_min: u64) -> Self {
         let capacity = requests_per_min.max(1) as f64;
+        // Auth endpoints get a stricter cap: 10 requests per minute per key
+        let auth_capacity = 10.0;
         Self {
             buckets: Mutex::new(HashMap::new()),
             capacity,
+            auth_capacity,
         }
     }
 
@@ -62,7 +65,16 @@ impl RateLimiter {
         bucket.consume()
     }
 
-    /// Remove stale entries to prevent memory growth.
+    /// Check against an auth-scoped rate limit (stricter: 10 req/min per key).
+    /// Returns true if allowed, false if rate limited.
+    pub fn check_auth(&self, key: &str) -> bool {
+        let mut buckets = self.buckets.lock().unwrap();
+        let bucket = buckets.entry(format!("auth:{key}")).or_insert_with(|| {
+            TokenBucket::new(self.auth_capacity, self.auth_capacity / 60.0)
+        });
+        bucket.consume()
+    }
+
     pub fn cleanup(&self) {
         let mut buckets = self.buckets.lock().unwrap();
         buckets.retain(|_, b| {

@@ -9,6 +9,9 @@ import type {
 
 type JsonRecord = Record<string, unknown>;
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 300_000;
+
 function parseError(response: Response, text: string): string {
   try {
     const parsed = JSON.parse(text);
@@ -29,15 +32,32 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "include",
-    headers: {
-      ...(init?.headers ?? {}),
-      "Content-Type": "application/json",
-    },
-  });
-  return readJson<T>(response);
+  const timeoutMs = path.startsWith("/api/clips/upload")
+    ? UPLOAD_TIMEOUT_MS
+    : DEFAULT_TIMEOUT_MS;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(path, {
+      ...init,
+      signal: controller.signal,
+      credentials: "include",
+      headers: {
+        ...(init?.headers ?? {}),
+        "Content-Type": "application/json",
+      },
+    });
+    return readJson<T>(response);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function googleLoginUrl(next = "/dashboard", desktop = false) {
@@ -83,15 +103,27 @@ export async function updateProfile(displayName: string, realName: string) {
 }
 
 export async function verifyEmail(token: string) {
-  const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
-    credentials: "include",
-    redirect: "manual",
-  });
-  if (response.status >= 400) {
-    const text = await response.text();
-    throw new Error(text || "Verification failed");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
+      credentials: "include",
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    if (response.status >= 400) {
+      const text = await response.text();
+      throw new Error(text || "Verification failed");
+    }
+    return response;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response;
 }
 
 export async function resendVerification(email: string) {
@@ -169,13 +201,25 @@ export async function getClip(id: string) {
 }
 
 export async function deleteClip(id: string) {
-  const response = await fetch(`/api/clips/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(parseError(response, text));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetch(`/api/clips/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(parseError(response, text));
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -212,12 +256,24 @@ export async function listAdminUsers(search = "") {
 }
 
 export async function deleteAdminUser(id: string) {
-  const response = await fetch(`/api/admin/users/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(parseError(response, text));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetch(`/api/admin/users/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(parseError(response, text));
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

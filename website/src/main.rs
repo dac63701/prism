@@ -174,6 +174,7 @@ async fn main() {
     let app = api::add_api_routes(Router::<AppState>::new())
         .route("/s/{share_id}", get(api::public::serve_share_page))
         .route("/u/{username}", get(api::public::serve_profile_page))
+        .layer(axum_middleware::from_fn(middleware::timeout::timeout_middleware))
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
@@ -235,13 +236,32 @@ async fn rate_limit_middleware(
     request: Request,
     next: axum::middleware::Next,
 ) -> impl axum::response::IntoResponse {
-    let key = format!("ip:{}", addr);
-    if !state.rate_limiter.check(&key) {
+    let path = request.uri().path();
+    let is_auth_endpoint = path.starts_with("/api/auth/login")
+        || path.starts_with("/api/auth/register")
+        || path.starts_with("/api/auth/2fa/")
+        || path.starts_with("/api/auth/verify-code")
+        || path.starts_with("/api/auth/resend-verification")
+        || path.starts_with("/api/auth/change-password");
+
+    let ip_key = format!("ip:{}", addr);
+
+    if is_auth_endpoint {
+        // Stricter rate limit for auth endpoints: 10 req/min per IP
+        if !state.rate_limiter.check_auth(&ip_key) {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                axum::Json(serde_json::json!({"error": "Too many requests. Please slow down."})),
+            )
+                .into_response();
+        }
+    } else if !state.rate_limiter.check(&ip_key) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             axum::Json(serde_json::json!({"error": "Rate limit exceeded"})),
         )
             .into_response();
     }
+
     next.run(request).await
 }

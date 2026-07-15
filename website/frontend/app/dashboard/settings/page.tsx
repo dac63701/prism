@@ -1,11 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Card, Input, SectionHeading, Button } from "@/components/ui";
 import { getCurrentUser, changePassword, tfaSetup, tfaEnable, tfaDisable, tfaSendCode, updateProfile } from "@/lib/api";
 import type { User } from "@/lib/types";
 import { ShieldCheck, Eye, EyeOff, KeyRound, AlertCircle, Smartphone, CheckCircle2, X, Mail, ArrowLeft, Loader2 } from "lucide-react";
 import QRCode from "qrcode";
+
+function useDebounceSubmit() {
+  const lastSubmit = useRef(0);
+  const minInterval = 1500;
+
+  const canSubmit = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSubmit.current < minInterval) {
+      return false;
+    }
+    lastSubmit.current = now;
+    return true;
+  }, []);
+
+  return canSubmit;
+}
+
+function parseAuthError(msg: string): string {
+  const lower = msg.toLowerCase();
+  if (lower.includes("locked") || lower.includes("try again in")) return msg;
+  if (lower.includes("rate limit") || lower.includes("too many requests")) return "Too many attempts. Please wait a moment before trying again.";
+  if (lower.includes("timed out")) return "Request timed out. Please check your connection and try again.";
+  if (lower.includes("recently sent")) return "A code was recently sent. Please wait before requesting a new one.";
+  return msg;
+}
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +45,7 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [realName, setRealName] = useState("");
+  const debounce = useDebounceSubmit();
 
   // 2FA state
   const [showTfaModal, setShowTfaModal] = useState(false);
@@ -80,6 +106,8 @@ export default function SettingsPage() {
       return;
     }
 
+    if (!debounce()) return;
+
     setSaving(true);
     try {
       await changePassword(currentPassword, newPassword);
@@ -87,13 +115,14 @@ export default function SettingsPage() {
       setCurrentPassword("");
       setNewPassword("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to change password");
+      setError(parseAuthError(err instanceof Error ? err.message : "Failed to change password"));
     } finally {
       setSaving(false);
     }
   }
 
   function handleTfaMethodSelect(method: "totp" | "email") {
+    if (!debounce()) return;
     setTfaMethod(method);
     setSettingUpTfa(true);
     setError(null);
@@ -125,6 +154,7 @@ export default function SettingsPage() {
 
   async function handleTfaEnable() {
     if (tfaCode.length !== 6) return;
+    if (!debounce()) return;
     setEnablingTfa(true);
     setError(null);
     try {
@@ -140,7 +170,7 @@ export default function SettingsPage() {
       setQrDataUrl("");
       setCodeSent(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to enable 2FA");
+      setError(parseAuthError(err instanceof Error ? err.message : "Failed to enable 2FA"));
     } finally {
       setEnablingTfa(false);
     }
@@ -148,6 +178,7 @@ export default function SettingsPage() {
 
   async function handleTfaDisable() {
     if (disableTfaCode.length !== 6) return;
+    if (!debounce()) return;
     setDisablingTfa(true);
     setError(null);
     try {
@@ -158,31 +189,33 @@ export default function SettingsPage() {
       const updated = await getCurrentUser();
       setUser(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disable 2FA");
+      setError(parseAuthError(err instanceof Error ? err.message : "Failed to disable 2FA"));
     } finally {
       setDisablingTfa(false);
     }
   }
 
   async function handleTfaResendCode() {
+    if (!debounce()) return;
     setError(null);
     setCodeSent(false);
     try {
       await tfaSendCode();
       setCodeSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send code");
+      setError(parseAuthError(err instanceof Error ? err.message : "Failed to send code"));
     }
   }
 
   async function handleTfaSendDisableCode() {
+    if (!debounce()) return;
     setError(null);
     setSuccess(null);
     try {
       await tfaSendCode();
       setSuccess("Code sent! Check your email.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send code");
+      setError(parseAuthError(err instanceof Error ? err.message : "Failed to send code"));
     }
   }
 

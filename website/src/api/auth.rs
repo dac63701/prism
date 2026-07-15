@@ -660,6 +660,37 @@ pub async fn desktop_exchange(
     Ok((StatusCode::OK, Json(auth)))
 }
 
+const MAX_CHANGE_PASSWORD_ATTEMPTS: i32 = 3;
+
+fn constant_time_verify(a: &str, b: &str) -> bool {
+    // Simple constant-time comparison using SHA-256 to mitigate timing attacks
+    use sha2::{Digest, Sha256};
+    let hash_a = Sha256::digest(a.as_bytes());
+    let hash_b = Sha256::digest(b.as_bytes());
+    // Compare the hashes in constant time using XOR
+    let result = hash_a
+        .iter()
+        .zip(hash_b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y));
+    result == 0
+}
+
+async fn check_account_locked(pool: &PgPool, email: &str) -> Result<(), AppError> {
+    let (_attempts, locked_until) = db::users::get_failed_login_attempts(pool, email).await?;
+    if let Some(locked_until) = locked_until {
+        if Utc::now() < locked_until {
+            let remaining = locked_until
+                .signed_duration_since(Utc::now())
+                .num_seconds()
+                .max(0);
+            return Err(AppError::BadRequest(format!(
+                "Account is temporarily locked. Try again in {remaining} seconds."
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub async fn register(
     State(pool): State<PgPool>,
     State(config): State<Config>,
@@ -760,19 +791,36 @@ pub async fn verify_code(
     let email = body.email.trim().to_lowercase();
     let code = body.code.trim();
 
+    // Anti-brute-force: check account lockout before processing
+    check_account_locked(&pool, &email).await?;
+
     if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
         return Err(AppError::BadRequest("Invalid verification code".into()));
     }
 
-    let user = db::users::get_user_by_verification_code(&pool, &email, code)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("Invalid or expired verification code".into()))?;
+    let user = match db::users::get_user_by_verification_code(&pool, &email, code).await? {
+        Some(u) => u,
+        None => {
+            // Track failed verification attempt
+            let _ = db::users::increment_failed_login_attempts(
+                &pool,
+                &email,
+                config.max_failed_login_attempts,
+                config.login_lockout_minutes,
+            )
+            .await;
+            return Err(AppError::BadRequest("Invalid or expired verification code".into()));
+        }
+    };
 
     if user.email_verified_at.is_some() {
         return Err(AppError::BadRequest("Email is already verified".into()));
     }
 
     db::users::verify_email(&pool, user.id).await?;
+
+    // Reset failed attempts on successful verification
+    let _ = db::users::reset_failed_login_attempts(&pool, &email).await;
 
     tracing::info!(user_id = %user.id, "email_verified_via_code");
 
@@ -796,6 +844,15 @@ pub async fn resend_verification(
 
     if user.email_verified_at.is_some() {
         return Err(AppError::BadRequest("Email is already verified".into()));
+    }
+
+    // Rate limit: only allow resending verification once per 60 seconds
+    let cooldown = user.updated_at + chrono::Duration::try_seconds(60).unwrap();
+    let remaining = cooldown.signed_duration_since(Utc::now()).num_seconds();
+    if remaining > 0 {
+        return Err(AppError::BadRequest(format!(
+            "Please wait {remaining} seconds before requesting a new verification email."
+        )));
     }
 
     let new_token = generate_verification_token();
@@ -828,9 +885,26 @@ pub async fn login(
     State(config): State<Config>,
     Json(body): Json<LoginRequest>,
 ) -> Result<(HeaderMap, Json<serde_json::Value>), AppError> {
-    let user = match db::users::get_user_by_email(&pool, &body.email).await {
+    let email = body.email.trim().to_lowercase();
+
+    // Anti-brute-force: check account lockout before any processing
+    check_account_locked(&pool, &email).await?;
+
+    let user = match db::users::get_user_by_email(&pool, &email).await {
         Ok(Some(u)) => u,
-        Ok(None) => return Err(AppError::Unauthorized),
+        Ok(None) => {
+            // Track failed attempt even for non-existent emails to prevent email enumeration
+            // via timing differences
+            let _ = db::users::increment_failed_login_attempts(
+                &pool,
+                &email,
+                config.max_failed_login_attempts,
+                config.login_lockout_minutes,
+            ).await;
+            // Use constant-time comparison against a dummy hash to prevent timing attacks
+            let _ = constant_time_verify(&body.password, "00000000000000000000000000000000");
+            return Err(AppError::Unauthorized);
+        }
         Err(e) => {
             tracing::error!(error = %e, "login_db_error");
             return Err(AppError::Internal("Database error during login".into()));
@@ -853,14 +927,27 @@ pub async fn login(
         ));
     }
 
-    match verify_password(&body.password, &user.password_hash) {
-        Ok(true) => {}
-        Ok(false) => return Err(AppError::Unauthorized),
+    let password_valid = match verify_password(&body.password, &user.password_hash) {
+        Ok(true) => true,
+        Ok(false) => false,
         Err(e) => {
             tracing::error!(error = %e, "login_password_verify_error");
             return Err(AppError::Internal("Password verification failed".into()));
         }
+    };
+
+    if !password_valid {
+        let _ = db::users::increment_failed_login_attempts(
+            &pool,
+            &email,
+            config.max_failed_login_attempts,
+            config.login_lockout_minutes,
+        ).await;
+        return Err(AppError::Unauthorized);
     }
+
+    // Successful login: reset failed attempts
+    let _ = db::users::reset_failed_login_attempts(&pool, &email).await;
 
     let tfa_method = user.two_factor_method.as_deref().unwrap_or("");
     if tfa_method == "totp" || (tfa_method.is_empty() && user.totp_enabled) {
@@ -930,11 +1017,24 @@ pub async fn tfa_login(
     let method = body.method.as_deref().unwrap_or("totp");
 
     if method == "email" {
-        let user = db::users::get_user_by_email_2fa_code(&pool, claims.sub, &body.code)
-            .await?
-            .ok_or(AppError::BadRequest("Invalid or expired verification code".into()))?;
+        let user = match db::users::get_user_by_email_2fa_code(&pool, claims.sub, &body.code).await? {
+            Some(u) => u,
+            None => {
+                // Track failed 2FA attempt by user
+                if let Ok(Some(u)) = db::users::get_user_by_id(&pool, claims.sub).await {
+                    let _ = db::users::increment_failed_login_attempts(
+                        &pool,
+                        &u.email,
+                        config.max_failed_login_attempts,
+                        config.login_lockout_minutes,
+                    ).await;
+                }
+                return Err(AppError::BadRequest("Invalid or expired verification code".into()));
+            }
+        };
 
         db::users::set_email_2fa_code(&pool, user.id, None, None).await?;
+        let _ = db::users::reset_failed_login_attempts_by_id(&pool, user.id).await;
         tracing::info!(user_id = %user.id, "email_2fa_login_success");
         return issue_user_auth(&user, &config).await;
     }
@@ -967,9 +1067,16 @@ pub async fn tfa_login(
     .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
 
     if !totp.check(&body.code, totp_now()) {
+        let _ = db::users::increment_failed_login_attempts(
+            &pool,
+            &user.email,
+            config.max_failed_login_attempts,
+            config.login_lockout_minutes,
+        ).await;
         return Err(AppError::BadRequest("Invalid two-factor code".into()));
     }
 
+    let _ = db::users::reset_failed_login_attempts_by_id(&pool, user.id).await;
     tracing::info!(user_id = %user.id, "2fa_login_success");
     issue_user_auth(&user, &config).await
 }
@@ -1143,6 +1250,16 @@ pub async fn tfa_send_code(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
+    // Rate limit: only allow resending 2FA code once per 30 seconds
+    if let Some(expires_at) = user.email_2fa_code_expires_at {
+        let remaining = expires_at.signed_duration_since(Utc::now()).num_seconds();
+        if remaining > 270 {
+            return Err(AppError::BadRequest(
+                "A verification code was recently sent. Please wait before requesting a new one.".into(),
+            ));
+        }
+    }
+
     let code = generate_verification_code();
     let expires_at = Utc::now() + chrono::Duration::try_minutes(5).unwrap();
     db::users::set_email_2fa_code(&pool, user.id, Some(&code), Some(expires_at)).await?;
@@ -1168,6 +1285,16 @@ pub async fn tfa_send_code_login(
     let user = db::users::get_user_by_id(&pool, claims.sub)
         .await?
         .ok_or(AppError::Unauthorized)?;
+
+    // Rate limit: only allow resending 2FA code once per 30 seconds
+    if let Some(expires_at) = user.email_2fa_code_expires_at {
+        let remaining = expires_at.signed_duration_since(Utc::now()).num_seconds();
+        if remaining > 270 {
+            return Err(AppError::BadRequest(
+                "A verification code was recently sent. Please wait before requesting a new one.".into(),
+            ));
+        }
+    }
 
     let code = generate_verification_code();
     let expires_at = Utc::now() + chrono::Duration::try_minutes(5).unwrap();
@@ -1223,6 +1350,7 @@ pub async fn me(State(pool): State<PgPool>, auth: AuthUser) -> Result<Json<UserR
 
 pub async fn change_password(
     State(pool): State<PgPool>,
+    State(config): State<Config>,
     auth: AuthUser,
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -1237,6 +1365,12 @@ pub async fn change_password(
     }
 
     if !verify_password(&body.current_password, &user.password_hash)? {
+        let _ = db::users::increment_failed_login_attempts(
+            &pool,
+            &user.email,
+            MAX_CHANGE_PASSWORD_ATTEMPTS,
+            config.login_lockout_minutes,
+        ).await;
         return Err(AppError::BadRequest("Current password is incorrect".into()));
     }
 
@@ -1248,6 +1382,9 @@ pub async fn change_password(
 
     let new_hash = hash_password(&body.new_password)?;
     db::users::update_user_password(&pool, auth.user_id, &new_hash).await?;
+
+    // Reset failed attempts on successful password change
+    let _ = db::users::reset_failed_login_attempts_by_id(&pool, auth.user_id).await;
 
     Ok(Json(serde_json::json!({"status": "ok"})))
 }

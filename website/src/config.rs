@@ -24,6 +24,8 @@ pub struct Config {
     pub max_upload_size_mb: u64,
     pub default_max_storage_gb: u64,
     pub rate_limit_per_min: u64,
+    pub max_failed_login_attempts: i32,
+    pub login_lockout_minutes: i32,
     pub site_url: String,
     pub google_client_id: String,
     pub google_client_secret: String,
@@ -52,6 +54,14 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(8080),
+            max_failed_login_attempts: env::var("MAX_FAILED_LOGIN_ATTEMPTS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5),
+            login_lockout_minutes: env::var("LOGIN_LOCKOUT_MINUTES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(15),
             storage_path: env::var("STORAGE_PATH").unwrap_or_else(|_| "/data".into()),
             max_upload_size_mb: env::var("MAX_UPLOAD_SIZE_MB")
                 .ok()

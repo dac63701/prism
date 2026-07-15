@@ -1,11 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { ArrowRight, Mail, ShieldCheck, Eye, EyeOff, CheckCircle2, RefreshCw, KeyRound, Smartphone } from "lucide-react";
 import { login, register, googleLoginUrl, resendVerification, verifyCode, tfaLogin, tfaSendCodeLogin } from "@/lib/api";
 import { Button, Card, Input } from "@/components/ui";
 import { GoogleLogo } from "@/components/brand-icons";
+
+function useDebounceSubmit() {
+  const lastSubmit = useRef(0);
+  const minInterval = 1000;
+
+  const canSubmit = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSubmit.current < minInterval) {
+      return false;
+    }
+    lastSubmit.current = now;
+    return true;
+  }, []);
+
+  return canSubmit;
+}
 
 export function AuthCard({
   desktop = false,
@@ -35,6 +51,7 @@ export function AuthCard({
   const [tfaCode, setTfaCode] = useState("");
   const [tfaMethod, setTfaMethod] = useState("totp");
   const [verifyingTfa, setVerifyingTfa] = useState(false);
+  const debounceSubmit = useDebounceSubmit();
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
@@ -60,6 +77,7 @@ export function AuthCard({
     setError(null);
 
     if (!validate()) return;
+    if (!debounceSubmit()) return;
 
     setLoading(true);
 
@@ -89,7 +107,17 @@ export function AuthCard({
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
-      setError(msg);
+
+      // Parse lockout messages
+      if (msg.toLowerCase().includes("locked") || msg.toLowerCase().includes("try again in")) {
+        setError(msg);
+      } else if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many requests")) {
+        setError("Too many attempts. Please wait a moment before trying again.");
+      } else if (msg.toLowerCase().includes("timed out")) {
+        setError("Request timed out. Please check your connection and try again.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -117,7 +145,12 @@ export function AuthCard({
       await verifyCode(email, verificationCode);
       window.location.href = "/dashboard";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed");
+      const msg = err instanceof Error ? err.message : "Verification failed";
+      if (msg.toLowerCase().includes("locked") || msg.toLowerCase().includes("try again in")) {
+        setError(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setVerifyingCode(false);
     }
@@ -125,13 +158,20 @@ export function AuthCard({
 
   async function handleResendFromLogin() {
     if (!email) return;
+    if (!debounceSubmit()) return;
     setResending(true);
     setResendSent(false);
+    setError(null);
     try {
       await resendVerification(email);
       setResendSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to resend verification email");
+      const msg = err instanceof Error ? err.message : "Failed to resend verification email";
+      if (msg.toLowerCase().includes("please wait")) {
+        setError(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setResending(false);
     }
@@ -139,13 +179,21 @@ export function AuthCard({
 
   async function handleTfaLogin() {
     if (!tempToken || tfaCode.length !== 6) return;
+    if (!debounceSubmit()) return;
     setVerifyingTfa(true);
     setError(null);
     try {
       await tfaLogin(tempToken, tfaCode, tfaMethod);
       window.location.href = "/dashboard";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Two-factor verification failed");
+      const msg = err instanceof Error ? err.message : "Two-factor verification failed";
+      if (msg.toLowerCase().includes("locked") || msg.toLowerCase().includes("try again in")) {
+        setError(msg);
+      } else if (msg.toLowerCase().includes("recently sent")) {
+        setError("A code was recently sent. Please wait before requesting a new one.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setVerifyingTfa(false);
     }
@@ -153,7 +201,6 @@ export function AuthCard({
 
   const isRegister = mode === "register";
 
-  // Show registration success screen
   if (isRegister && registeredEmail) {
     return (
       <Card className="w-full max-w-sm p-6 sm:p-8">
@@ -437,10 +484,16 @@ export function AuthCard({
                 type="button"
                 disabled={verifyingTfa}
                 onClick={async () => {
+                  if (!debounceSubmit()) return;
                   try {
                     await tfaSendCodeLogin(tempToken);
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to send code");
+                    const msg = err instanceof Error ? err.message : "Failed to send code";
+                    if (msg.toLowerCase().includes("recently sent")) {
+                      setError("A code was recently sent. Please wait.");
+                    } else {
+                      setError(msg);
+                    }
                   }
                 }}
                 className="flex items-center gap-1.5 text-xs text-blue-300 hover:text-blue-200 disabled:opacity-50"
