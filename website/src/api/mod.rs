@@ -21,6 +21,8 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
         .route("/api/auth/2fa/setup", routing::post(auth::tfa_setup))
         .route("/api/auth/2fa/enable", routing::post(auth::tfa_enable))
         .route("/api/auth/2fa/disable", routing::post(auth::tfa_disable))
+        .route("/api/auth/2fa/send-code", routing::post(auth::tfa_send_code))
+        .route("/api/auth/2fa/send-code-login", routing::post(auth::tfa_send_code_login))
         .route("/api/auth/login", routing::post(auth::login))
         .route("/api/auth/refresh", routing::post(auth::refresh))
         .route("/api/auth/logout", routing::post(auth::logout))

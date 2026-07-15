@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Mail, ShieldCheck, Eye, EyeOff, CheckCircle2, RefreshCw, KeyRound, Smartphone } from "lucide-react";
-import { login, register, googleLoginUrl, resendVerification, verifyCode, tfaLogin } from "@/lib/api";
+import { login, register, googleLoginUrl, resendVerification, verifyCode, tfaLogin, tfaSendCodeLogin } from "@/lib/api";
 import { Button, Card, Input } from "@/components/ui";
 import { GoogleLogo } from "@/components/brand-icons";
 
@@ -33,6 +33,7 @@ export function AuthCard({
   const [requires2fa, setRequires2fa] = useState(false);
   const [tempToken, setTempToken] = useState("");
   const [tfaCode, setTfaCode] = useState("");
+  const [tfaMethod, setTfaMethod] = useState("totp");
   const [verifyingTfa, setVerifyingTfa] = useState(false);
 
   function validate(): boolean {
@@ -73,6 +74,7 @@ export function AuthCard({
           if (data?.requires_2fa === true && typeof data?.temp_token === "string") {
             setRequires2fa(true);
             setTempToken(data.temp_token as string);
+            setTfaMethod((data.method as string) || "totp");
             setError(null);
             return;
           }
@@ -140,7 +142,7 @@ export function AuthCard({
     setVerifyingTfa(true);
     setError(null);
     try {
-      await tfaLogin(tempToken, tfaCode);
+      await tfaLogin(tempToken, tfaCode, tfaMethod);
       window.location.href = "/dashboard";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Two-factor verification failed");
@@ -400,8 +402,16 @@ export function AuthCard({
         {!isRegister && requires2fa ? (
           <div className="space-y-3 rounded-2xl border border-blue-400/15 bg-blue-500/10 p-4">
             <div className="flex items-center gap-2 text-sm text-blue-100">
-              <Smartphone className="h-4 w-4 shrink-0" />
-              <span>Enter the code from your authenticator app</span>
+              {tfaMethod === "email" ? (
+                <Mail className="h-4 w-4 shrink-0" />
+              ) : (
+                <Smartphone className="h-4 w-4 shrink-0" />
+              )}
+              <span>
+                {tfaMethod === "email"
+                  ? "Enter the code sent to your email"
+                  : "Enter the code from your authenticator app"}
+              </span>
             </div>
             <div className="flex gap-2">
               <Input
@@ -422,6 +432,22 @@ export function AuthCard({
                 {verifyingTfa ? "Verifying..." : "Verify"}
               </Button>
             </div>
+            {tfaMethod === "email" && (
+              <button
+                type="button"
+                disabled={verifyingTfa}
+                onClick={async () => {
+                  try {
+                    await tfaSendCodeLogin(tempToken);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to send code");
+                  }
+                }}
+                className="flex items-center gap-1.5 text-xs text-blue-300 hover:text-blue-200 disabled:opacity-50"
+              >
+                Resend code
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { setRequires2fa(false); setError(null); }}

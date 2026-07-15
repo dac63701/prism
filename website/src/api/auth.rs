@@ -116,25 +116,32 @@ pub struct VerifyCodeRequest {
 }
 
 #[derive(Deserialize)]
-pub struct TfaSetupRequest {
-    code: String,
+pub struct TfaSetupBody {
+    pub method: Option<String>,
 }
 
 #[derive(Deserialize)]
-pub struct TfaDisableRequest {
-    code: String,
+pub struct TfaEnableBody {
+    pub method: Option<String>,
+    pub code: String,
 }
 
-#[derive(Serialize)]
-pub struct TfaSetupResponse {
-    secret: String,
-    uri: String,
+#[derive(Deserialize)]
+pub struct TfaDisableBody {
+    pub method: Option<String>,
+    pub code: String,
 }
 
 #[derive(Deserialize)]
 pub struct TfaLoginRequest {
-    temp_token: String,
-    code: String,
+    pub temp_token: String,
+    pub code: String,
+    pub method: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TfaSendCodeBody {
+    pub temp_token: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -157,6 +164,7 @@ pub struct UserResponse {
     max_storage_bytes: i64,
     email_verified: bool,
     totp_enabled: bool,
+    two_factor_method: Option<String>,
     created_at: String,
 }
 
@@ -216,6 +224,7 @@ fn user_to_response(user: &db::users::User) -> UserResponse {
         max_storage_bytes: user.max_storage_bytes,
         email_verified: user.email_verified_at.is_some(),
         totp_enabled: user.totp_enabled,
+        two_factor_method: user.two_factor_method.clone(),
         created_at: user.created_at.to_rfc3339(),
     }
 }
@@ -701,7 +710,6 @@ pub async fn register(
         &user.email,
         &user.display_name,
         &verification_token,
-        &verification_code,
     )
     .await
     .map_err(|e| {
@@ -800,7 +808,6 @@ pub async fn resend_verification(
         &user.email,
         &user.display_name,
         &new_token,
-        &new_code,
     )
     .await
     .map_err(|e| {
@@ -855,7 +862,8 @@ pub async fn login(
         }
     }
 
-    if user.totp_enabled {
+    let tfa_method = user.two_factor_method.as_deref().unwrap_or("");
+    if tfa_method == "totp" || (tfa_method.is_empty() && user.totp_enabled) {
         let temp_token = jwt::create_temp_2fa_token(user.id, &user.role, &config.jwt_secret)?;
         tracing::info!(user_id = %user.id, "2fa_challenge_issued");
         return Ok((
@@ -863,6 +871,28 @@ pub async fn login(
             Json(serde_json::json!({
                 "requires_2fa": true,
                 "temp_token": temp_token,
+                "method": "totp",
+            })),
+        ));
+    } else if tfa_method == "email" {
+        let code = generate_verification_code();
+        let expires_at = Utc::now() + chrono::Duration::try_minutes(5).unwrap();
+        db::users::set_email_2fa_code(&pool, user.id, Some(&code), Some(expires_at)).await?;
+
+        email::send_2fa_email(&config, &user.email, &user.display_name, &code).await
+            .map_err(|e| {
+                tracing::error!(user_id = %user.id, error = %e, "failed to send 2fa email during login");
+                AppError::Internal("Failed to send verification email. Please try again.".into())
+            })?;
+
+        let temp_token = jwt::create_temp_2fa_token(user.id, &user.role, &config.jwt_secret)?;
+        tracing::info!(user_id = %user.id, "email_2fa_challenge_issued");
+        return Ok((
+            HeaderMap::new(),
+            Json(serde_json::json!({
+                "requires_2fa": true,
+                "temp_token": temp_token,
+                "method": "email",
             })),
         ));
     }
@@ -897,11 +927,25 @@ pub async fn tfa_login(
 ) -> Result<(HeaderMap, Json<AuthResponse>), AppError> {
     let claims = jwt::verify_temp_2fa_token(&body.temp_token, &config.jwt_secret)?;
 
+    let method = body.method.as_deref().unwrap_or("totp");
+
+    if method == "email" {
+        let user = db::users::get_user_by_email_2fa_code(&pool, claims.sub, &body.code)
+            .await?
+            .ok_or(AppError::BadRequest("Invalid or expired verification code".into()))?;
+
+        db::users::set_email_2fa_code(&pool, user.id, None, None).await?;
+        tracing::info!(user_id = %user.id, "email_2fa_login_success");
+        return issue_user_auth(&user, &config).await;
+    }
+
     let user = db::users::get_user_by_id(&pool, claims.sub)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    if !user.totp_enabled {
+    let has_totp = user.two_factor_method.as_deref() == Some("totp")
+        || user.totp_enabled;
+    if !has_totp {
         return Err(AppError::BadRequest("Two-factor authentication is not enabled for this account".into()));
     }
 
@@ -932,15 +976,32 @@ pub async fn tfa_login(
 
 pub async fn tfa_setup(
     State(pool): State<PgPool>,
-    State(_config): State<Config>,
+    State(config): State<Config>,
     auth: AuthUser,
-) -> Result<Json<TfaSetupResponse>, AppError> {
+    Json(body): Json<TfaSetupBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
     let user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    if user.totp_enabled {
+    let method = body.method.as_deref().unwrap_or("totp");
+
+    if user.totp_enabled || user.two_factor_method.is_some() {
         return Err(AppError::BadRequest("Two-factor authentication is already enabled".into()));
+    }
+
+    if method == "email" {
+        let code = generate_verification_code();
+        let expires_at = Utc::now() + chrono::Duration::try_minutes(5).unwrap();
+        db::users::set_email_2fa_code(&pool, user.id, Some(&code), Some(expires_at)).await?;
+
+        email::send_2fa_email(&config, &user.email, &user.display_name, &code).await
+            .map_err(|e| {
+                tracing::error!(user_id = %user.id, error = %e, "failed to send 2fa email during setup");
+                AppError::Internal("Failed to send verification email. Please try again.".into())
+            })?;
+
+        return Ok(Json(serde_json::json!({"status": "code_sent"})));
     }
 
     let secret = Secret::generate_secret();
@@ -963,24 +1024,37 @@ pub async fn tfa_setup(
 
     db::users::set_totp_secret(&pool, user.id, Some(&secret_b32)).await?;
 
-    Ok(Json(TfaSetupResponse {
-        secret: secret_b32,
-        uri,
-    }))
+    Ok(Json(serde_json::json!({
+        "secret": secret_b32,
+        "uri": uri,
+    })))
 }
 
 pub async fn tfa_enable(
     State(pool): State<PgPool>,
     State(_config): State<Config>,
     auth: AuthUser,
-    Json(body): Json<TfaSetupRequest>,
+    Json(body): Json<TfaEnableBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    if user.totp_enabled {
+    let method = body.method.as_deref().unwrap_or("totp");
+
+    if user.totp_enabled || user.two_factor_method.is_some() {
         return Err(AppError::BadRequest("Two-factor authentication is already enabled".into()));
+    }
+
+    if method == "email" {
+        let user = db::users::get_user_by_email_2fa_code(&pool, user.id, &body.code)
+            .await?
+            .ok_or(AppError::BadRequest("Invalid or expired verification code".into()))?;
+
+        db::users::enable_two_factor(&pool, user.id, "email").await?;
+        db::users::set_email_2fa_code(&pool, user.id, None, None).await?;
+        tracing::info!(user_id = %user.id, "email_2fa_enabled");
+        return Ok(Json(serde_json::json!({"status": "ok"})));
     }
 
     let secret_b32 = user.totp_secret.as_ref()
@@ -1004,8 +1078,8 @@ pub async fn tfa_enable(
         return Err(AppError::BadRequest("Invalid code. Make sure your authenticator app is configured correctly.".into()));
     }
 
-    db::users::enable_totp(&pool, user.id).await?;
-    tracing::info!(user_id = %user.id, "2fa_enabled");
+    db::users::enable_two_factor(&pool, user.id, "totp").await?;
+    tracing::info!(user_id = %user.id, "totp_2fa_enabled");
 
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
@@ -1014,41 +1088,98 @@ pub async fn tfa_disable(
     State(pool): State<PgPool>,
     State(_config): State<Config>,
     auth: AuthUser,
-    Json(body): Json<TfaDisableRequest>,
+    Json(body): Json<TfaDisableBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    if !user.totp_enabled {
+    let has_2fa = user.two_factor_method.is_some() || user.totp_enabled;
+    if !has_2fa {
         return Err(AppError::BadRequest("Two-factor authentication is not enabled".into()));
     }
 
-    let secret_b32 = user.totp_secret.as_ref()
-        .ok_or(AppError::Internal("Missing 2FA secret".into()))?;
+    let method = body.method.as_deref().unwrap_or("totp");
 
-    let secret_bytes = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret_b32)
-        .ok_or_else(|| AppError::Internal("Invalid TOTP secret encoding".into()))?;
+    if method == "email" {
+        db::users::get_user_by_email_2fa_code(&pool, user.id, &body.code)
+            .await?
+            .ok_or(AppError::BadRequest("Invalid or expired verification code".into()))?;
+    } else {
+        let secret_b32 = user.totp_secret.as_ref()
+            .ok_or(AppError::Internal("Missing 2FA secret".into()))?;
 
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        30,
-        secret_bytes,
-        Some("Prism".into()),
-        user.email.clone(),
-    )
-    .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
+        let secret_bytes = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret_b32)
+            .ok_or_else(|| AppError::Internal("Invalid TOTP secret encoding".into()))?;
 
-    if !totp.check(&body.code, totp_now()) {
-        return Err(AppError::BadRequest("Invalid two-factor code".into()));
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            secret_bytes,
+            Some("Prism".into()),
+            user.email.clone(),
+        )
+        .map_err(|e| AppError::Internal(format!("TOTP creation error: {e}")))?;
+
+        if !totp.check(&body.code, totp_now()) {
+            return Err(AppError::BadRequest("Invalid two-factor code".into()));
+        }
     }
 
-    db::users::disable_totp(&pool, user.id).await?;
+    db::users::disable_two_factor(&pool, user.id).await?;
     tracing::info!(user_id = %user.id, "2fa_disabled");
 
     Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
+pub async fn tfa_send_code(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = db::users::get_user_by_id(&pool, auth.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    let code = generate_verification_code();
+    let expires_at = Utc::now() + chrono::Duration::try_minutes(5).unwrap();
+    db::users::set_email_2fa_code(&pool, user.id, Some(&code), Some(expires_at)).await?;
+
+    email::send_2fa_email(&config, &user.email, &user.display_name, &code).await
+        .map_err(|e| {
+            tracing::error!(user_id = %user.id, error = %e, "failed to send 2fa email");
+            AppError::Internal("Failed to send 2FA email. Please try again.".into())
+        })?;
+
+    Ok(Json(serde_json::json!({"status": "code_sent"})))
+}
+
+pub async fn tfa_send_code_login(
+    State(pool): State<PgPool>,
+    State(config): State<Config>,
+    Json(body): Json<TfaSendCodeBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let temp_token = body.temp_token
+        .ok_or(AppError::BadRequest("Missing temp_token".into()))?;
+    let claims = jwt::verify_temp_2fa_token(&temp_token, &config.jwt_secret)?;
+
+    let user = db::users::get_user_by_id(&pool, claims.sub)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    let code = generate_verification_code();
+    let expires_at = Utc::now() + chrono::Duration::try_minutes(5).unwrap();
+    db::users::set_email_2fa_code(&pool, user.id, Some(&code), Some(expires_at)).await?;
+
+    email::send_2fa_email(&config, &user.email, &user.display_name, &code).await
+        .map_err(|e| {
+            tracing::error!(user_id = %user.id, error = %e, "failed to send 2fa email");
+            AppError::Internal("Failed to send 2FA email. Please try again.".into())
+        })?;
+
+    Ok(Json(serde_json::json!({"status": "code_sent"})))
 }
 
 pub async fn refresh(

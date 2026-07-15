@@ -12,6 +12,7 @@ export interface User {
   max_storage_bytes: number;
   email_verified: boolean;
   totp_enabled?: boolean;
+  two_factor_method?: string | null;
   created_at: string;
 }
 

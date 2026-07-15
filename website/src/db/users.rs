@@ -22,6 +22,9 @@ pub struct User {
     pub verification_code: Option<String>,
     pub totp_secret: Option<String>,
     pub totp_enabled: bool,
+    pub two_factor_method: Option<String>,
+    pub email_2fa_code: Option<String>,
+    pub email_2fa_code_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -57,6 +60,7 @@ const USER_COLUMNS: &str = r#"id, email, password_hash, google_id, avatar_url, d
            storage_used_bytes, max_storage_bytes, is_banned,
            email_verified_at, verification_token, verification_code,
            totp_secret, totp_enabled,
+           two_factor_method, email_2fa_code, email_2fa_code_expires_at,
            created_at, updated_at"#;
 
 pub async fn create_user(
@@ -256,6 +260,7 @@ pub async fn set_totp_secret(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn enable_totp(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"UPDATE users SET totp_enabled = true, updated_at = NOW() WHERE id = $1"#,
@@ -266,6 +271,7 @@ pub async fn enable_totp(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn disable_totp(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"UPDATE users SET totp_enabled = false, totp_secret = NULL, updated_at = NOW() WHERE id = $1"#,
@@ -273,6 +279,37 @@ pub async fn disable_totp(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Erro
     .bind(user_id)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn set_two_factor_method(pool: &PgPool, user_id: Uuid, method: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query(r#"UPDATE users SET two_factor_method = $1, updated_at = NOW() WHERE id = $2"#)
+        .bind(method).bind(user_id).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn set_email_2fa_code(pool: &PgPool, user_id: Uuid, code: Option<&str>, expires_at: Option<DateTime<Utc>>) -> Result<(), sqlx::Error> {
+    sqlx::query(r#"UPDATE users SET email_2fa_code = $1, email_2fa_code_expires_at = $2, updated_at = NOW() WHERE id = $3"#)
+        .bind(code).bind(expires_at).bind(user_id).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn get_user_by_email_2fa_code(pool: &PgPool, user_id: Uuid, code: &str) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        &format!(r#"SELECT {USER_COLUMNS} FROM users WHERE id = $1 AND email_2fa_code = $2 AND email_2fa_code_expires_at > NOW()"#)
+    ).bind(user_id).bind(code).fetch_optional(pool).await
+}
+
+pub async fn enable_two_factor(pool: &PgPool, user_id: Uuid, method: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(r#"UPDATE users SET two_factor_method = $1, totp_enabled = CASE WHEN $1 = 'totp' THEN true ELSE false END, updated_at = NOW() WHERE id = $2"#)
+        .bind(method).bind(user_id).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn disable_two_factor(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(r#"UPDATE users SET two_factor_method = NULL, totp_enabled = false, totp_secret = NULL, email_2fa_code = NULL, email_2fa_code_expires_at = NULL, updated_at = NOW() WHERE id = $1"#)
+        .bind(user_id).execute(pool).await?;
     Ok(())
 }
 

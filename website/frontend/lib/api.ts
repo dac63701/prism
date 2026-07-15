@@ -51,7 +51,7 @@ export function googleLoginUrl(next = "/dashboard", desktop = false) {
 
 
 export async function login(email: string, password: string) {
-  return jsonFetch<AuthResponse | { requires_2fa: boolean; temp_token: string }>("/api/auth/login", {
+  return jsonFetch<AuthResponse | { requires_2fa: boolean; temp_token: string; method?: string }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
@@ -108,30 +108,44 @@ export async function verifyCode(email: string, code: string) {
   });
 }
 
-export async function tfaSetup() {
-  return jsonFetch<{ secret: string; uri: string }>("/api/auth/2fa/setup", {
+export async function tfaSetup(method: string = "totp") {
+  return jsonFetch<{ secret?: string; uri?: string; status?: string }>("/api/auth/2fa/setup", {
     method: "POST",
+    body: JSON.stringify({ method }),
   });
 }
 
-export async function tfaEnable(code: string) {
+export async function tfaEnable(method: string, code: string) {
   return jsonFetch<{ status: string }>("/api/auth/2fa/enable", {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ method, code }),
   });
 }
 
-export async function tfaDisable(code: string) {
+export async function tfaDisable(method: string, code: string) {
   return jsonFetch<{ status: string }>("/api/auth/2fa/disable", {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ method, code }),
   });
 }
 
-export async function tfaLogin(tempToken: string, code: string) {
+export async function tfaSendCode() {
+  return jsonFetch<{ status: string }>("/api/auth/2fa/send-code", {
+    method: "POST",
+  });
+}
+
+export async function tfaSendCodeLogin(tempToken: string) {
+  return jsonFetch<{ status: string }>("/api/auth/2fa/send-code-login", {
+    method: "POST",
+    body: JSON.stringify({ temp_token: tempToken }),
+  });
+}
+
+export async function tfaLogin(tempToken: string, code: string, method: string = "totp") {
   return jsonFetch<AuthResponse>("/api/auth/2fa/login", {
     method: "POST",
-    body: JSON.stringify({ temp_token: tempToken, code }),
+    body: JSON.stringify({ temp_token: tempToken, code, method }),
   });
 }
 

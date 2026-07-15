@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Card, Input, SectionHeading, Button } from "@/components/ui";
-import { getCurrentUser, changePassword, tfaSetup, tfaEnable, tfaDisable, updateProfile } from "@/lib/api";
+import { getCurrentUser, changePassword, tfaSetup, tfaEnable, tfaDisable, tfaSendCode, updateProfile } from "@/lib/api";
 import type { User } from "@/lib/types";
-import { ShieldCheck, Eye, EyeOff, KeyRound, AlertCircle, Smartphone, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Eye, EyeOff, KeyRound, AlertCircle, Smartphone, CheckCircle2, X, Mail, ArrowLeft, Loader2 } from "lucide-react";
 import QRCode from "qrcode";
 
 export default function SettingsPage() {
@@ -22,14 +22,18 @@ export default function SettingsPage() {
   const [realName, setRealName] = useState("");
 
   // 2FA state
+  const [showTfaModal, setShowTfaModal] = useState(false);
+  const [tfaStep, setTfaStep] = useState<"method" | "totp" | "email">("method");
   const [tfaSecret, setTfaSecret] = useState("");
   const [tfaUri, setTfaUri] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
-  const [tfaSetupCode, setTfaSetupCode] = useState("");
-  const [tfaDisableCode, setTfaDisableCode] = useState("");
-  const [settingUpTfa, setSettingUpTfa] = useState(false);
+  const [tfaCode, setTfaCode] = useState("");
+  const [tfaMethod, setTfaMethod] = useState<"totp" | "email">("totp");
   const [enablingTfa, setEnablingTfa] = useState(false);
+  const [settingUpTfa, setSettingUpTfa] = useState(false);
+  const [disableTfaCode, setDisableTfaCode] = useState("");
   const [disablingTfa, setDisablingTfa] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
 
   useEffect(() => {
     getCurrentUser()
@@ -89,37 +93,52 @@ export default function SettingsPage() {
     }
   }
 
-  const handleTfaSetup = useCallback(async () => {
-    setError(null);
-    setSuccess(null);
+  function handleTfaMethodSelect(method: "totp" | "email") {
+    setTfaMethod(method);
     setSettingUpTfa(true);
-    try {
-      const result = await tfaSetup();
-      setTfaSecret(result.secret);
-      setTfaUri(result.uri);
-      const url = await QRCode.toDataURL(result.uri, { width: 200, margin: 2 });
-      setQrDataUrl(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to set up 2FA");
-    } finally {
-      setSettingUpTfa(false);
+    setError(null);
+
+    if (method === "totp") {
+      tfaSetup("totp").then((result) => {
+        setTfaSecret(result.secret!);
+        setTfaUri(result.uri!);
+        return QRCode.toDataURL(result.uri!, { width: 200, margin: 2 });
+      }).then((url) => {
+        setQrDataUrl(url);
+        setTfaStep("totp");
+      }).catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to set up 2FA");
+      }).finally(() => {
+        setSettingUpTfa(false);
+      });
+    } else {
+      tfaSetup("email").then(() => {
+        setCodeSent(true);
+        setTfaStep("email");
+      }).catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to set up 2FA");
+      }).finally(() => {
+        setSettingUpTfa(false);
+      });
     }
-  }, []);
+  }
 
   async function handleTfaEnable() {
-    if (tfaSetupCode.length !== 6) return;
-    setError(null);
-    setSuccess(null);
+    if (tfaCode.length !== 6) return;
     setEnablingTfa(true);
+    setError(null);
     try {
-      await tfaEnable(tfaSetupCode);
+      await tfaEnable(tfaMethod, tfaCode);
+      const updated = await getCurrentUser();
+      setUser(updated);
+      setShowTfaModal(false);
       setSuccess("Two-factor authentication enabled");
+      setTfaStep("method");
+      setTfaCode("");
       setTfaSecret("");
       setTfaUri("");
       setQrDataUrl("");
-      setTfaSetupCode("");
-      const updated = await getCurrentUser();
-      setUser(updated);
+      setCodeSent(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to enable 2FA");
     } finally {
@@ -128,20 +147,42 @@ export default function SettingsPage() {
   }
 
   async function handleTfaDisable() {
-    if (tfaDisableCode.length !== 6) return;
-    setError(null);
-    setSuccess(null);
+    if (disableTfaCode.length !== 6) return;
     setDisablingTfa(true);
+    setError(null);
     try {
-      await tfaDisable(tfaDisableCode);
+      const method = user?.two_factor_method || "totp";
+      await tfaDisable(method, disableTfaCode);
       setSuccess("Two-factor authentication disabled");
-      setTfaDisableCode("");
+      setDisableTfaCode("");
       const updated = await getCurrentUser();
       setUser(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to disable 2FA");
     } finally {
       setDisablingTfa(false);
+    }
+  }
+
+  async function handleTfaResendCode() {
+    setError(null);
+    setCodeSent(false);
+    try {
+      await tfaSendCode();
+      setCodeSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send code");
+    }
+  }
+
+  async function handleTfaSendDisableCode() {
+    setError(null);
+    setSuccess(null);
+    try {
+      await tfaSendCode();
+      setSuccess("Code sent! Check your email.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send code");
     }
   }
 
@@ -291,21 +332,35 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-semibold text-white">Two-factor authentication</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Add an extra layer of security to your account using an authenticator app.
+              Add an extra layer of security to your account.
             </p>
           </div>
         </div>
 
-        {user?.totp_enabled ? (
+        {user?.totp_enabled || user?.two_factor_method ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-xl border border-emerald-400/15 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              2FA is currently enabled
+              <span>
+                2FA is currently enabled
+                {user?.two_factor_method === "email" ? " via Email" : user?.two_factor_method === "totp" ? " via Authenticator App" : ""}
+              </span>
             </div>
+            {user?.two_factor_method === "email" && (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleTfaSendDisableCode}
+                >
+                  Send code to email
+                </Button>
+              </div>
+            )}
             <div className="flex gap-2">
               <Input
-                value={tfaDisableCode}
-                onChange={(e) => setTfaDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                value={disableTfaCode}
+                onChange={(e) => setDisableTfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="Enter code to disable"
                 className="max-w-40 font-mono text-center tracking-widest"
                 maxLength={6}
@@ -314,7 +369,7 @@ export default function SettingsPage() {
               <Button
                 type="button"
                 variant="secondary"
-                disabled={tfaDisableCode.length !== 6 || disablingTfa}
+                disabled={disableTfaCode.length !== 6 || disablingTfa}
                 onClick={handleTfaDisable}
                 className="text-red-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300"
               >
@@ -322,52 +377,165 @@ export default function SettingsPage() {
               </Button>
             </div>
           </div>
-        ) : tfaUri ? (
-          <div className="space-y-4">
-            {qrDataUrl && (
-              <div className="flex justify-center">
-                <img src={qrDataUrl} alt="QR code" className="rounded-xl" />
-              </div>
-            )}
-            <div className="space-y-1">
-              <p className="text-xs text-zinc-500">Secret key (manual entry):</p>
-              <p className="select-all font-mono text-sm text-zinc-300">{tfaSecret}</p>
-            </div>
-            <p className="text-xs text-zinc-500">
-              Scan the QR code with your authenticator app, then enter the 6-digit code below to confirm.
-            </p>
-            <div className="flex gap-2">
-              <Input
-                value={tfaSetupCode}
-                onChange={(e) => setTfaSetupCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="000000"
-                className="max-w-40 font-mono text-center tracking-widest"
-                maxLength={6}
-                disabled={enablingTfa}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={tfaSetupCode.length !== 6 || enablingTfa}
-                onClick={handleTfaEnable}
-              >
-                {enablingTfa ? "Enabling..." : "Confirm & Enable"}
-              </Button>
-            </div>
-            <button
-              type="button"
-              onClick={() => { setTfaSecret(""); setTfaUri(""); setQrDataUrl(""); }}
-              className="text-xs text-zinc-500 hover:text-zinc-400"
-            >
-              Cancel setup
-            </button>
-          </div>
         ) : (
-          <Button type="button" variant="secondary" disabled={settingUpTfa} onClick={handleTfaSetup}>
-            {settingUpTfa ? "Setting up..." : "Set up two-factor authentication"}
+          <Button type="button" variant="secondary" onClick={() => setShowTfaModal(true)}>
+            Set up two-factor authentication
           </Button>
         )}
       </Card>
+
+      {showTfaModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="relative w-full max-w-md rounded-3xl border border-border bg-[linear-gradient(180deg,rgba(16,25,46,0.98),rgba(8,13,26,0.98))] p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => { setShowTfaModal(false); setTfaStep("method"); setTfaCode(""); setError(null); setCodeSent(false); }}
+              className="absolute right-4 top-4 text-zinc-500 hover:text-zinc-300"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {tfaStep === "method" && (
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Choose your 2FA method</h2>
+                  <p className="mt-1 text-sm text-zinc-400">Select how you want to receive verification codes.</p>
+                </div>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => handleTfaMethodSelect("totp")}
+                    disabled={settingUpTfa}
+                    className="flex w-full items-center gap-4 rounded-2xl border border-border bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-50"
+                  >
+                    <Smartphone className="h-8 w-8 shrink-0 text-blue-400" />
+                    <div>
+                      <div className="font-medium text-white">Authenticator App</div>
+                      <div className="text-xs text-zinc-400">Use an authenticator app like Google Authenticator or Authy</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTfaMethodSelect("email")}
+                    disabled={settingUpTfa}
+                    className="flex w-full items-center gap-4 rounded-2xl border border-border bg-white/[0.03] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-50"
+                  >
+                    <Mail className="h-8 w-8 shrink-0 text-blue-400" />
+                    <div>
+                      <div className="font-medium text-white">Email</div>
+                      <div className="text-xs text-zinc-400">Receive verification codes via email</div>
+                    </div>
+                  </button>
+                </div>
+                {settingUpTfa && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-zinc-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Setting up...
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tfaStep === "totp" && (
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => { setTfaStep("method"); setTfaSecret(""); setTfaUri(""); setQrDataUrl(""); setTfaCode(""); setError(null); }}
+                  className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
+                >
+                  <ArrowLeft className="h-3 w-3" /> Back to methods
+                </button>
+                {qrDataUrl && (
+                  <div className="flex justify-center">
+                    <img src={qrDataUrl} alt="QR code" className="rounded-xl" />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <p className="text-xs text-zinc-500">Secret key (manual entry):</p>
+                  <p className="select-all break-all font-mono text-sm text-zinc-300">{tfaSecret}</p>
+                </div>
+                <p className="text-xs text-zinc-500">
+                  Scan the QR code with your authenticator app, then enter the 6-digit code below to confirm.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={tfaCode}
+                    onChange={(e) => setTfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    className="max-w-40 font-mono text-center tracking-widest"
+                    maxLength={6}
+                    disabled={enablingTfa}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={tfaCode.length !== 6 || enablingTfa}
+                    onClick={handleTfaEnable}
+                  >
+                    {enablingTfa ? "Enabling..." : "Confirm & Enable"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {tfaStep === "email" && (
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => { setTfaStep("method"); setTfaCode(""); setCodeSent(false); setError(null); }}
+                  className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
+                >
+                  <ArrowLeft className="h-3 w-3" /> Back to methods
+                </button>
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <Mail className="h-10 w-10 text-blue-400" />
+                  <div>
+                    <h3 className="font-medium text-white">Check your email</h3>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      We sent a 6-digit code to <span className="text-zinc-200">{user?.email}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={tfaCode}
+                    onChange={(e) => setTfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    className="max-w-40 font-mono text-center tracking-widest"
+                    maxLength={6}
+                    disabled={enablingTfa}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={tfaCode.length !== 6 || enablingTfa}
+                    onClick={handleTfaEnable}
+                  >
+                    {enablingTfa ? "Enabling..." : "Enable"}
+                  </Button>
+                </div>
+                {codeSent ? (
+                  <p className="text-xs text-emerald-400">Code sent! Check your inbox.</p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handleTfaResendCode}
+                  className="text-xs text-blue-300 hover:text-blue-200"
+                >
+                  Resend code
+                </button>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <Card className="space-y-4 p-6">
         <h2 className="text-lg font-semibold text-white">API keys</h2>
