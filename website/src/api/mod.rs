@@ -42,7 +42,6 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
         .route("/api/clips/upload", routing::post(clips::upload_clip))
         .route("/api/clips", routing::get(clips::list_clips))
         .route("/api/clips/{id}", routing::get(clips::get_clip))
-        .route("/api/clips/{id}", routing::patch(clips::update_clip))
         .route("/api/clips/{id}", routing::delete(clips::delete_clip))
         .route(
             "/api/clips/{id}/regenerate-share",

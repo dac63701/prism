@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::StorageBackend;
 
@@ -14,12 +14,20 @@ impl LocalStorage {
         }
     }
 
-    fn full_path(&self, path: &str) -> PathBuf {
-        self.root.join(path)
+    fn safe_path(&self, path: &str) -> Result<PathBuf, std::io::Error> {
+        for component in Path::new(path).components() {
+            if matches!(component, std::path::Component::ParentDir) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Path traversal detected",
+                ));
+            }
+        }
+        Ok(self.root.join(path))
     }
 
     fn ensure_parent(&self, path: &str) -> Result<(), std::io::Error> {
-        if let Some(parent) = self.full_path(path).parent() {
+        if let Some(parent) = self.safe_path(path)?.parent() {
             std::fs::create_dir_all(parent)?;
         }
         Ok(())
@@ -30,7 +38,7 @@ impl LocalStorage {
 impl StorageBackend for LocalStorage {
     async fn store(&self, path: &str, data: &[u8]) -> Result<(), std::io::Error> {
         self.ensure_parent(path)?;
-        let full = self.full_path(path);
+        let full = self.safe_path(path)?;
         let tmp = full.with_extension("tmp");
         tokio::fs::write(&tmp, data).await?;
         tokio::fs::rename(&tmp, &full).await?;
@@ -38,11 +46,11 @@ impl StorageBackend for LocalStorage {
     }
 
     async fn retrieve(&self, path: &str) -> Result<Vec<u8>, std::io::Error> {
-        tokio::fs::read(self.full_path(path)).await
+        tokio::fs::read(self.safe_path(path)?).await
     }
 
     async fn delete(&self, path: &str) -> Result<(), std::io::Error> {
-        let full = self.full_path(path);
+        let full = self.safe_path(path)?;
         if full.exists() {
             tokio::fs::remove_file(&full).await?;
         }
@@ -50,6 +58,6 @@ impl StorageBackend for LocalStorage {
     }
 
     async fn exists(&self, path: &str) -> Result<bool, std::io::Error> {
-        Ok(self.full_path(path).exists())
+        Ok(self.safe_path(path)?.exists())
     }
 }

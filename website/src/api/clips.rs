@@ -25,13 +25,6 @@ pub struct ListClipsQuery {
     sort_dir: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub struct UpdateClipRequest {
-    title: Option<String>,
-    game: Option<String>,
-    visibility: Option<String>,
-}
-
 pub async fn upload_clip(
     State(pool): State<PgPool>,
     State(config): State<Config>,
@@ -289,43 +282,6 @@ pub async fn get_clip(
         "updated_at": clip.updated_at.to_rfc3339(),
         "video_url": format!("/api/media/{}", clip.storage_path),
         "thumbnail_url": clip.thumbnail_path.as_ref().map(|p| format!("/api/media/{}", p)),
-    })))
-}
-
-pub async fn update_clip(
-    State(pool): State<PgPool>,
-    auth: AuthUser,
-    Path(clip_id): Path<Uuid>,
-    Json(body): Json<UpdateClipRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let clip = db::clips::get_clip(&pool, clip_id)
-        .await?
-        .ok_or(AppError::NotFound("Clip not found".into()))?;
-
-    if clip.user_id != auth.user_id && auth.role != "admin" {
-        return Err(AppError::NotFound("Clip not found".into()));
-    }
-
-    let new_title = body.title.as_deref().unwrap_or(&clip.title);
-    let new_game = body.game.as_deref().unwrap_or(&clip.game);
-    let new_visibility = body.visibility.as_deref().unwrap_or(&clip.visibility);
-
-    if !matches!(new_visibility, "public" | "private" | "unlisted") {
-        return Err(AppError::BadRequest("Invalid visibility".into()));
-    }
-
-    db::clips::update_clip_metadata(&pool, clip_id, new_title, new_game, new_visibility).await?;
-
-    let updated = db::clips::get_clip(&pool, clip_id)
-        .await?
-        .ok_or(AppError::Internal("Failed to fetch updated clip".into()))?;
-
-    Ok(Json(serde_json::json!({
-        "id": updated.id,
-        "title": updated.title,
-        "game": updated.game,
-        "visibility": updated.visibility,
-        "updated_at": updated.updated_at.to_rfc3339(),
     })))
 }
 

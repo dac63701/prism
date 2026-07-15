@@ -265,35 +265,11 @@ pub async fn get_logs(
     _admin: AdminUser,
     Query(query): Query<LogsQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    use sqlx::QueryBuilder;
+
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(100).min(200).max(1);
     let offset = (page - 1) * per_page;
-
-    let mut where_clauses = Vec::new();
-    if let Some(ref action) = query.action {
-        where_clauses.push(format!("action = '{}'::log_action", action));
-    }
-    if let Some(ref level) = query.level {
-        where_clauses.push(format!("level = '{}'::log_level", level));
-    }
-    let where_sql = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", where_clauses.join(" AND "))
-    };
-
-    let count_sql = format!("SELECT COUNT(*) FROM activity_logs {}", where_sql);
-    let total: (i64,) = sqlx::query_as(&count_sql)
-        .fetch_one(&pool)
-        .await?;
-
-    let query_sql = format!(
-        "SELECT id, user_id, action::text as action, level::text as level, ip_address, details, created_at
-         FROM activity_logs {}
-         ORDER BY created_at DESC
-         LIMIT {} OFFSET {}",
-        where_sql, per_page, offset
-    );
 
     #[derive(serde::Serialize, sqlx::FromRow)]
     struct LogEntry {
@@ -306,9 +282,31 @@ pub async fn get_logs(
         created_at: chrono::DateTime<chrono::Utc>,
     }
 
-    let logs: Vec<LogEntry> = sqlx::query_as(&query_sql)
-        .fetch_all(&pool)
-        .await?;
+    let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM activity_logs");
+    let mut query_builder = QueryBuilder::new(
+        "SELECT id, user_id, action::text as action, level::text as level, ip_address, details, created_at FROM activity_logs",
+    );
+
+    let mut sep = " WHERE ";
+    if let Some(ref action) = query.action {
+        count_builder.push(sep).push("action = ").push_bind(action.as_str()).push("::log_action");
+        query_builder.push(sep).push("action = ").push_bind(action.as_str()).push("::log_action");
+        sep = " AND ";
+    }
+    if let Some(ref level) = query.level {
+        count_builder.push(sep).push("level = ").push_bind(level.as_str()).push("::log_level");
+        query_builder.push(sep).push("level = ").push_bind(level.as_str()).push("::log_level");
+    }
+
+    let total: (i64,) = count_builder.build_query_as().fetch_one(&pool).await?;
+
+    query_builder
+        .push(" ORDER BY created_at DESC LIMIT ")
+        .push_bind(per_page)
+        .push(" OFFSET ")
+        .push_bind(offset);
+
+    let logs: Vec<LogEntry> = query_builder.build_query_as().fetch_all(&pool).await?;
 
     Ok(Json(serde_json::json!({
         "logs": logs,

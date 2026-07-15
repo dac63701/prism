@@ -242,27 +242,6 @@ pub async fn update_clip_title(
     Ok(())
 }
 
-pub async fn update_clip_metadata(
-    pool: &PgPool,
-    id: Uuid,
-    title: &str,
-    game: &str,
-    visibility: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"UPDATE clips SET title = $1, game = $2, visibility = $3::clip_visibility,
-                  updated_at = NOW()
-           WHERE id = $4"#,
-    )
-    .bind(title)
-    .bind(game)
-    .bind(visibility)
-    .bind(id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 pub async fn regenerate_share_id(pool: &PgPool, id: Uuid) -> Result<String, sqlx::Error> {
     use rand::Rng;
     let share_id: String = (0..6)
