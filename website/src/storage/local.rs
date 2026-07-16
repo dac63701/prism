@@ -16,14 +16,32 @@ impl LocalStorage {
 
     fn safe_path(&self, path: &str) -> Result<PathBuf, std::io::Error> {
         for component in Path::new(path).components() {
-            if matches!(component, std::path::Component::ParentDir) {
+            if matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            ) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "Path traversal detected",
                 ));
             }
         }
-        Ok(self.root.join(path))
+        let full = self.root.join(path);
+        if full.exists() {
+            let canonical = full.canonicalize().map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path")
+            })?;
+            let root_canonical = self.root.canonicalize().unwrap_or(self.root.clone());
+            if !canonical.starts_with(&root_canonical) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Path traversal detected",
+                ));
+            }
+        }
+        Ok(full)
     }
 
     fn ensure_parent(&self, path: &str) -> Result<(), std::io::Error> {

@@ -11,10 +11,11 @@ mod thumbnail;
 use std::sync::Arc;
 
 use axum::{
+    body::Body,
     extract::{ConnectInfo, Request},
     http::{header, HeaderValue, Method, StatusCode},
     middleware as axum_middleware,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::get,
     Router,
 };
@@ -197,6 +198,7 @@ async fn main() {
                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' data: https:; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com",
             ),
         ))
+        .layer(axum_middleware::from_fn(sanitize_error_middleware))
         .layer(cors)
         .with_state(state);
 
@@ -228,6 +230,34 @@ async fn main() {
         eprintln!("FATAL: Server error: {e}");
         std::process::exit(1);
     }
+}
+
+async fn sanitize_error_middleware(
+    request: Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let response = next.run(request).await;
+
+    if response.status() != StatusCode::BAD_REQUEST {
+        return response;
+    }
+
+    let (parts, body) = response.into_parts();
+    let bytes = match axum::body::to_bytes(body, usize::MAX).await {
+        Ok(b) => b,
+        Err(_) => return (parts, Body::empty()).into_response(),
+    };
+    let text = String::from_utf8_lossy(&bytes);
+
+    if text.contains("Failed to parse the request body as JSON:") {
+        return (
+            parts,
+            axum::Json(serde_json::json!({"error": "Invalid request body"})),
+        )
+            .into_response();
+    }
+
+    (parts, Body::from(bytes.to_vec())).into_response()
 }
 
 async fn rate_limit_middleware(

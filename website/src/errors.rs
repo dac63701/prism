@@ -88,6 +88,9 @@ impl From<sqlx::Error> for AppError {
 
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
-        AppError::Storage(e.to_string())
+        match e.kind() {
+            std::io::ErrorKind::InvalidInput => AppError::BadRequest(e.to_string()),
+            _ => AppError::Storage(e.to_string()),
+        }
     }
 }

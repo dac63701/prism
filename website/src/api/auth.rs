@@ -698,7 +698,7 @@ pub async fn register(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let email = body.email.trim().to_lowercase();
 
-    if email.is_empty() || !is_valid_email(&email) {
+    if email.is_empty() || email.len() > 254 || !is_valid_email(&email) {
         return Err(AppError::BadRequest("Invalid email address".into()));
     }
     if body.password.len() < 8 {
