@@ -181,6 +181,10 @@ async fn main() {
             rate_limit_middleware,
         ))
         .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ))
