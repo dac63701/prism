@@ -23,10 +23,10 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
       STORAGE_PATH: /data
-      SITE_URL: http://localhost:3000
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_REDIRECT_URI: http://localhost:8080/api/auth/google/callback
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8080/api/auth/google/callback}
       DESKTOP_SCHEME_URL: prism://auth/callback
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -48,8 +48,8 @@ services:
       context: .
       dockerfile: Dockerfile.web
     environment:
-      SITE_URL: http://localhost:3000
-      API_ORIGIN: http://api:8080
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      API_ORIGIN: ${API_ORIGIN:-http://api:8080}
       NODE_ENV: production
     ports:
       - "3000:3000"
