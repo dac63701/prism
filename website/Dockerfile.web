@@ -10,7 +10,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 ARG API_ORIGIN=http://api:8080
-ARG SITE_URL=http://localhost:3000
+ARG SITE_URL=https://goprism.studio
 ENV API_ORIGIN=${API_ORIGIN}
 ENV SITE_URL=${SITE_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
