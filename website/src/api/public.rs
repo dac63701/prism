@@ -81,7 +81,6 @@ pub async fn profile_meta(
     Ok(Json(serde_json::json!({
         "user": {
             "id": user.id,
-            "email": user.email,
             "display_name": user.display_name,
             "avatar_url": user.avatar_url,
             "created_at": user.created_at.to_rfc3339(),
