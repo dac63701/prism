@@ -1,6 +1,6 @@
 //! Recording IPC commands — start, stop, save clip, status.
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use std::path::Path;
 
