@@ -137,6 +137,7 @@ impl RingBuffer {
     }
 
     /// Timestamp of the newest buffered frame without cloning the buffer.
+    #[cfg(not(target_os = "macos"))]
     pub fn latest_timestamp(&self) -> Option<Instant> {
         self.frames.back().map(|frame| frame.timestamp)
     }
@@ -258,6 +259,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn latest_timestamp_tracks_newest_frame() {
         let mut buf = RingBuffer::new(3);
         let now = Instant::now();
