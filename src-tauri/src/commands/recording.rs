@@ -8,7 +8,6 @@ use crate::capture::{enumerate_capture_sources, CaptureSources, CaptureTarget, P
 use crate::encoder::codecs::{Codec, EncoderConfig};
 use crate::encoder::create_encoder;
 use crate::recording::{chrono_now_formatted, Recorder};
-use crate::settings::config::resolution_dimensions;
 use crate::settings::SettingsManager;
 
 /// Start the ring-buffer recording and spawn the polling task.
@@ -55,7 +54,7 @@ pub async fn is_recording(recorder: State<'_, Recorder>) -> Result<bool, String>
 #[tauri::command]
 pub async fn save_clip(
     app: AppHandle,
-    recorder: State<'_, Recorder>,
+    _recorder: State<'_, Recorder>,
     settings_mgr: State<'_, SettingsManager>,
     duration_secs: u32,
 ) -> Result<String, String> {
@@ -67,7 +66,13 @@ pub async fn save_clip(
     };
 
     let filename = format!("clip_{}.mp4", chrono_now_formatted());
-    save_clip_internal(&app, &recorder, &settings, duration, filename)
+    let worker_app = app.clone();
+    tokio::task::spawn_blocking(move || {
+        let recorder = worker_app.state::<Recorder>();
+        save_clip_internal(&worker_app, &recorder, &settings, duration, filename)
+    })
+    .await
+    .map_err(|e| format!("Clip save worker failed: {e}"))?
 }
 
 /// Save a clip from an internal event source while retaining the same safe
@@ -89,12 +94,9 @@ pub(crate) fn save_clip_internal(
     // Step 2: Build encoder config from settings
     let rs = &settings.recording;
     let first = &clip_data.frames[0];
-    let dims = resolution_dimensions(&rs.resolution);
-    let (target_width, target_height) = if dims == (0, 0) {
-        (first.width, first.height)
-    } else {
-        dims
-    };
+    // Buffered H.264 packets are already encoded. Their actual dimensions,
+    // rather than a potentially different current setting, define the MP4.
+    let (target_width, target_height) = (first.width, first.height);
     let enc_config = EncoderConfig {
         codec: Codec::H264,
         bitrate_kbps: rs.bitrate_kbps,

@@ -321,6 +321,7 @@ impl Recorder {
         let app_handle = app;
         tauri::async_runtime::spawn(async move {
             loop {
+                let poll_started = std::time::Instant::now();
                 let (running, interval) = {
                     let recorder = app_handle.state::<Recorder>();
                     if !recorder.is_recording() {
@@ -333,7 +334,9 @@ impl Recorder {
                 if !running {
                     break;
                 }
-                tokio::time::sleep(interval).await;
+                // Keep the configured frame period stable instead of adding
+                // capture and encode time to every interval.
+                tokio::time::sleep(interval.saturating_sub(poll_started.elapsed())).await;
             }
         });
 
@@ -413,13 +416,10 @@ impl Recorder {
         let phase1 = {
             // Try to init encoder if not available
             if inner.h264_encoder.is_none() && !inner.h264_encoder_init_failed {
-                let tw = inner.target_width.max(1);
-                let th = inner.target_height.max(1);
-                let (enc_w, enc_h) = if inner.resolution_is_native {
-                    (frame.width, frame.height)
-                } else {
-                    (tw, th)
-                };
+                // Desktop Duplication currently captures at source resolution.
+                // Feeding an unscaled native frame to a smaller MFT media type
+                // is invalid and can force costly encoder fallback behavior.
+                let (enc_w, enc_h) = (frame.width, frame.height);
                 match MfH264Encoder::new(
                     enc_w,
                     enc_h,
@@ -554,8 +554,9 @@ impl Recorder {
         Vec<StoredFrame>,
     ) {
         let Some(mut encoder) = encoder_opt else {
-            // No encoder — store raw NV12 frame
-            return (None, init_failed, sps, pps, vec![StoredFrame::from(frame)]);
+            // Raw NV12 cannot be muxed by the Windows clip writer and consumes
+            // several MiB per frame. Drop it rather than thrashing the buffer.
+            return (None, init_failed, sps, pps, Vec::new());
         };
 
         match encoder.encode_frame(&frame.data) {
@@ -586,14 +587,8 @@ impl Recorder {
                 (Some(encoder), false, new_sps, new_pps, stored)
             }
             Err(e) => {
-                eprintln!("H.264 encode error (falling back to raw): {e}");
-                (
-                    Some(encoder),
-                    false,
-                    sps,
-                    pps,
-                    vec![StoredFrame::from(frame)],
-                )
+                eprintln!("H.264 encode error (dropping frame): {e}");
+                (Some(encoder), false, sps, pps, Vec::new())
             }
         }
     }
@@ -868,9 +863,9 @@ impl Recorder {
     ///
     /// Returns `None` if no frame has been captured yet.
     pub fn get_preview_frame(&self) -> Option<String> {
-        let guard = self.inner.lock().ok()?;
-        let inner = guard.as_ref()?;
-        let frame = inner.latest_frame.as_ref()?;
+        // JPEG conversion is expensive; retain only the Arc-backed frame while
+        // locked so capture can continue while the preview is generated.
+        let frame = self.inner.lock().ok()?.as_ref()?.latest_frame.clone()?;
 
         let width = frame.width;
         let height = frame.height;

@@ -184,38 +184,18 @@ impl WindowsCaptureBackend {
         }
 
         let src_stride = mapped.RowPitch;
-        let dst_stride = width * 4;
-        let total_size = (dst_stride * height) as usize;
-        let mut data: Vec<u8> = vec![0u8; total_size];
-
-        unsafe {
-            let src_ptr = mapped.pData as *const u8;
-            let dst_ptr = data.as_mut_ptr();
-            if src_stride == dst_stride {
-                // Fast path: contiguous rows, single memcpy
-                std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, total_size);
-            } else {
-                // Slow path: row pitch differs (e.g. GPU padding)
-                for y in 0..height {
-                    let src_offset = (y * src_stride) as usize;
-                    let dst_offset = (y * dst_stride) as usize;
-                    std::ptr::copy_nonoverlapping(
-                        src_ptr.add(src_offset),
-                        dst_ptr.add(dst_offset),
-                        dst_stride as usize,
-                    );
-                }
-            }
-        }
+        // Convert directly from mapped D3D memory. Copying into an intermediate
+        // tightly-packed BGRA frame previously added an 8 MiB allocation and
+        // memory copy per 1080p frame before the conversion even began.
+        let mapped_data = unsafe {
+            std::slice::from_raw_parts(mapped.pData as *const u8, (src_stride * height) as usize)
+        };
+        let nv12_data = crate::capture::bgra_to_nv12(mapped_data, width, height, src_stride);
 
         unsafe { context.Unmap(staging, 0) };
 
         unsafe { duplication.ReleaseFrame() }
             .map_err(|e| CaptureError::StreamError(format!("ReleaseFrame failed: {e}")))?;
-
-        // Convert BGRA → NV12 for memory-efficient ring-buffer storage.
-        // NV12 is 1.5 B/px (vs 4 B/px for BGRA), giving ~2.7× memory savings.
-        let nv12_data = crate::capture::bgra_to_nv12(&data, width, height, dst_stride);
 
         let frame = CapturedFrame {
             data: Arc::new(nv12_data),

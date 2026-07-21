@@ -112,9 +112,7 @@ impl BufferManager {
         {
             let now = self
                 .buffer
-                .all_frames()
-                .last()
-                .map(|f| f.timestamp)
+                .latest_timestamp()
                 .unwrap_or_else(std::time::Instant::now);
             self.buffer.clip_since(duration, now)
         }

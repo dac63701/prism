@@ -136,6 +136,11 @@ impl RingBuffer {
         self.frames.iter().cloned().collect()
     }
 
+    /// Timestamp of the newest buffered frame without cloning the buffer.
+    pub fn latest_timestamp(&self) -> Option<Instant> {
+        self.frames.back().map(|frame| frame.timestamp)
+    }
+
     /// Clear all frames.
     pub fn clear(&mut self) {
         self.frames.clear();
@@ -250,6 +255,16 @@ mod tests {
         }
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.all_frames().len(), 3);
+    }
+
+    #[test]
+    fn latest_timestamp_tracks_newest_frame() {
+        let mut buf = RingBuffer::new(3);
+        let now = Instant::now();
+        assert_eq!(buf.latest_timestamp(), None);
+        buf.push(make_frame(now));
+        buf.push(make_frame(now + Duration::from_secs(1)));
+        assert_eq!(buf.latest_timestamp(), Some(now + Duration::from_secs(1)));
     }
 
     #[test]

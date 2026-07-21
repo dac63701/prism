@@ -197,16 +197,16 @@ impl MfH264Encoder {
     pub fn encode_frame(&mut self, nv12: &[u8]) -> Result<Vec<EncodedPacket>, EncodeError> {
         unsafe {
             let expected_size = (self.width * self.height * 3 / 2) as usize;
-            if nv12.len() < expected_size {
+            if nv12.len() != expected_size {
                 return Err(EncodeError::EncodeFailed(format!(
-                    "NV12 buffer too small: got {} expected {}",
+                    "Invalid NV12 buffer size: got {} expected {}",
                     nv12.len(),
                     expected_size
                 )));
             }
 
             // ------ Create input sample ------
-            let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(nv12.len() as u32)
+            let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(expected_size as u32)
                 .map_err(|e| EncodeError::EncodeFailed(format!("CreateMemoryBuffer: {e}")))?;
 
             let mut ptr: *mut u8 = std::ptr::null_mut();
@@ -217,10 +217,10 @@ impl MfH264Encoder {
                 .Lock(&mut ptr, Some(&mut max_len), Some(&mut cur_len))
                 .map_err(|e| EncodeError::EncodeFailed(format!("Lock buffer: {e}")))?;
 
-            std::ptr::copy_nonoverlapping(nv12.as_ptr(), ptr, nv12.len());
+            std::ptr::copy_nonoverlapping(nv12.as_ptr(), ptr, expected_size);
 
             buffer
-                .SetCurrentLength(nv12.len() as u32)
+                .SetCurrentLength(expected_size as u32)
                 .map_err(|e| EncodeError::EncodeFailed(format!("SetCurrentLength: {e}")))?;
 
             buffer
