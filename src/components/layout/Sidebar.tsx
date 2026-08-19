@@ -235,7 +235,7 @@ export default function Sidebar({ onSignInClick }: { onSignInClick: () => void }
       <div className={cn("border-t border-border py-3", collapsed ? "px-2" : "px-4")}>
         <AccountCard collapsed={collapsed} onSignInClick={onSignInClick} />
         {!collapsed && (
-          <p className="mt-2 px-1 text-[11px] text-zinc-600">Prism v{version || "0.2.5"}</p>
+          <p className="mt-2 px-1 text-[11px] text-zinc-600">Prism v{version || "0.3.0"}</p>
         )}
       </div>
     </aside>

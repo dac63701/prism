@@ -2951,7 +2951,7 @@ dependencies = [
 
 [[package]]
 name = "prism"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "apple-cf",
  "base64 0.22.1",
