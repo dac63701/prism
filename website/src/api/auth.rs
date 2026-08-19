@@ -1341,9 +1341,13 @@ pub async fn logout(State(config): State<Config>) -> Result<(HeaderMap, Json<ser
 }
 
 pub async fn me(State(pool): State<PgPool>, auth: AuthUser) -> Result<Json<UserResponse>, AppError> {
-    let user = db::users::get_user_by_id(&pool, auth.user_id)
+    let mut user = db::users::get_user_by_id(&pool, auth.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
+
+    // The clips table is the source of truth for usage; reconcile the
+    // denormalized counter so the dashboard always shows accurate numbers.
+    user.storage_used_bytes = db::users::reconcile_storage_used(&pool, auth.user_id).await?;
 
     Ok(Json(user_to_response(&user)))
 }

@@ -48,19 +48,25 @@ pub fn start_upload_processor(app: AppHandle) {
                 })
                 .filter(|p| p.exists());
 
+            let max_retries = settings.cloud.max_upload_retries;
+
             // Use live settings for auth — re-login updates the key without
             // invalidating already-enqueued upload tasks.
             let base_url = settings.cloud.server_url.trim_end_matches('/').to_string();
             if base_url.is_empty() {
                 eprintln!("[upload] server_url not configured — skipping {}", task_id);
-                queue.mark_failed(&task_id, "Server URL not configured".into());
+                queue.mark_failed(&task_id, "Server URL not configured".into(), max_retries);
                 continue;
             }
             let upload_url = format!("{base_url}/api/clips/upload");
             let access_token = settings.cloud.access_token.clone();
             if access_token.is_empty() {
                 eprintln!("[upload] access_token is empty — skipping {}", task_id);
-                queue.mark_failed(&task_id, "Not authenticated — sign in first".into());
+                queue.mark_failed(
+                    &task_id,
+                    "Not authenticated — sign in first".into(),
+                    max_retries,
+                );
                 continue;
             }
 
@@ -103,6 +109,7 @@ pub fn start_upload_processor(app: AppHandle) {
                     codec: task.codec.clone(),
                     size_bytes: task.size_bytes,
                 },
+                &settings.cloud.default_visibility,
             )
             .await;
 
@@ -137,9 +144,8 @@ pub fn start_upload_processor(app: AppHandle) {
                                 eprintln!("[upload] token refreshed, will retry");
                                 refreshed_this_session = true;
                                 // Re-enqueue as pending so next loop picks it up
-                                queue.mark_failed(&task_id, "Token expired, will retry".into());
-                                // Force a retry by resetting the task to pending
-                                // (mark_failed with retry_count < 3 will do this)
+                                // (mark_failed honors the configured max_upload_retries)
+                                queue.mark_failed(&task_id, "Token expired, will retry".into(), max_retries);
                                 continue;
                             }
                             Err(refresh_err) => {
@@ -158,7 +164,7 @@ pub fn start_upload_processor(app: AppHandle) {
                         );
                         let _ = app.emit("auth-invalid", ());
                     } else {
-                        queue.mark_failed(&task_id, err_msg.clone());
+                        queue.mark_failed(&task_id, err_msg.clone(), max_retries);
                     }
 
                     let _ = app.emit(

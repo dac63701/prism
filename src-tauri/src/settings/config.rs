@@ -41,6 +41,14 @@ pub struct RecordingSettings {
     /// Capture system audio (WASAPI loopback) alongside video.
     #[serde(default = "default_true")]
     pub capture_audio: bool,
+    /// Quality preset key ("fast" | "balanced" | "high"). "custom" when the
+    /// individual resolution/fps/bitrate fields have been hand-tuned.
+    #[serde(default = "default_quality_preset")]
+    pub quality_preset: String,
+}
+
+fn default_quality_preset() -> String {
+    "balanced".into()
 }
 
 fn default_true() -> bool {
@@ -59,6 +67,7 @@ impl Default for RecordingSettings {
             capture_target: String::new(),
             always_on_recording: true,
             capture_audio: true,
+            quality_preset: default_quality_preset(),
         }
     }
 }
@@ -225,6 +234,23 @@ pub struct CloudSettings {
     /// Avatar URL of the connected account (if any)
     #[serde(default)]
     pub avatar_url: String,
+    /// Default visibility for uploaded clips: "public" | "unlisted" | "private"
+    #[serde(default = "default_visibility")]
+    pub default_visibility: String,
+    /// Auto-copy the share link to the clipboard when an upload finishes.
+    #[serde(default)]
+    pub copy_share_link_after_upload: bool,
+    /// How many times a failed upload is retried before giving up.
+    #[serde(default = "default_max_upload_retries")]
+    pub max_upload_retries: u32,
+}
+
+fn default_visibility() -> String {
+    "unlisted".into()
+}
+
+fn default_max_upload_retries() -> u32 {
+    2
 }
 
 impl Default for CloudSettings {
@@ -239,6 +265,9 @@ impl Default for CloudSettings {
             account_display_name: String::new(),
             account_email: String::new(),
             avatar_url: String::new(),
+            default_visibility: default_visibility(),
+            copy_share_link_after_upload: false,
+            max_upload_retries: default_max_upload_retries(),
         }
     }
 }

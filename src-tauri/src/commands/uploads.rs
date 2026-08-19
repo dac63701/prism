@@ -7,6 +7,8 @@ use crate::settings::SettingsManager;
 use crate::upload::queue::{UploadMetadata, UploadQueue};
 
 /// Enqueue a clip for upload to the configured server.
+/// Idempotent: clips already queued, in-flight, or successfully uploaded are
+/// left alone; a previously failed task is retried instead of duplicated.
 #[tauri::command]
 pub async fn upload_clip(
     app: AppHandle,
@@ -27,6 +29,33 @@ pub async fn upload_clip(
     let clip_path = PathBuf::from(&path);
     if !clip_path.exists() {
         return Err(format!("Clip not found: {path}"));
+    }
+
+    // Avoid duplicate uploads: if this clip is already queued, uploading, or
+    // done, don't enqueue another copy.
+    if let Some(existing) = queue.all().into_iter().find(|t| t.clip_path == path) {
+        match existing.status {
+            crate::upload::queue::UploadStatus::Failed(_) => {
+                queue.retry(&existing.id);
+                let _ = app.emit(
+                    "upload-progress",
+                    serde_json::json!({
+                        "id": existing.id,
+                        "status": "Pending",
+                        "progress": 0.0,
+                        "clip_path": path,
+                    }),
+                );
+                return Ok(());
+            }
+            crate::upload::queue::UploadStatus::Pending
+            | crate::upload::queue::UploadStatus::Uploading
+            | crate::upload::queue::UploadStatus::Completed => {
+                eprintln!("[upload] {} already handled — skipping duplicate", path);
+                return Ok(());
+            }
+            _ => {}
+        }
     }
 
     let size_bytes = std::fs::metadata(&clip_path).map(|m| m.len()).unwrap_or(0);

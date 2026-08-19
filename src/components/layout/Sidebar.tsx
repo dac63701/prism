@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { Home, Film, Settings, Cloud, CloudOff, User, LogOut, ExternalLink } from "lucide-react";
+import { Home, Film, Settings, Cloud, CloudOff, LogOut, ExternalLink } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
 import RecordingIndicator from "@/components/common/RecordingIndicator";
 import PrismLogo from "@/components/common/PrismLogo";
+import AccountAvatar from "@/components/common/AccountAvatar";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useCloudStore } from "@/stores/cloud";
@@ -16,50 +17,6 @@ const navItems = [
   { to: "/library", label: "Library", icon: Film },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
-function AccountAvatar({
-  src,
-  name,
-  size = "size-8",
-}: {
-  src: string;
-  name: string;
-  size?: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  const initials = getInitials(name);
-
-  if (src && !failed) {
-    return (
-      <img
-        src={src}
-        alt={name || "Account"}
-        onError={() => setFailed(true)}
-        className={cn("shrink-0 rounded-full object-cover", size)}
-      />
-    );
-  }
-  return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-accent/15 text-xs font-semibold text-blue-300",
-        size
-      )}
-    >
-      {initials || <User className="size-4" />}
-    </span>
-  );
-}
 
 interface AccountCardProps {
   collapsed: boolean;

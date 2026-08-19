@@ -7,6 +7,7 @@ mod commands;
 mod encoder;
 mod games;
 mod hotkey;
+mod notification;
 mod recording;
 mod settings;
 mod tray;
@@ -37,6 +38,13 @@ pub fn run() {
                     handle_deep_link(app, url);
                 }
             }
+            // Second-launch activation (e.g. a clicked toast notification)
+            // forwards into the running instance. Raise the window so the
+            // clip save toast click brings Prism to the foreground.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
         }));
     }
 
@@ -44,6 +52,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Initialize settings from disk (graceful fallback)
             let settings_mgr = match SettingsManager::new(app.handle()) {
@@ -115,9 +124,21 @@ pub fn run() {
                 eprintln!("Warning: Failed to register hotkeys: {e}");
             }
 
-            // Build system tray (graceful fallback — non-fatal)
+            // Register system tray (graceful fallback — non-fatal)
             if let Err(e) = tray::build_tray(app.handle()) {
                 eprintln!("Warning: Failed to build system tray: {e}");
+            }
+
+            // Windows: self-heal the toast AUMID registration so native
+            // notifications render over every app regardless of launch path.
+            #[cfg(target_os = "windows")]
+            notification::register_aumid(app.handle());
+
+            // macOS: prompt for Notification Center permission up front.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let _ = app.notification().request_permission();
             }
 
             // Custom title bar: keep decorations disabled on Windows/Linux

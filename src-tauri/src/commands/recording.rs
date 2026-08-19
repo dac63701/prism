@@ -224,6 +224,10 @@ pub(crate) fn save_clip_internal(
     let output_str = output_path.to_string_lossy().to_string();
     let _ = app.emit("clip-saved", &output_str);
 
+    if settings.general.show_clip_notification {
+        crate::notification::notify_clip_saved(app, &output_path);
+    }
+
     Ok(output_str)
 }
 
@@ -571,46 +575,196 @@ pub async fn set_capture_target(
 /// Generate a high-quality JPEG thumbnail from a captured frame and save it
 /// alongside the MP4. The image fits within a 1280×720 box for crisp library
 /// cards and a useful poster in the clip editor.
+///
+/// Sampling happens DURING the color conversion: the source frame is read
+/// directly into the target buffer with bilinear interpolation, so no
+/// full-resolution RGB frame is materialized and no separate resize pass runs.
+/// At 4K this is roughly an order of magnitude less pixel work than
+/// convert-then-resize — the dominant contributor to the clip-save CPU burst.
 fn generate_thumbnail(
     frame: &crate::capture::CapturedFrame,
     thumb_path: &Path,
 ) -> Result<(), String> {
-    use image::imageops::FilterType;
-
     let w = frame.width;
     let h = frame.height;
     let (thumb_w, thumb_h) = thumbnail_dimensions(w, h);
+    if w == 0 || h == 0 {
+        return Err("Cannot generate thumbnail from a 0×0 frame".into());
+    }
 
-    let rgb = match frame.pixel_format {
-        PixelFormat::Nv12 => crate::capture::nv12_to_rgb(&frame.data, w, h),
-        PixelFormat::Bgra => {
-            let mut rgb = vec![0u8; (w * h * 3) as usize];
-            for y in 0..h {
-                for x in 0..w {
-                    let off = (y * frame.stride + x * 4) as usize;
-                    let dst = (y * w + x) as usize * 3;
-                    rgb[dst] = frame.data[off + 2];
-                    rgb[dst + 1] = frame.data[off + 1];
-                    rgb[dst + 2] = frame.data[off];
-                }
-            }
-            rgb
-        }
+    let mut rgb = image::RgbImage::new(thumb_w, thumb_h);
+    match frame.pixel_format {
+        PixelFormat::Nv12 => thumbnail_from_nv12(frame, &mut rgb, w, h, thumb_w, thumb_h),
+        PixelFormat::Bgra => thumbnail_from_bgra(frame, &mut rgb, w, h, thumb_w, thumb_h),
         PixelFormat::H264 => return Err("Cannot generate thumbnail from H.264 data".into()),
-    };
-
-    let img =
-        image::RgbImage::from_raw(w, h, rgb).ok_or("Failed to create RGB image from frame data")?;
-    let resized = image::imageops::resize(&img, thumb_w, thumb_h, FilterType::Triangle);
+    }
 
     let file = std::fs::File::create(thumb_path)
         .map_err(|e| format!("Failed to create thumbnail file: {e}"))?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, 90);
     encoder
-        .encode(&resized, thumb_w, thumb_h, image::ExtendedColorType::Rgb8)
+        .encode(&rgb, thumb_w, thumb_h, image::ExtendedColorType::Rgb8)
         .map_err(|e| format!("JPEG encode failed: {e}"))?;
 
     Ok(())
+}
+
+/// Bilinearly sample a tight-packed NV12 frame (stride == width) into `rgb`,
+/// downscaling in the same pass.
+fn thumbnail_from_nv12(
+    frame: &crate::capture::CapturedFrame,
+    rgb: &mut image::RgbImage,
+    w: u32,
+    h: u32,
+    thumb_w: u32,
+    thumb_h: u32,
+) {
+    let data = &frame.data;
+    let y_size = (w * h) as usize;
+    let expected = y_size + (w.div_ceil(2) * h.div_ceil(2) * 2) as usize;
+    if data.len() < expected {
+        return;
+    }
+    let y_plane = &data[..y_size];
+    let uv_plane = &data[y_size..];
+    let uv_w = w.div_ceil(2) as usize;
+    let uv_h = h.div_ceil(2) as usize;
+    let stride = w as usize;
+
+    let scale_x = w as f32 / thumb_w as f32;
+    let scale_y = h as f32 / thumb_h as f32;
+
+    for dy in 0..thumb_h {
+        for dx in 0..thumb_w {
+            let sx = (dx as f32 + 0.5) * scale_x - 0.5;
+            let sy = (dy as f32 + 0.5) * scale_y - 0.5;
+
+            let (x0, x1, fx) = bilinear_pos(sx, w);
+            let (y0, y1, fy) = bilinear_pos(sy, h);
+
+            let y_val = lerp4(
+                y_plane[y0 * stride + x0] as f32,
+                y_plane[y0 * stride + x1] as f32,
+                y_plane[y1 * stride + x0] as f32,
+                y_plane[y1 * stride + x1] as f32,
+                fx,
+                fy,
+            );
+
+            // Chroma is stored at half resolution — interpolate in the U/V
+            // plane at half the source coordinates.
+            let (cx0, cx1, cfx) = bilinear_pos(sx * 0.5, uv_w as u32);
+            let (cy0, cy1, cfy) = bilinear_pos(sy * 0.5, uv_h as u32);
+            let u_val = lerp4(
+                uv_plane[(cy0 * uv_w + cx0) * 2] as f32,
+                uv_plane[(cy0 * uv_w + cx1) * 2] as f32,
+                uv_plane[(cy1 * uv_w + cx0) * 2] as f32,
+                uv_plane[(cy1 * uv_w + cx1) * 2] as f32,
+                cfx,
+                cfy,
+            );
+            let v_val = lerp4(
+                uv_plane[(cy0 * uv_w + cx0) * 2 + 1] as f32,
+                uv_plane[(cy0 * uv_w + cx1) * 2 + 1] as f32,
+                uv_plane[(cy1 * uv_w + cx0) * 2 + 1] as f32,
+                uv_plane[(cy1 * uv_w + cx1) * 2 + 1] as f32,
+                cfx,
+                cfy,
+            );
+
+            let pixel = rgb.get_pixel_mut(dx, dy);
+            let (r, g, b) = yuv_to_rgb(y_val as i32, u_val as i32, v_val as i32);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+    }
+}
+
+/// Bilinearly sample a BGRA frame (honoring `frame.stride`) into `rgb`,
+/// downscaling in the same pass.
+fn thumbnail_from_bgra(
+    frame: &crate::capture::CapturedFrame,
+    rgb: &mut image::RgbImage,
+    w: u32,
+    h: u32,
+    thumb_w: u32,
+    thumb_h: u32,
+) {
+    let data = &frame.data;
+    let stride = frame.stride as usize;
+    let scale_x = w as f32 / thumb_w as f32;
+    let scale_y = h as f32 / thumb_h as f32;
+
+    for dy in 0..thumb_h {
+        for dx in 0..thumb_w {
+            let sx = (dx as f32 + 0.5) * scale_x - 0.5;
+            let sy = (dy as f32 + 0.5) * scale_y - 0.5;
+
+            let (x0, x1, fx) = bilinear_pos(sx, w);
+            let (y0, y1, fy) = bilinear_pos(sy, h);
+
+            let b = lerp4(
+                data[y0 * stride + x0 * 4] as f32,
+                data[y0 * stride + x1 * 4] as f32,
+                data[y1 * stride + x0 * 4] as f32,
+                data[y1 * stride + x1 * 4] as f32,
+                fx,
+                fy,
+            );
+            let g = lerp4(
+                data[y0 * stride + x0 * 4 + 1] as f32,
+                data[y0 * stride + x1 * 4 + 1] as f32,
+                data[y1 * stride + x0 * 4 + 1] as f32,
+                data[y1 * stride + x1 * 4 + 1] as f32,
+                fx,
+                fy,
+            );
+            let r = lerp4(
+                data[y0 * stride + x0 * 4 + 2] as f32,
+                data[y0 * stride + x1 * 4 + 2] as f32,
+                data[y1 * stride + x0 * 4 + 2] as f32,
+                data[y1 * stride + x1 * 4 + 2] as f32,
+                fx,
+                fy,
+            );
+
+            let pixel = rgb.get_pixel_mut(dx, dy);
+            pixel[0] = r as u8;
+            pixel[1] = g as u8;
+            pixel[2] = b as u8;
+        }
+    }
+}
+
+/// Clamp a float sample position to `[0, size-1]` and return the two adjacent
+/// integer indices plus the fractional offset between them.
+fn bilinear_pos(pos: f32, size: u32) -> (usize, usize, f32) {
+    let max = (size - 1) as f32;
+    let pos = pos.clamp(0.0, max);
+    let base = pos.floor() as usize;
+    let next = (base + 1).min((size - 1) as usize);
+    (base, next, pos - base as f32)
+}
+
+/// Bilinear blend of four samples.
+fn lerp4(a: f32, b: f32, c: f32, d: f32, fx: f32, fy: f32) -> f32 {
+    let top = a + (b - a) * fx;
+    let bottom = c + (d - c) * fx;
+    top + (bottom - top) * fy
+}
+
+/// NV12 YUV → RGB (same matrix and limited-range offsets as `nv12_convert`).
+/// Inputs are the raw NV12 sample values; the BT.601 offsets (Y−16, U−128,
+/// V−128) are subtracted here before the matrix multiply.
+fn yuv_to_rgb(y: i32, u: i32, v: i32) -> (u8, u8, u8) {
+    let y = y - 16;
+    let u = u - 128;
+    let v = v - 128;
+    let r = ((298 * y + 409 * v + 128) >> 8).clamp(0, 255) as u8;
+    let g = ((298 * y - 100 * u - 208 * v + 128) >> 8).clamp(0, 255) as u8;
+    let b = ((298 * y + 516 * u + 128) >> 8).clamp(0, 255) as u8;
+    (r, g, b)
 }
 
 /// Fallback: extract a thumbnail from the first usable NV12/BGRA frame in
@@ -653,7 +807,10 @@ fn thumbnail_dimensions(width: u32, height: u32) -> (u32, u32) {
 
 #[cfg(test)]
 mod thumbnail_tests {
-    use super::thumbnail_dimensions;
+    use super::*;
+    use crate::capture::{CapturedFrame, PixelFormat};
+    use std::sync::Arc;
+    use std::time::Instant;
 
     #[test]
     fn thumbnail_dimensions_preserve_720p_landscape() {
@@ -663,5 +820,78 @@ mod thumbnail_tests {
     #[test]
     fn thumbnail_dimensions_fit_tall_sources() {
         assert_eq!(thumbnail_dimensions(1080, 1920), (405, 720));
+    }
+
+    fn nv12_frame(width: u32, height: u32) -> CapturedFrame {
+        // Solid YUV(120,128,128) ≈ mid-gray, so every sampled pixel is equal.
+        let y_size = (width * height) as usize;
+        let uv_size = (width.div_ceil(2) * height.div_ceil(2) * 2) as usize;
+        let mut data = vec![120u8; y_size];
+        data.extend_from_slice(&vec![128u8; uv_size]);
+        CapturedFrame {
+            data: Arc::new(data),
+            width,
+            height,
+            stride: width,
+            pixel_format: PixelFormat::Nv12,
+            timestamp: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn nv12_thumbnail_downscales_and_writes_jpeg() {
+        let frame = nv12_frame(1920, 1080);
+        let (tw, th) = thumbnail_dimensions(frame.width, frame.height);
+        assert_eq!((tw, th), (1280, 720));
+
+        let mut rgb = image::RgbImage::new(tw, th);
+        thumbnail_from_nv12(&frame, &mut rgb, frame.width, frame.height, tw, th);
+
+        // A solid-gray source must produce a uniform (non-black) thumbnail.
+        let mut min = 255;
+        let mut max = 0;
+        for pixel in rgb.pixels() {
+            min = min.min(pixel[0]);
+            max = max.max(pixel[0]);
+        }
+        assert!(max > 0, "thumbnail must not be black");
+        assert!(
+            max - min <= 2,
+            "uniform source must produce a uniform thumbnail (delta {})",
+            max - min
+        );
+
+        // And it must actually be gray — a purple thumbnail (R/B high, G low)
+        // means the limited-range YUV offsets were not subtracted.
+        let p = rgb.get_pixel(640, 360);
+        let (r, g, b) = (p[0] as i32, p[1] as i32, p[2] as i32);
+        assert!(
+            (r - g).abs() <= 8 && (g - b).abs() <= 8 && (r - b).abs() <= 8,
+            "gray source must render gray, got R={r} G={g} B={b}",
+        );
+
+        // Writing through generate_thumbnail produces a real JPEG file.
+        let path =
+            std::env::temp_dir().join(format!("prism_thumb_test_{}.jpg", std::process::id()));
+        generate_thumbnail(&frame, &path).expect("thumbnail should encode");
+        let bytes = std::fs::read(&path).expect("thumbnail file should exist");
+        assert!(
+            bytes.len() > 1000,
+            "JPEG payload too small: {} bytes",
+            bytes.len()
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn bilinear_pos_clamps_at_edges() {
+        assert_eq!(bilinear_pos(-5.0, 10), (0, 1, 0.0));
+        let (ix, iy, t) = bilinear_pos(3.7, 10);
+        assert_eq!((ix, iy), (3, 4));
+        assert!(
+            (t - 0.7).abs() < 1e-6,
+            "bilinear weight too far from 0.7: {t}"
+        );
+        assert_eq!(bilinear_pos(9.5, 10), (9, 9, 0.0));
     }
 }

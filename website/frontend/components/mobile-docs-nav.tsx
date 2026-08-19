@@ -3,7 +3,7 @@
 interface Section {
   id: string;
   title: string;
-  items: { id: string; heading: string }[];
+  items: { id: string; heading: string; href?: string }[];
 }
 
 export function MobileDocsNav({ sections }: { sections: Section[] }) {
@@ -12,6 +12,12 @@ export function MobileDocsNav({ sections }: { sections: Section[] }) {
       <select
         className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-white"
         onChange={(e) => {
+          const option = e.target.selectedOptions[0];
+          const href = option?.dataset.href;
+          if (href) {
+            window.location.href = href;
+            return;
+          }
           const el = document.getElementById(e.target.value);
           if (el) el.scrollIntoView({ behavior: "smooth" });
         }}
@@ -19,7 +25,7 @@ export function MobileDocsNav({ sections }: { sections: Section[] }) {
         {sections.map((section) => (
           <optgroup key={section.id} label={section.title}>
             {section.items.map((item) => (
-              <option key={item.id} value={item.id}>
+              <option key={item.id} value={item.id} data-href={item.href}>
                 {item.heading}
               </option>
             ))}

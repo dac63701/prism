@@ -36,6 +36,7 @@ fn build_multipart_body(
     file_bytes: &[u8],
     thumbnail_bytes: Option<&[u8]>,
     metadata: &UploadMetadata,
+    visibility: &str,
 ) -> Vec<u8> {
     let mut body = Vec::new();
 
@@ -75,7 +76,7 @@ fn build_multipart_body(
         ("width", &width_str),
         ("height", &height_str),
         ("codec", metadata.codec.as_str()),
-        ("visibility", "unlisted"),
+        ("visibility", visibility),
     ];
     for (name, value) in &text_fields {
         let _ = write!(body, "--{boundary}\r\n");
@@ -99,6 +100,7 @@ pub async fn upload_clip(
     thumbnail_path: Option<&Path>,
     api_token: Option<&str>,
     metadata: &UploadMetadata,
+    visibility: &str,
 ) -> Result<UploadResponse, UploadError> {
     let file_bytes = tokio::fs::read(file_path)
         .await
@@ -127,6 +129,7 @@ pub async fn upload_clip(
         &file_bytes,
         thumbnail_bytes.as_deref(),
         metadata,
+        visibility,
     );
 
     let client = reqwest::Client::new();
@@ -184,6 +187,7 @@ mod tests {
                 codec: "h264".into(),
                 size_bytes: 1000,
             },
+            "unlisted",
         )
         .await;
 

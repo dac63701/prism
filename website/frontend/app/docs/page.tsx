@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { SiteShell } from "@/components/site-shell";
 import { Card, Panel, SectionHeading } from "@/components/ui";
 import { MobileDocsNav } from "@/components/mobile-docs-nav";
+import { guides } from "@/lib/docs-guides";
 import {
   Rocket,
   Clapperboard,
@@ -12,6 +14,7 @@ import {
   Key,
   Lock,
   HelpCircle,
+  ArrowRight,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -143,6 +146,25 @@ export default function DocsPage() {
       <div className="mx-auto flex max-w-6xl gap-10 px-5 py-16 lg:px-8 lg:py-24">
         {/* Sidebar navigation */}
         <nav className="sticky top-24 hidden h-fit w-56 shrink-0 space-y-1 lg:block">
+          <a
+            href="#guides"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/5 hover:text-white"
+          >
+            <BookOpen className="h-4 w-4 text-blue-300" />
+            Guides
+          </a>
+          <div className="ml-6 space-y-0.5">
+            {guides.map((guide) => (
+              <a
+                key={guide.slug}
+                href={`/docs/${guide.slug}`}
+                className="block rounded-lg px-3 py-1.5 text-xs text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300"
+              >
+                {guide.title}
+              </a>
+            ))}
+          </div>
+          <div className="my-3 h-px bg-border" />
           {sections.map((section) => (
             <div key={section.id}>
               <a
@@ -177,6 +199,44 @@ export default function DocsPage() {
             title="How Prism works"
             description="Everything you need to know about recording, sharing, and managing your clips."
           />
+
+          {/* Wiki guides */}
+          <section id="guides" className="mt-10 scroll-mt-24">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300">
+                <BookOpen className="h-5 w-5" />
+              </div>
+              <h2 className="text-xl font-semibold text-white">Guides</h2>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {guides.map((guide) => {
+                const Icon = guide.icon;
+                return (
+                  <Link
+                    key={guide.slug}
+                    href={`/docs/${guide.slug}`}
+                    className="group flex items-start gap-3 rounded-2xl border border-border bg-white/[0.03] p-5 transition hover:border-blue-400/30 hover:bg-white/[0.06]"
+                  >
+                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300">
+                      <Icon className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-white transition group-hover:text-blue-200">
+                        {guide.title}
+                      </h3>
+                      <p className="mt-1.5 text-xs leading-5 text-zinc-500">
+                        {guide.description}
+                      </p>
+                      <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-blue-300">
+                        Read guide
+                        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
 
           {sections.map((section) => (
             <section key={section.id} id={section.id} className="mt-14 scroll-mt-24">
@@ -219,7 +279,20 @@ export default function DocsPage() {
           ))}
         </div>
 
-        <MobileDocsNav sections={sections.map(s => ({ id: s.id, title: s.title, items: s.items.map(i => ({ id: i.id, heading: i.heading })) }))} />
+        <MobileDocsNav
+          sections={[
+            {
+              id: "guides",
+              title: "Guides",
+              items: guides.map((guide) => ({
+                id: guide.slug,
+                heading: guide.title,
+                href: `/docs/${guide.slug}`,
+              })),
+            },
+            ...sections.map((s) => ({ id: s.id, title: s.title, items: s.items.map((i) => ({ id: i.id, heading: i.heading })) })),
+          ]}
+        />
       </div>
     </SiteShell>
   );

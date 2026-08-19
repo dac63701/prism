@@ -8,6 +8,7 @@ export interface RecordingSettings {
   always_on_recording: boolean;
   capture_target: string;
   capture_audio: boolean;
+  quality_preset: "fast" | "balanced" | "high" | "custom";
 }
 
 export interface HotkeySettings {
@@ -58,6 +59,9 @@ export interface CloudSettings {
   account_display_name: string;
   account_email: string;
   avatar_url: string;
+  default_visibility: "public" | "unlisted" | "private";
+  copy_share_link_after_upload: boolean;
+  max_upload_retries: number;
 }
 
 export interface AppSettings {

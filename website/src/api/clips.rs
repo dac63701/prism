@@ -135,7 +135,8 @@ pub async fn upload_clip(
         return Err(AppError::UploadTooLarge);
     }
 
-    if user.storage_used_bytes + file_data.len() as i64 > user.max_storage_bytes {
+    let used = db::users::reconcile_storage_used(&pool, auth.user_id).await?;
+    if used + file_data.len() as i64 > user.max_storage_bytes {
         return Err(AppError::StorageExceeded);
     }
 
@@ -327,7 +328,7 @@ pub async fn delete_clip(
     }
 
     db::clips::delete_clip(&pool, clip_id).await?;
-    db::users::add_storage_used(&pool, auth.user_id, -clip.size_bytes).await?;
+    db::users::reconcile_storage_used(&pool, clip.user_id).await?;
 
     crate::api::auth::log_activity(&pool, auth.user_id, "clip_deleted", None).await;
 

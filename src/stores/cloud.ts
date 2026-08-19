@@ -83,6 +83,15 @@ export const useCloudStore = create<CloudState>((set) => {
             }
             return { uploads };
           });
+
+          if (payload.status === "Completed" && payload.share_url) {
+            const cloud = useSettingsStore.getState().settings.cloud;
+            if (cloud.copy_share_link_after_upload) {
+              navigator.clipboard.writeText(payload.share_url).catch((err) => {
+                console.error("[cloud] Failed to copy share URL:", err);
+              });
+            }
+          }
         },
       );
     }

@@ -374,6 +374,7 @@ pub fn bgra_to_nv12_scaled(
 }
 
 enum Nv12Format {
+    #[allow(dead_code)]
     Rgb,
     #[allow(dead_code)]
     Bgra,
@@ -428,6 +429,7 @@ fn nv12_convert(nv12: &[u8], width: u32, height: u32, fmt: Nv12Format) -> Vec<u8
 
 /// Convert an NV12 frame to RGB (for preview / JPEG encoding).
 /// Output is tightly packed R8G8B8 (3 bytes per pixel).
+#[allow(dead_code)]
 pub fn nv12_to_rgb(nv12: &[u8], width: u32, height: u32) -> Vec<u8> {
     nv12_convert(nv12, width, height, Nv12Format::Rgb)
 }

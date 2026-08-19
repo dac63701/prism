@@ -10,6 +10,8 @@ export default async function DashboardPage() {
 
   const storageUsedGb = user.storage_used_bytes / 1_073_741_824;
   const storageMaxGb = user.max_storage_bytes / 1_073_741_824;
+  const freeGb = Math.max(0, storageMaxGb - storageUsedGb);
+  const usedPercent = storageMaxGb > 0 ? (storageUsedGb / storageMaxGb) * 100 : 0;
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-5 py-8 lg:px-8 lg:py-10">
@@ -23,7 +25,7 @@ export default async function DashboardPage() {
         <StatCard label="Your clips" value={String(clipsData.total)} hint="All your uploaded clips" />
         <StatCard label="Storage used" value={`${storageUsedGb.toFixed(2)} GB`} hint="Total storage consumed" />
         <StatCard label="Storage capacity" value={`${storageMaxGb.toFixed(2)} GB`} hint="Your max storage limit" />
-        <StatCard label="Free space" value={`${(storageMaxGb - storageUsedGb).toFixed(2)} GB`} hint="Remaining upload capacity" />
+        <StatCard label="Free space" value={`${freeGb.toFixed(2)} GB`} hint="Remaining upload capacity" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -84,6 +86,20 @@ export default async function DashboardPage() {
             </div>
             <div className="mt-4 text-sm text-zinc-300">
               {storageUsedGb.toFixed(2)} GB of {storageMaxGb.toFixed(2)} GB used.
+            </div>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full transition ${
+                  usedPercent >= 100
+                    ? "bg-red-500"
+                    : "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-2))]"
+                }`}
+                style={{ width: `${Math.min(100, usedPercent)}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
+              <span>{usedPercent.toFixed(0)}% used</span>
+              <span>{freeGb.toFixed(2)} GB free</span>
             </div>
           </Card>
         </div>

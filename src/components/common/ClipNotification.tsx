@@ -2,15 +2,20 @@ import { useEffect, useState, useRef } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRecordingStore } from "@/stores/recording";
+import { useSettingsStore } from "@/stores/settings";
 
 export default function ClipNotification() {
   const lastClipPath = useRecordingStore((s) => s.lastClipPath);
   const clearLastClipPath = useRecordingStore((s) => s.clearLastClipPath);
+  const showClipNotification = useSettingsStore(
+    (s) => s.settings.general.show_clip_notification,
+  );
   const [visible, setVisible] = useState(false);
   const [filename, setFilename] = useState("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!showClipNotification) return;
     if (lastClipPath) {
       const parts = lastClipPath.split("/").pop()?.split("\\").pop() ?? lastClipPath;
       setFilename(parts);
@@ -26,7 +31,7 @@ export default function ClipNotification() {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [lastClipPath, clearLastClipPath]);
+  }, [lastClipPath, clearLastClipPath, showClipNotification]);
 
   return (
     <div

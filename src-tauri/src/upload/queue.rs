@@ -98,6 +98,8 @@ impl UploadQueue {
 
     /// Set the persist path and load existing tasks.
     /// Only resumes Pending/Uploading tasks whose clip files still exist on disk.
+    /// Completed/Failed tasks are kept as history so the UI can show what was
+    /// already uploaded and offer retries across restarts.
     /// Permanently failed tasks are never resurrected.
     pub fn set_persist_path(&self, app_data: PathBuf) {
         let path = app_data.join(PERSIST_FILE);
@@ -105,22 +107,28 @@ impl UploadQueue {
             if let Ok(tasks) = serde_json::from_str::<Vec<UploadTask>>(&content) {
                 if let Ok(mut queue) = self.inner.lock() {
                     for task in tasks {
-                        if matches!(task.status, UploadStatus::Pending | UploadStatus::Uploading) {
-                            let clip_path = PathBuf::from(&task.clip_path);
-                            if !clip_path.exists() {
-                                eprintln!(
-                                    "[upload] skipping deleted clip on reload: {}",
-                                    clip_path.display()
-                                );
-                                continue;
+                        match task.status {
+                            UploadStatus::Pending | UploadStatus::Uploading => {
+                                let clip_path = PathBuf::from(&task.clip_path);
+                                if !clip_path.exists() {
+                                    eprintln!(
+                                        "[upload] skipping deleted clip on reload: {}",
+                                        clip_path.display()
+                                    );
+                                    continue;
+                                }
+                                queue.push(UploadTask {
+                                    status: UploadStatus::Pending,
+                                    progress: 0.0,
+                                    started_at_secs: None,
+                                    error: None,
+                                    ..task
+                                });
                             }
-                            queue.push(UploadTask {
-                                status: UploadStatus::Pending,
-                                progress: 0.0,
-                                started_at_secs: None,
-                                error: None,
-                                ..task
-                            });
+                            UploadStatus::Completed | UploadStatus::Failed(_) => {
+                                queue.push(task);
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -143,6 +151,7 @@ impl UploadQueue {
                                 UploadStatus::Pending
                                     | UploadStatus::Uploading
                                     | UploadStatus::Failed(_)
+                                    | UploadStatus::Completed
                             )
                         })
                         .collect();
@@ -221,10 +230,11 @@ impl UploadQueue {
     }
 
     /// Mark a task as failed with optional retry.
-    pub fn mark_failed(&self, id: &str, error: String) {
+    /// Retries up to `max_retries` times before marking as permanently failed.
+    pub fn mark_failed(&self, id: &str, error: String, max_retries: u32) {
         if let Ok(mut queue) = self.inner.lock() {
             if let Some(task) = queue.iter_mut().find(|t| t.id == id) {
-                if task.retry_count < 2 {
+                if task.retry_count < max_retries {
                     task.retry_count += 1;
                     task.status = UploadStatus::Pending;
                     task.progress = 0.0;
@@ -296,28 +306,39 @@ impl UploadQueue {
         }
     }
 
-    /// Clean up completed tasks older than a given duration.
-    pub fn cleanup_completed(&self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let one_day_secs = 86400u64;
+    /// Keep upload history from growing unbounded. Completed uploads are retained
+/// (so the Library can show what's already uploaded across restarts) up to a
+/// cap, dropping the oldest once exceeded.
+pub fn cleanup_completed(&self) {
+    const MAX_COMPLETED: usize = 2000;
 
-        if let Ok(mut queue) = self.inner.lock() {
-            queue.retain(|t| {
-                if matches!(t.status, UploadStatus::Completed) {
-                    if let Some(started) = t.started_at_secs {
-                        if now.saturating_sub(started) > one_day_secs {
-                            return false;
-                        }
-                    }
-                }
-                true
-            });
+    if let Ok(mut queue) = self.inner.lock() {
+        let completed_count = queue
+            .iter()
+            .filter(|t| t.status == UploadStatus::Completed)
+            .count();
+        if completed_count > MAX_COMPLETED {
+            let mut completed: Vec<(usize, u64)> = queue
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.status == UploadStatus::Completed)
+                .map(|(i, t)| (i, t.started_at_secs.unwrap_or(0)))
+                .collect();
+            completed.sort_by_key(|(_, started)| *started);
+            let remove_count = completed_count - MAX_COMPLETED;
+            let to_remove: std::collections::HashSet<usize> =
+                completed.iter().take(remove_count).map(|(i, _)| *i).collect();
+            let retained: Vec<UploadTask> = queue
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !to_remove.contains(i))
+                .map(|(_, t)| t.clone())
+                .collect();
+            *queue = retained;
         }
-        self.persist();
     }
+    self.persist();
+}
 }
 
 #[cfg(test)]
@@ -403,7 +424,7 @@ mod tests {
     #[test]
     fn test_mark_failed_retries_then_permanent() {
         let q = make_queue();
-        q.mark_failed("task_1", "error 1".into());
+        q.mark_failed("task_1", "error 1".into(), 2);
 
         let all = q.all();
         assert_eq!(
@@ -413,7 +434,7 @@ mod tests {
         );
         assert_eq!(all[0].retry_count, 1);
 
-        q.mark_failed("task_1", "error 2".into());
+        q.mark_failed("task_1", "error 2".into(), 2);
         let all = q.all();
         assert_eq!(
             all[0].status,
@@ -422,10 +443,21 @@ mod tests {
         );
         assert_eq!(all[0].retry_count, 2);
 
-        q.mark_failed("task_1", "final error".into());
+        q.mark_failed("task_1", "final error".into(), 2);
         let all = q.all();
         assert_eq!(all[0].status, UploadStatus::Failed("final error".into()));
         assert_eq!(all[0].error.as_deref(), Some("final error"));
+    }
+
+    #[test]
+    fn test_mark_failed_no_retries() {
+        let q = make_queue();
+        q.mark_failed("task_1", "error".into(), 0);
+
+        let all = q.all();
+        assert_eq!(all[0].status, UploadStatus::Failed("error".into()));
+        assert_eq!(all[0].retry_count, 0);
+        assert_eq!(all[0].error.as_deref(), Some("error"));
     }
 
     #[test]
@@ -439,10 +471,10 @@ mod tests {
     #[test]
     fn test_retry_resets_failed() {
         let q = make_queue();
-        q.mark_failed("task_1", "err".into());
-        q.mark_failed("task_1", "err".into());
-        q.mark_failed("task_1", "err".into());
-        q.mark_failed("task_1", "permanent".into());
+        q.mark_failed("task_1", "err".into(), 2);
+        q.mark_failed("task_1", "err".into(), 2);
+        q.mark_failed("task_1", "err".into(), 2);
+        q.mark_failed("task_1", "permanent".into(), 2);
 
         let all = q.all();
         assert_eq!(all[0].status, UploadStatus::Failed("permanent".into()));
@@ -506,34 +538,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cleanup_completed_removes_old() {
-        let q = UploadQueue::new();
-        q.enqueue_with_meta(
-            "old".into(),
-            "/clips/old.mp4".into(),
-            "https://example.com".into(),
-            "key".into(),
-            make_metadata(),
-        );
-        // Artificially set started_at to 2 days ago
-        let two_days_ago = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-            .saturating_sub(172800);
-        if let Ok(mut queue) = q.inner.lock() {
-            if let Some(task) = queue.iter_mut().find(|t| t.id == "old") {
-                task.status = UploadStatus::Completed;
-                task.started_at_secs = Some(two_days_ago);
-            }
-        }
-        q.cleanup_completed();
-        let all = q.all();
-        assert!(all.is_empty(), "old completed tasks should be cleaned up");
-    }
-
-    #[test]
-    fn test_cleanup_completed_keeps_recent() {
+    fn test_cleanup_completed_keeps_recent_and_history() {
+        // Completed uploads are kept as history (no time-based deletion).
         let q = make_queue();
         if let Ok(mut queue) = q.inner.lock() {
             if let Some(task) = queue.iter_mut().find(|t| t.id == "task_1") {
@@ -542,7 +548,43 @@ mod tests {
         }
         q.cleanup_completed();
         let all = q.all();
-        assert_eq!(all.len(), 1, "recent completed tasks should be kept");
+        assert_eq!(all.len(), 1, "completed uploads should be retained as history");
+    }
+
+    #[test]
+    fn test_cleanup_completed_caps_history() {
+        let q = UploadQueue::new();
+        // Enqueue MAX_COMPLETED + 10 completed tasks with increasing timestamps.
+        for i in 0..2010 {
+            if let Ok(mut queue) = q.inner.lock() {
+                queue.push(UploadTask {
+                    id: format!("c_{i}"),
+                    clip_path: format!("/clips/c_{i}.mp4"),
+                    status: UploadStatus::Completed,
+                    progress: 1.0,
+                    started_at_secs: Some(i as u64),
+                    server_url: None,
+                    api_key: None,
+                    title: format!("c_{i}"),
+                    game: String::new(),
+                    duration_secs: 0.0,
+                    width: 0,
+                    height: 0,
+                    codec: "h264".into(),
+                    size_bytes: 0,
+                    retry_count: 0,
+                    share_url: Some(format!("/s/{i}")),
+                    error: None,
+                });
+            }
+        }
+        q.cleanup_completed();
+        let all = q.all();
+        assert_eq!(all.len(), 2000, "history should be capped at MAX_COMPLETED");
+        assert!(all.iter().all(|t| t.status == UploadStatus::Completed));
+        // Oldest entries dropped, newest retained.
+        assert_eq!(all[0].id, "c_10", "oldest retained should be c_10");
+        assert_eq!(all[1999].id, "c_2009", "newest retained should be c_2009");
     }
 
     #[test]

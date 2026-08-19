@@ -1,4 +1,27 @@
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export function GroupTitle({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-zinc-400">
+        <Icon className="size-3.5" />
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-sm font-medium text-zinc-100">{title}</h3>
+        {description ? <p className="mt-0.5 text-xs text-zinc-500">{description}</p> : null}
+      </div>
+    </div>
+  );
+}
 
 export function SettingRow({
   label,

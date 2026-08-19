@@ -84,30 +84,18 @@ pub async fn get_user(
         .await?
         .ok_or(AppError::NotFound("User not found".into()))?;
 
-    let (clips, _) = db::clips::list_clips(
-        &pool,
-        Some(user_id),
-        "",
-        "",
-        "",
-        "created_at",
-        "desc",
-        1,
-        1000,
-    )
-    .await?;
-
-    let total_storage: i64 = clips.iter().map(|c| c.size_bytes).sum();
+    let storage_used = db::users::reconcile_storage_used(&pool, user_id).await?;
+    let clip_count = db::clips::count_clips(&pool, user_id).await?;
 
     Ok(Json(serde_json::json!({
         "id": user.id,
         "email": user.email,
         "display_name": user.display_name,
         "role": user.role,
-        "storage_used_bytes": total_storage,
+        "storage_used_bytes": storage_used,
         "max_storage_bytes": user.max_storage_bytes,
         "is_banned": user.is_banned,
-        "clip_count": clips.len(),
+        "clip_count": clip_count,
         "created_at": user.created_at.to_rfc3339(),
         "updated_at": user.updated_at.to_rfc3339(),
     })))
@@ -252,8 +240,8 @@ pub async fn admin_delete_clip(
         tracing::warn!("Failed to delete clip file {}: {e}", clip.storage_path);
     }
 
-    db::users::add_storage_used(&pool, clip.user_id, -clip.size_bytes).await?;
     db::clips::delete_clip(&pool, clip_id).await?;
+    db::users::reconcile_storage_used(&pool, clip.user_id).await?;
 
     Ok(Json(serde_json::json!({"status": "ok"})))
 }

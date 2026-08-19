@@ -20,10 +20,10 @@
     "windows": [
       {
         "title": "Prism",
-        "width": 800,
-        "height": 600,
-        "minWidth": 720,
-        "minHeight": 520,
+        "width": 900,
+        "height": 660,
+        "minWidth": 760,
+        "minHeight": 560,
         "decorations": false
       }
     ],

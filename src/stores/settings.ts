@@ -28,6 +28,7 @@ export function getDefaultSettings(): AppSettings {
       always_on_recording: true,
       capture_target: "",
       capture_audio: true,
+      quality_preset: "balanced",
     },
     hotkeys: getDefaultHotkeys(),
     general: {
@@ -52,6 +53,9 @@ export function getDefaultSettings(): AppSettings {
       account_display_name: "",
       account_email: "",
       avatar_url: "",
+      default_visibility: "unlisted",
+      copy_share_link_after_upload: false,
+      max_upload_retries: 2,
     },
     auto_clip: {
       enabled: false,

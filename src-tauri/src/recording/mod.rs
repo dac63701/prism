@@ -986,8 +986,15 @@ impl Recorder {
 
         match fmt {
             crate::capture::PixelFormat::Nv12 => {
-                let y_plane = data;
                 let y_size = (width * height) as usize;
+                // Guard against a stale frame whose data doesn't match its
+                // metadata (e.g. just after a resolution change): skip instead
+                // of slicing out of bounds or rendering a torn image.
+                let expected = y_size + (width.div_ceil(2) * height.div_ceil(2) * 2) as usize;
+                if data.len() < expected {
+                    return None;
+                }
+                let y_plane = data;
                 let uv_plane = &data[y_size..];
                 let uv_width = stride.div_ceil(2);
 

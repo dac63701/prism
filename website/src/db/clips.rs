@@ -281,6 +281,13 @@ pub async fn increment_download_count(pool: &PgPool, id: Uuid) -> Result<(), sql
     Ok(())
 }
 
+pub async fn count_clips(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM clips WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+}
+
 pub async fn get_server_stats(pool: &PgPool) -> Result<(i64, i64, i64, i64, i64), sqlx::Error> {
     let row = sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(
         r#"SELECT

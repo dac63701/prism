@@ -399,6 +399,30 @@ pub async fn add_storage_used(pool: &PgPool, id: Uuid, bytes: i64) -> Result<(),
     Ok(())
 }
 
+/// Recompute `storage_used_bytes` from the actual clips table and sync the
+/// denormalized counter, healing any drift (failed counter updates, admin
+/// deletions of other users' clips, retried requests, etc.). Returns the
+/// authoritative value.
+pub async fn reconcile_storage_used(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    let actual: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM clips WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE users SET storage_used_bytes = $1, updated_at = NOW() \
+         WHERE id = $2 AND storage_used_bytes <> $1",
+    )
+    .bind(actual)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(actual)
+}
+
 pub async fn list_users(
     pool: &PgPool,
     search: &str,
@@ -419,9 +443,11 @@ pub async fn list_users(
     let users = sqlx::query_as::<_, UserListItem>(
         r#"SELECT u.id, u.email, u.display_name, u.avatar_url, u.role::text as role,
                    COALESCE(c.clip_count, 0) as clip_count,
-                   u.storage_used_bytes, u.created_at, u.is_banned
+                   COALESCE(c.total_bytes, 0)::bigint as storage_used_bytes,
+                   u.created_at, u.is_banned
            FROM users u
-           LEFT JOIN (SELECT user_id, COUNT(*) as clip_count FROM clips GROUP BY user_id) c
+           LEFT JOIN (SELECT user_id, COUNT(*) as clip_count, SUM(size_bytes) as total_bytes
+                      FROM clips GROUP BY user_id) c
              ON c.user_id = u.id
            WHERE u.email ILIKE $1 OR u.display_name ILIKE $1
            ORDER BY u.created_at DESC

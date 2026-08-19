@@ -30,7 +30,10 @@ export default function GeneralSection() {
           />
         </SettingRow>
 
-        <SettingRow label="Show clip notification">
+        <SettingRow
+          label="Show clip notification"
+          help="Shows a notification when a clip is saved, even while other apps are in focus."
+        >
           <Switch
             ariaLabel="Show clip notification"
             checked={s.show_clip_notification}

@@ -4,7 +4,7 @@
 
 **Always run `npm run tauri build` after completing the full todo list.**
 
-The build produces `Prism_0.2.3_x64_en-US.msi` and `Prism_0.2.3_x64-setup.exe`.
+The build produces `Prism_0.2.5_x64_en-US.msi` and `Prism_0.2.5_x64-setup.exe`.
 Confirm the build succeeds before reporting completion.
 
 ## Development Commands
@@ -17,10 +17,14 @@ Confirm the build succeeds before reporting completion.
 
 ## Architecture
 
-- Rust backend: 10 modules in `src-tauri/src/`
-- Frontend: React 18 + TypeScript + Tailwind v4 + Zustand in `src/`
+- Rust backend: 14 modules in `src-tauri/src/` — `audio`, `auth`, `buffer`,
+  `capture`, `commands`, `encoder`, `games`, `hotkey`, `notification`, `recording`,
+  `settings`, `tray`, `upload`
+- Frontend: React 19 + TypeScript + Tailwind v4 + Zustand in `src/`
 - Routing: MemoryRouter (Tauri-appropriate)
 - IPC: `invoke("command_name")` + event listeners via `@tauri-apps/api`
+- Locks: `parking_lot::Mutex` throughout the recorder (2–5× faster on Windows,
+  no poison overhead)
 - Windows capture: `IDXGIOutputDuplication::AcquireNextFrame(0)` non-blocking polling;
   D3D11 staging texture reused across frames; fast-path single `memcpy` when
   GPU row pitch matches destination stride.
@@ -33,12 +37,23 @@ Confirm the build succeeds before reporting completion.
   conversion + resize inside `encode_frame()`. SPS/PPS extracted from VT format
   description on first keyframe.
 - H.264 encoding (Windows): Media Foundation H.264 Video Encoder MFT (`MfH264Encoder`)
-  produces compressed H.264 packets stored in ring buffer as `StoredFrame`
-  with `PixelFormat::H264` and `is_sync` flag.
+  with sync-hardware (Intel), async-hardware (NVIDIA/AMD via `IMFMediaEventGenerator`
+  + D3D11 texture input), and MS software fallbacks. Encodes produce compressed
+  H.264 packets stored in the ring buffer as `StoredFrame` with
+  `PixelFormat::H264`, `is_sync` flag, and per-packet timestamps.
+- Windows audio: WASAPI loopback capture → AAC muxed into clips
+  (`audio/`), gated by the "System audio" setting.
+- Game detection & auto-clip: `games/` — foreground window title matching against
+  `GameRegistry` (Windows), CS2 via Valve's official Game State Integration API,
+  Rust via final-process WASAPI audio analysis (FFT-based). All read-only,
+  anti-cheat-safe — no injection or memory reading.
 - Clip saving (both platforms): mux H.264 AVCC packets directly via `mp4` crate
   — no re-encoding during clip save (~0.1 s).
 - Thumbnails: NV12→RGB→JPEG generated server-side at clip-save time, saved as
   `clipname_thumb.jpg` alongside MP4. Frontend loads `<img>` directly.
+- Window: frameless custom title bar on Windows/Linux (`decorations: false`),
+  native decorations + overlay traffic lights on macOS. `prism://` deep links
+  handled by the single-instance plugin.
 
 ## Key Conventions
 
@@ -179,6 +194,48 @@ loop and Tauri command handlers (`get_preview_frame`, `save_clip`, etc.).
 - **Replaced unwraps/expects with proper error propagation**: 3× `expect("lock poisoned")` in recording, `expect("app data dir")` + `expect("lock poisoned")` in settings, `expect("first_mut")` in save_clip, `.unwrap()` in auth logout
 - **Consolidated 3 duplicated functions**: `resolve_output_dir` (recording+library), `read_mp4_duration` (library+uploads), `extract_sps_pps` (windows+macos encoders) — each now lives in one place
 - `cargo check` clean, 45/45 tests pass, `npm run build` succeeds
+
+### Auto-Clip & Game Detection
+- `games/` module with `GameDetector` (foreground window title matching against
+  `GameRegistry`), `AutoClipTrigger`, CS2 GSI listener, and Rust audio engine
+- **CS2**: Valve's official Game State Integration API — auto-installs
+  `gamestate_integration_prism.cfg` into the CS2 cfg dir (`ensure_gsi_config`),
+  localhost HTTP listener parses kill/death/headshot/win events
+- **Rust**: Windows-only final-process audio capture via WASAPI + FFT analysis
+  (`analyzer.rs`) detects gunshots, headshot dings, explosions, combat
+- All read-only / anti-cheat-safe — no injection, no memory reading
+- AutoClipSection UI: master toggle, clip cooldown, Rust audio sensitivity,
+  per-game event chips + kill/death/combat clip durations, live "Detected"
+  badge via `game-detected`/`game-lost` events
+- CS2 GSI port setting in GeneralSection (restart required)
+
+### Audio Capture (Windows)
+- WASAPI loopback capture of system audio → AAC, muxed into saved clips
+- Gated by the "System audio" setting; off = clips without an audio track
+
+### Window & Platform Integration
+- Frameless custom title bar (`decorations: false`) with in-app TitleBar
+  (min/max/close controls, route title, drag region) on Windows/Linux
+- macOS keeps native decorations + overlay traffic lights, title bar inset
+- `prism://` deep links handled by the single-instance plugin (cold-start argv
+  + `deep-link` event routing)
+- Windows: toast AUMID self-heal (`notification::register_aumid`); macOS:
+  Notification Center permission request at startup
+- `mimalloc` global allocator on Windows for per-frame allocation churn
+
+### Settings Surface
+- Six-tab settings page: Recording, Hotkeys, General, Auto-clip, Cloud, Storage
+- Quality presets (`lib/presets.ts`: Fast/Balanced/High + custom detection),
+  resolution/FPS/bitrate sliders with live output summary, buffer-duration slider
+- `HotkeyCaptureInput` chord-capture component + hotkey re-registration on change
+- Storage: max clips GB + auto-prune days; Cloud: server URL, Google OAuth +
+  manual auth-code paste, auto-upload, concurrent uploads
+
+### Documentation
+- Rewrote root `README.md` (full project overview, layout, stack, quickstart,
+  testing, docs index)
+- Added `docs/UI.md` (desktop UI reference) and `docs/ARCHITECTURE.md`
+- Added wiki article pages to the website (`/docs/*`) + expanded `/docs` hub
 
 ## Pending Work
 
@@ -326,7 +383,7 @@ cd website/frontend && npm run build
 
 ## Future Options
 
-- **Custom title bar**: Consider frameless window with custom title bar for premium feel
-  (`decorations: false` in tauri.conf.json, drag region in AppLayout)
 - **Light mode**: Currently dark-only; would need `@media (prefers-color-scheme: light)`
   overrides for all color tokens
+- **Auto-updater**: Tauri built-in updater (not yet wired)
+- **Moment detection plugin system**: game-agnostic moment detector plugins (see `docs/FEATURES.md`)
