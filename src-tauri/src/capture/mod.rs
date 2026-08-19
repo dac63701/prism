@@ -294,6 +294,7 @@ pub fn bgra_to_nv12(bgra: &[u8], width: u32, height: u32, bgra_stride: u32) -> V
 /// Used by capture backends that must honor a configured output resolution
 /// without GPU assistance. Bilinear resampling; when `src` already matches
 /// `dst` dimensions this delegates to [`bgra_to_nv12`] (zero overhead).
+#[allow(dead_code)]
 pub fn bgra_to_nv12_scaled(
     bgra: &[u8],
     src_width: u32,

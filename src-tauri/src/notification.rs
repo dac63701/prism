@@ -2,9 +2,14 @@
 //! D-Bus). Shown over the whole screen, regardless of which app is focused,
 //! when a clip is saved.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use tauri::{AppHandle, Manager};
+#[cfg(target_os = "windows")]
+use std::path::PathBuf;
+
+use tauri::AppHandle;
+#[cfg(target_os = "windows")]
+use tauri::Manager;
 #[cfg(not(target_os = "windows"))]
 use tauri_plugin_notification::NotificationExt;
 

@@ -55,6 +55,7 @@ impl Default for EncoderConfig {
 
 /// A single raw AAC frame (1024 samples, no ADTS header) for MP4 muxing.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AacFrame {
     /// Sample start time, in `sample_rate` units (e.g. 48 kHz timescale).
     pub start_time: u64,
@@ -66,6 +67,7 @@ pub struct AacFrame {
 
 /// An encoded AAC audio clip attached to a clip save.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AudioClip {
     pub sample_rate: u32,
     pub channels: u8,
