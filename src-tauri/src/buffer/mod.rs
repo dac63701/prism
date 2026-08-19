@@ -105,7 +105,8 @@ impl BufferManager {
         self.config.max_duration_secs = duration_secs;
         self.buffer
             .set_capacity(Self::storage_capacity(&self.config));
-        self.buffer.set_byte_budget(Self::shadow_buffer_bytes(&self.config));
+        self.buffer
+            .set_byte_budget(Self::shadow_buffer_bytes(&self.config));
     }
 
     /// Save a clip from the last N seconds of buffer.

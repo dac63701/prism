@@ -71,8 +71,9 @@ impl AudioRingBuffer {
         let frame_rate = self.sample_rate as f64;
         let mut out = Vec::new();
         for block in &self.blocks {
-            let block_dur =
-                Duration::from_secs_f64(block.data.len() as f64 / self.bytes_per_frame as f64 / frame_rate);
+            let block_dur = Duration::from_secs_f64(
+                block.data.len() as f64 / self.bytes_per_frame as f64 / frame_rate,
+            );
             let block_end = block.timestamp + block_dur;
             if block_end <= start || block.timestamp >= end {
                 continue;
@@ -81,9 +82,10 @@ impl AudioRingBuffer {
             let ov_start = start.max(block.timestamp);
             let ov_end = end.min(block_end);
             // Frame offset into the block (float32 interleaved).
-            let frame_offset =
-                (ov_start.duration_since(block.timestamp).as_secs_f64() * frame_rate).round() as usize;
-            let frame_count = ((ov_end.duration_since(ov_start).as_secs_f64() * frame_rate).round() as usize)
+            let frame_offset = (ov_start.duration_since(block.timestamp).as_secs_f64() * frame_rate)
+                .round() as usize;
+            let frame_count = ((ov_end.duration_since(ov_start).as_secs_f64() * frame_rate).round()
+                as usize)
                 .max(1);
             let byte_off = frame_offset.saturating_mul(self.bytes_per_frame);
             let byte_len = frame_count
@@ -258,9 +260,16 @@ fn capture_loop(
         .map_err(|error| format!("COM init failed: {error}"))?;
 
     // Loopback: default render endpoint, initialized as a capture stream.
-    let format = WaveFormat::new(16, 16, &SampleType::Int, sample_rate as usize, channels as usize, None);
-    let enumerator = wasapi::DeviceEnumerator::new()
-        .map_err(|error| format!("enumerator failed: {error}"))?;
+    let format = WaveFormat::new(
+        16,
+        16,
+        &SampleType::Int,
+        sample_rate as usize,
+        channels as usize,
+        None,
+    );
+    let enumerator =
+        wasapi::DeviceEnumerator::new().map_err(|error| format!("enumerator failed: {error}"))?;
     let device = enumerator
         .get_default_device(&Direction::Render)
         .map_err(|error| format!("default render device failed: {error}"))?;
@@ -318,7 +327,10 @@ mod tests {
         let mut ring = AudioRingBuffer::new(10 * BYTES_PER_FRAME, SAMPLE_RATE, CHANNELS);
         let now = Instant::now();
         ring.push(now, vec![0u8; 8 * BYTES_PER_FRAME]);
-        ring.push(now + Duration::from_millis(1), vec![0u8; 8 * BYTES_PER_FRAME]);
+        ring.push(
+            now + Duration::from_millis(1),
+            vec![0u8; 8 * BYTES_PER_FRAME],
+        );
         assert_eq!(ring.len(), 1, "oldest block should be evicted");
     }
 
@@ -343,7 +355,9 @@ mod tests {
         let mut ring = AudioRingBuffer::new(usize::MAX, SAMPLE_RATE, CHANNELS);
         let now = Instant::now();
         ring.push(now, vec![0u8; 48_000 * BYTES_PER_FRAME]);
-        assert!(ring.extract(now + Duration::from_secs(5), now + Duration::from_secs(6)).is_none());
+        assert!(ring
+            .extract(now + Duration::from_secs(5), now + Duration::from_secs(6))
+            .is_none());
     }
 
     #[test]

@@ -18,7 +18,9 @@ use crate::capture::{
 /// Force the CPU conversion path even when a D3D11 video processor is available
 /// (diagnostics / driver workarounds).
 fn force_cpu_capture() -> bool {
-    std::env::var("PRISM_FORCE_CPU_CAPTURE").map(|v| v == "1").unwrap_or(false)
+    std::env::var("PRISM_FORCE_CPU_CAPTURE")
+        .map(|v| v == "1")
+        .unwrap_or(false)
 }
 
 pub struct WindowsCaptureBackend {
@@ -211,9 +213,7 @@ impl WindowsCaptureBackend {
         // an explicit input→output conversion.
         let input_ok = unsafe { enumerator.CheckVideoProcessorFormat(src_format) }.is_ok();
         if !input_ok {
-            eprintln!(
-                "[capture] VP input format {src_format:?} unsupported — CPU fallback"
-            );
+            eprintln!("[capture] VP input format {src_format:?} unsupported — CPU fallback");
             return None;
         }
         let out_ok = unsafe { enumerator.CheckVideoProcessorFormat(DXGI_FORMAT_NV12) }.is_ok()
@@ -343,12 +343,18 @@ impl WindowsCaptureBackend {
 
         // NV12 staging for CPU readback.
         let mut staging: Option<ID3D11Texture2D> = None;
-        Self::ensure_staging(device, &mut staging, dst_width, dst_height, DXGI_FORMAT_NV12)
-            .map_err(|e| {
-                eprintln!("[capture] create VP staging failed: {e}");
-                e
-            })
-            .ok()?;
+        Self::ensure_staging(
+            device,
+            &mut staging,
+            dst_width,
+            dst_height,
+            DXGI_FORMAT_NV12,
+        )
+        .map_err(|e| {
+            eprintln!("[capture] create VP staging failed: {e}");
+            e
+        })
+        .ok()?;
         let staging = staging?;
 
         eprintln!(
@@ -496,8 +502,7 @@ impl WindowsCaptureBackend {
 
         // GPU fast path.
         if let Some(pipeline) = self.video_pipeline.as_ref() {
-            let result =
-                Self::acquire_frame_gpu_impl(duplication, context, pipeline, &src_texture);
+            let result = Self::acquire_frame_gpu_impl(duplication, context, pipeline, &src_texture);
             drop(src_texture);
             return result;
         }
@@ -573,7 +578,12 @@ fn pack_nv12_staging(mapped: D3D11_MAPPED_SUBRESOURCE, width: u32, height: u32) 
     out.resize(total, 0);
 
     let pitch = mapped.RowPitch as usize;
-    let src = unsafe { std::slice::from_raw_parts(mapped.pData as *const u8, pitch * height as usize + pitch * uv_height as usize) };
+    let src = unsafe {
+        std::slice::from_raw_parts(
+            mapped.pData as *const u8,
+            pitch * height as usize + pitch * uv_height as usize,
+        )
+    };
 
     if pitch == width as usize {
         // Tightly packed fast path: single memcpy.

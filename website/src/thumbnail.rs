@@ -10,12 +10,15 @@ pub fn generate_thumbnail(
     video_path: &Path,
     thumb_path: &Path,
     max_w: u32,
+    max_h: u32,
 ) -> Result<(), AppError> {
     if !video_path.exists() {
         return Err(AppError::NotFound("Video file not found".into()));
     }
 
-    // Try ffmpeg subprocess — extracts the real first frame
+    // Try ffmpeg subprocess — extracts the real first frame, fit within the
+    // max box preserving aspect ratio (never upscales), matching the
+    // desktop app's thumbnail geometry.
     let result = std::process::Command::new("ffmpeg")
         .args([
             "-y",
@@ -26,7 +29,9 @@ pub fn generate_thumbnail(
             "-q:v",
             "2",
             "-vf",
-            &format!("scale={}:-1", max_w),
+            &format!(
+                "scale='min({max_w},iw)':'min({max_h},ih)':force_original_aspect_ratio=decrease"
+            ),
             &thumb_path.to_string_lossy(),
         ])
         .output();
@@ -38,7 +43,7 @@ pub fn generate_thumbnail(
         }
     }
 
-    generate_pattern_placeholder(thumb_path, (max_w, (max_w as f64 * 9.0 / 16.0) as u32))
+    generate_pattern_placeholder(thumb_path, (max_w, max_h))
 }
 
 fn generate_pattern_placeholder(

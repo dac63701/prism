@@ -7,7 +7,9 @@
 pub mod mf_encoder;
 
 use bytes::Bytes;
-use mp4::{AacConfig, AvcConfig, ChannelConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
+use mp4::{
+    AacConfig, AvcConfig, ChannelConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType,
+};
 use std::path::Path;
 
 use crate::buffer::StoredFrame;
@@ -129,9 +131,9 @@ impl Encoder for WindowsEncoder {
                         is_sync: true,
                         bytes: Bytes::copy_from_slice(&frame.data),
                     };
-                    writer
-                        .write_sample(2, &sample)
-                        .map_err(|e| EncodeError::EncodeFailed(format!("write audio sample: {e}")))?;
+                    writer.write_sample(2, &sample).map_err(|e| {
+                        EncodeError::EncodeFailed(format!("write audio sample: {e}"))
+                    })?;
                 }
             }
         }

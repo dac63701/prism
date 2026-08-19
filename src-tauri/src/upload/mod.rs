@@ -41,6 +41,13 @@ pub fn start_upload_processor(app: AppHandle) {
             let clip_path = PathBuf::from(&task.clip_path);
             let task_id = task.id.clone();
 
+            let thumb_path = clip_path
+                .file_stem()
+                .map(|stem| {
+                    clip_path.with_file_name(format!("{}_thumb.jpg", stem.to_string_lossy()))
+                })
+                .filter(|p| p.exists());
+
             // Use live settings for auth — re-login updates the key without
             // invalidating already-enqueued upload tasks.
             let base_url = settings.cloud.server_url.trim_end_matches('/').to_string();
@@ -85,6 +92,7 @@ pub fn start_upload_processor(app: AppHandle) {
             let result = client::upload_clip(
                 &upload_url,
                 &clip_path,
+                thumb_path.as_deref(),
                 Some(&access_token),
                 &UploadMetadata {
                     title: task.title.clone(),

@@ -34,6 +34,7 @@ fn build_multipart_body(
     boundary: &str,
     filename: &str,
     file_bytes: &[u8],
+    thumbnail_bytes: Option<&[u8]>,
     metadata: &UploadMetadata,
 ) -> Vec<u8> {
     let mut body = Vec::new();
@@ -48,6 +49,20 @@ fn build_multipart_body(
     let _ = write!(body, "\r\n");
     body.extend_from_slice(file_bytes);
     let _ = write!(body, "\r\n");
+
+    // Optional thumbnail part — lets the server reuse the desktop-generated
+    // JPEG so the app library and website show the identical image.
+    if let Some(thumb) = thumbnail_bytes {
+        let _ = write!(body, "--{boundary}\r\n");
+        let _ = write!(
+            body,
+            "Content-Disposition: form-data; name=\"thumbnail\"; filename=\"thumbnail.jpg\"\r\n"
+        );
+        let _ = write!(body, "Content-Type: image/jpeg\r\n");
+        let _ = write!(body, "\r\n");
+        body.extend_from_slice(thumb);
+        let _ = write!(body, "\r\n");
+    }
 
     // Text fields
     let duration_secs_str = metadata.duration_secs.to_string();
@@ -76,15 +91,27 @@ fn build_multipart_body(
 }
 
 /// Upload a clip file with metadata to the given URL via multipart POST.
+/// If `thumbnail_path` points to an existing file, it is sent as an extra
+/// `thumbnail` part so the server stores the identical image the app shows.
 pub async fn upload_clip(
     url: &str,
     file_path: &Path,
+    thumbnail_path: Option<&Path>,
     api_token: Option<&str>,
     metadata: &UploadMetadata,
 ) -> Result<UploadResponse, UploadError> {
     let file_bytes = tokio::fs::read(file_path)
         .await
         .map_err(|e| UploadError::File(format!("Failed to read file: {e}")))?;
+
+    let thumbnail_bytes = match thumbnail_path {
+        Some(path) if path.exists() => Some(
+            tokio::fs::read(path)
+                .await
+                .map_err(|e| UploadError::File(format!("Failed to read thumbnail: {e}")))?,
+        ),
+        _ => None,
+    };
 
     let filename = file_path
         .file_name()
@@ -94,7 +121,13 @@ pub async fn upload_clip(
 
     let boundary = Uuid::new_v4().to_string();
     let content_type = format!("multipart/form-data; boundary={boundary}");
-    let body = build_multipart_body(&boundary, &filename, &file_bytes, metadata);
+    let body = build_multipart_body(
+        &boundary,
+        &filename,
+        &file_bytes,
+        thumbnail_bytes.as_deref(),
+        metadata,
+    );
 
     let client = reqwest::Client::new();
     let mut req = client
@@ -140,6 +173,7 @@ mod tests {
         let result = upload_clip(
             "https://example.com/api/clips/upload",
             Path::new("/nonexistent/path.mp4"),
+            None,
             Some("test_key"),
             &UploadMetadata {
                 title: "test".into(),

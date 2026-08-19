@@ -1,6 +1,6 @@
-mod auth;
 #[cfg(target_os = "windows")]
 mod audio;
+mod auth;
 mod buffer;
 mod capture;
 mod commands;

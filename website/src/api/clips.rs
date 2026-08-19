@@ -37,6 +37,7 @@ pub async fn upload_clip(
         .ok_or(AppError::Unauthorized)?;
 
     let mut file_data: Vec<u8> = Vec::new();
+    let mut thumb_data: Vec<u8> = Vec::new();
     let mut original_filename = String::new();
     let mut title = String::new();
     let mut game = String::new();
@@ -114,6 +115,13 @@ pub async fn upload_clip(
                     visibility = v;
                 }
             }
+            "thumbnail" => {
+                thumb_data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read thumbnail: {e}")))?
+                    .to_vec();
+            }
             _ => {}
         }
     }
@@ -137,7 +145,16 @@ pub async fn upload_clip(
     storage.store(&storage_path, &file_data).await?;
 
     let thumb_storage_path = format!("thumbs/{}/{}.jpg", auth.user_id, clip_id);
-    let thumbnail_path = {
+    let thumbnail_path = if !thumb_data.is_empty() {
+        // Desktop client supplied its generated thumbnail — reuse it so the
+        // app library and website show the identical image.
+        if let Err(e) = storage.store(&thumb_storage_path, &thumb_data).await {
+            tracing::warn!("Failed to store thumbnail: {e}");
+            None
+        } else {
+            Some(thumb_storage_path)
+        }
+    } else {
         let tmp_video = std::env::temp_dir().join(format!("prism_{}.mp4", clip_id));
         let tmp_thumb = std::env::temp_dir().join(format!("prism_{}_thumb.jpg", clip_id));
 
@@ -145,12 +162,12 @@ pub async fn upload_clip(
             tracing::warn!("Failed to write temp video for thumbnail: {e}");
         }
 
-        if let Err(e) = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 640) {
+        if let Err(e) = crate::thumbnail::generate_thumbnail(&tmp_video, &tmp_thumb, 1280, 720) {
             tracing::warn!("Failed to generate thumbnail: {e}");
         }
 
-        if let Ok(thumb_data) = tokio::fs::read(&tmp_thumb).await {
-            if let Err(e) = storage.store(&thumb_storage_path, &thumb_data).await {
+        if let Ok(thumb) = tokio::fs::read(&tmp_thumb).await {
+            if let Err(e) = storage.store(&thumb_storage_path, &thumb).await {
                 tracing::warn!("Failed to store thumbnail: {e}");
             }
         }

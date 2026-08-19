@@ -85,7 +85,11 @@ pub(crate) fn save_clip_internal(
     filename: String,
 ) -> Result<String, String> {
     let prof = std::env::var("PRISM_PROF").as_deref() == Ok("1");
-    let t_start = if prof { Some(std::time::Instant::now()) } else { None };
+    let t_start = if prof {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
 
     // Step 1: Extract frames under the recorder's brief internal lock.
     let clip_data = recorder.extract_clip_data(duration)?;
@@ -136,15 +140,53 @@ pub(crate) fn save_clip_internal(
 
     // Step 5: Keep only a decodable H.264 sequence. Raw fallback frames cannot
     // be mixed into an H.264 MP4 track, and decoding must begin at a sync frame.
+    // If no keyframe is buffered yet (first ~GOP of recording, or a stale sync
+    // frame evicted from the byte budget), request a fresh keyframe from the
+    // capture loop, wait for it to land, and re-extract before giving up.
     eprintln!(
         "[recording] save_clip: {} frames, sps={} pps={}",
         clip_data.frames.len(),
         clip_data.sps.len(),
         clip_data.pps.len()
     );
-    let frames_with_sps =
-        prepare_h264_clip_frames(clip_data.frames, &clip_data.sps, &clip_data.pps)?;
-    let t_extract = if prof { Some(std::time::Instant::now()) } else { None };
+    let mut frames = clip_data.frames;
+    let mut sps = clip_data.sps;
+    let mut pps = clip_data.pps;
+    let mut frames_with_sps: Option<Vec<crate::buffer::StoredFrame>> = None;
+    let mut last_keyframe_err: Option<String> = None;
+    for attempt in 0..5u32 {
+        match prepare_h264_clip_frames(std::mem::take(&mut frames), &sps, &pps) {
+            Ok(prepared) => {
+                frames_with_sps = Some(prepared);
+                break;
+            }
+            Err(e) if e.contains("keyframe") && attempt < 4 => {
+                eprintln!(
+                    "[recording] no H.264 keyframe in buffer (attempt {}); requesting one and retrying",
+                    attempt + 1
+                );
+                last_keyframe_err = Some(e);
+                recorder.request_keyframe();
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                let next = recorder.extract_clip_data(duration)?;
+                frames = next.frames;
+                sps = next.sps;
+                pps = next.pps;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    let frames_with_sps = frames_with_sps.ok_or_else(|| {
+        last_keyframe_err.unwrap_or_else(|| {
+            "No H.264 keyframe is available yet. Keep recording for a moment and try again."
+                .to_string()
+        })
+    })?;
+    let t_extract = if prof {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
 
     // Step 6: Extract system audio for the exact video window and AAC-encode
     // it outside the recorder lock. Missing/disabled audio is not fatal — the
@@ -154,7 +196,11 @@ pub(crate) fn save_clip_internal(
         cfg.audio = extract_and_encode_audio(recorder, &frames_with_sps, &cfg)?;
         cfg
     };
-    let t_audio = if prof { Some(std::time::Instant::now()) } else { None };
+    let t_audio = if prof {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    };
 
     // Step 7: Encode (NO lock held — polling continues)
     eprintln!(
@@ -172,9 +218,7 @@ pub(crate) fn save_clip_internal(
         let extract = t_extract.duration_since(t_start);
         let audio = t_audio.duration_since(t_extract);
         let mux = t_audio.elapsed();
-        eprintln!(
-            "[prof] clip: extract={extract:?} audio={audio:?} mux={mux:?}"
-        );
+        eprintln!("[prof] clip: extract={extract:?} audio={audio:?} mux={mux:?}");
     }
 
     let output_str = output_path.to_string_lossy().to_string();
@@ -213,15 +257,12 @@ fn extract_and_encode_audio(
             return Ok(None);
         }
 
-        let bitrate = if cfg.bitrate_kbps >= 160 {
-            128
-        } else {
-            96
-        };
+        let bitrate = if cfg.bitrate_kbps >= 160 { 128 } else { 96 };
         eprintln!(
             "[recording] encoding {} KB of system audio ({:.2}s)",
             pcm.len() / 1024,
-            pcm.len() as f64 / (crate::audio::SAMPLE_RATE as f64 * crate::audio::BYTES_PER_FRAME as f64)
+            pcm.len() as f64
+                / (crate::audio::SAMPLE_RATE as f64 * crate::audio::BYTES_PER_FRAME as f64)
         );
         match crate::audio::aac::encode_clip_audio(
             &pcm,
@@ -255,6 +296,37 @@ fn extract_and_encode_audio(
     }
 }
 
+/// Whether a frame is a decodable H.264 sync point.
+///
+/// Prefers the encoder's `is_sync` flag, but falls back to scanning the AVCC
+/// data for an IDR slice (NAL type 5) or SPS (NAL type 7) — some hardware
+/// encoders omit the CleanPoint attribute on keyframe output samples, and the
+/// first VideoToolbox keyframe is never flagged on macOS.
+fn frame_is_h264_sync(frame: &crate::buffer::StoredFrame) -> bool {
+    if frame.pixel_format != PixelFormat::H264 {
+        return false;
+    }
+    if frame.is_sync {
+        return true;
+    }
+    let data = &*frame.data;
+    let mut offset = 0;
+    while offset + 4 <= data.len() {
+        let nal_len =
+            u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap_or_default()) as usize;
+        let nal_start = offset + 4;
+        let nal_end = nal_start + nal_len;
+        if nal_len == 0 || nal_end > data.len() {
+            return false;
+        }
+        if let Some(5 | 7) = data.get(nal_start).map(|b| b & 0x1F) {
+            return true;
+        }
+        offset = nal_end;
+    }
+    false
+}
+
 /// Select a decodable H.264 sequence for MP4 muxing.
 ///
 /// Raw NV12 frames are a capture fallback and cannot be written to an AVC
@@ -267,13 +339,18 @@ fn prepare_h264_clip_frames(
     pps: &[u8],
 ) -> Result<Vec<crate::buffer::StoredFrame>, String> {
     let total = frames.len();
-    let first_sync = frames
-        .iter()
-        .position(|frame| frame.pixel_format == PixelFormat::H264 && frame.is_sync)
-        .ok_or_else(|| {
+    let first_sync = frames.iter().position(frame_is_h264_sync).ok_or_else(|| {
+        let has_h264 = frames
+            .iter()
+            .any(|frame| frame.pixel_format == PixelFormat::H264);
+        if has_h264 {
             "No H.264 keyframe is available yet. Keep recording for a moment and try again."
                 .to_string()
-        })?;
+        } else {
+            "No H.264 keyframe is available — the buffer holds only raw fallback frames (H.264 encoder unavailable). Check the encoder and try again."
+                .to_string()
+        }
+    })?;
 
     let dropped_before_sync = first_sync;
     let mut h264_frames: Vec<_> = frames
@@ -292,6 +369,13 @@ fn prepare_h264_clip_frames(
              {} H.264 frames kept",
             h264_frames.len()
         );
+    }
+
+    // The muxer uses `is_sync` to build the MP4 sync-sample table. A frame may
+    // have been selected via content inspection (IDR/SPS NALs) even when the
+    // encoder failed to flag it, so make sure the first sample is marked sync.
+    if let Some(first) = h264_frames.first_mut() {
+        first.is_sync = true;
     }
 
     if !sps.is_empty() && !pps.is_empty() {
@@ -369,6 +453,42 @@ mod tests {
         let error = prepare_h264_clip_frames(frames, &[], &[]).unwrap_err();
 
         assert!(error.contains("keyframe"));
+    }
+
+    #[test]
+    fn clip_preparation_detects_keyframes_by_idr_content_when_flag_missing() {
+        // is_sync is false on every frame, but the second packet contains an
+        // IDR NAL (type 5) — some encoders omit the CleanPoint attribute.
+        let idr_sample = vec![0, 0, 0, 3, 0x65, 0x88, 0x84];
+        let next_sample = vec![0, 0, 0, 2, 0x41, 0x9A];
+        let frames = vec![
+            frame(PixelFormat::H264, false, next_sample.clone()),
+            frame(PixelFormat::H264, false, idr_sample.clone()),
+            frame(PixelFormat::H264, false, next_sample.clone()),
+        ];
+
+        let prepared = prepare_h264_clip_frames(frames, &[], &[]).unwrap();
+
+        assert_eq!(prepared.len(), 2);
+        assert!(
+            prepared[0].is_sync,
+            "content-detected keyframe must be flagged sync"
+        );
+        assert_eq!(prepared[0].data.as_slice(), idr_sample);
+        assert_eq!(prepared[1].data.as_slice(), next_sample);
+    }
+
+    #[test]
+    fn clip_preparation_reports_encoder_unavailable_when_only_raw_frames() {
+        let frames = vec![
+            frame(PixelFormat::Nv12, true, vec![0; 8]),
+            frame(PixelFormat::Nv12, true, vec![0; 8]),
+        ];
+
+        let error = prepare_h264_clip_frames(frames, &[], &[]).unwrap_err();
+
+        assert!(error.contains("keyframe"));
+        assert!(error.contains("raw fallback"));
     }
 }
 

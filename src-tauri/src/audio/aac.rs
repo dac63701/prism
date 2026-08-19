@@ -54,9 +54,8 @@ unsafe fn find_input_type(
         }
         fallback.get_or_insert(mt);
     }
-    fallback.ok_or_else(|| {
-        EncodeError::InitFailed("AAC encoder advertised no input media type".into())
-    })
+    fallback
+        .ok_or_else(|| EncodeError::InitFailed("AAC encoder advertised no input media type".into()))
 }
 
 /// Find an advertised output media type matching `pred`. The AAC encoder
@@ -111,27 +110,21 @@ impl AacEncoder {
         ensure_mf()?;
 
         unsafe {
-            let transform: IMFTransform = CoCreateInstance(
-                &AACMFTEncoder,
-                None,
-                CLSCTX_INPROC_SERVER,
-            )
-            .map_err(|e| EncodeError::InitFailed(format!("CoCreateInstance AAC encoder: {e}")))?;
+            let transform: IMFTransform =
+                CoCreateInstance(&AACMFTEncoder, None, CLSCTX_INPROC_SERVER).map_err(|e| {
+                    EncodeError::InitFailed(format!("CoCreateInstance AAC encoder: {e}"))
+                })?;
 
             // ------ Output type: raw AAC ------
             // The MF AAC encoder advertises a matrix of output types (sample
             // rate × channels). Pick the AAC type matching our capture format,
             // then override bitrate + raw payload type. The output must be set
             // FIRST — the input type the encoder advertises depends on it.
-            let output_type: IMFMediaType = find_output_type(
-                &transform,
-                |mt| {
-                    matches_type_subtype(mt, &MFAudioFormat_AAC)
-                        && mt.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND)
-                            == Ok(sample_rate)
-                        && mt.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS) == Ok(channels as u32)
-                },
-            )?;
+            let output_type: IMFMediaType = find_output_type(&transform, |mt| {
+                matches_type_subtype(mt, &MFAudioFormat_AAC)
+                    && mt.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND) == Ok(sample_rate)
+                    && mt.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS) == Ok(channels as u32)
+            })?;
             output_type
                 .SetUINT32(&MF_MT_AVG_BITRATE, bitrate_kbps.saturating_mul(1_000))
                 .ok();
@@ -154,15 +147,11 @@ impl AacEncoder {
             // input types. Use the PCM (int16) one at our sample rate / channel
             // count verbatim — overriding attributes makes the type inconsistent
             // and SetInputType rejects it.
-            let input_type: IMFMediaType = find_input_type(
-                &transform,
-                |mt| {
-                    matches_type_subtype(mt, &MFAudioFormat_PCM)
-                        && mt.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND)
-                            == Ok(sample_rate)
-                        && mt.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS) == Ok(channels as u32)
-                },
-            )?;
+            let input_type: IMFMediaType = find_input_type(&transform, |mt| {
+                matches_type_subtype(mt, &MFAudioFormat_PCM)
+                    && mt.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND) == Ok(sample_rate)
+                    && mt.GetUINT32(&MF_MT_AUDIO_NUM_CHANNELS) == Ok(channels as u32)
+            })?;
 
             transform
                 .SetInputType(0, &input_type, 0)
@@ -171,9 +160,8 @@ impl AacEncoder {
             let info = transform
                 .GetOutputStreamInfo(0)
                 .map_err(|e| EncodeError::InitFailed(format!("GetOutputStreamInfo: {e}")))?;
-            let provider_flags =
-                (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0)
-                    as u32;
+            let provider_flags = (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0
+                | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0) as u32;
 
             transform
                 .ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)
@@ -383,7 +371,9 @@ impl AacEncoder {
                         break;
                     }
                     release_output_buffer(&mut output);
-                    return Err(EncodeError::EncodeFailed(format!("Drain ProcessOutput: {err}")));
+                    return Err(EncodeError::EncodeFailed(format!(
+                        "Drain ProcessOutput: {err}"
+                    )));
                 }
             }
         }
@@ -472,7 +462,8 @@ mod tests {
         let channels = 2u16;
         let mut pcm = Vec::with_capacity(sample_rate as usize * channels as usize * 2);
         for i in 0..sample_rate as usize {
-            let sample = ((i as f32 * 2.0 * std::f32::consts::PI * 1000.0 / sample_rate as f32).sin()
+            let sample = ((i as f32 * 2.0 * std::f32::consts::PI * 1000.0 / sample_rate as f32)
+                .sin()
                 * 0.25
                 * i16::MAX as f32) as i16;
             for _ in 0..channels {

@@ -182,6 +182,69 @@ loop and Tauri command handlers (`get_preview_frame`, `save_clip`, etc.).
 
 ## Pending Work
 
+### Async-MFT Hardware H.264 Encoding (IN PROGRESS — resume here)
+Goal: give AMD/NVIDIA users GPU encoding (low CPU) on the always-on shadow
+buffer by driving async hardware MFTs via the event-based model
+(`IMFMediaEventGenerator` + D3D11 texture input), Chromium-style. Keep the
+sync-hardware (Intel) + software fallbacks. All code lives in
+`src-tauri/src/encoder/windows/mf_encoder.rs`.
+
+**Implementation status (done, compiles, 58 unit tests pass):**
+- `enumerate_h264_encoders()` returns all hardware MFT candidates (async MFTs
+  NO LONGER skipped) plus each candidate's `MFT_ENUM_ADAPTER_LUID`;
+  `with_profile` iterates each candidate × profile.
+- `Processing::{Sync, Async}` + `AsyncState` (events, ICodecAPI, device,
+  context, NV12 texture pool ≤ 16 slots, pending/in_flight queues,
+  need_input_pending flag, diag counters).
+- `from_transform` async-aware: detect `MF_TRANSFORM_ASYNC` → set
+  `MF_TRANSFORM_ASYNC_UNLOCK=TRUE` → attach D3D11 manager → negotiate types →
+  `MF_LOW_LATENCY` → `COMMAND_FLUSH` → BEGIN/START streaming → QI
+  `IMFMediaEventGenerator` + `ICodecAPI`.
+- **Adapter-matched D3D11 device**: `ensure_d3d_manager(Option<u64>)` creates
+  the device on the DXGI adapter matching the MFT's `MFT_ENUM_ADAPTER_LUID`
+  (`find_adapter_by_luid`), falling back to the default adapter. Hardware MFTs
+  reject an `IMFDXGIDeviceManager` whose device is on a different GPU
+  (iGPU+dGPU machines). Note: `MFT_ENUM_ADAPTER_LUID` was `None` for all 3 MFTs
+  on the dev machine, so the path is dormant there.
+- Async `encode_frame_async`: ICodecAPI keyframe (`CODECAPI_AVEncVideoForceKeyFrame`,
+  VARIANT `VT_UI4`), pump events, upload via `UpdateSubresource` into
+  `D3D11_USAGE_DEFAULT` + `BIND_SHADER_RESOURCE` textures (NV12 has no CPU
+  access → `DYNAMIC`/Map fails E_INVALIDARG), `MFCreateDXGISurfaceBuffer`
+  samples, FIFO timestamp attribution, texture recycled on output.
+- `EncodedPacket` gained a `timestamp` field; `encode_frame(nv12, Instant)`;
+  call sites updated (recording/mod.rs:657 + diag). `Drop` sends END_OF_STREAM
+  for async.
+- `PRISM_ASYNC_TRACE=1` env var enables per-frame event tracing in the pump.
+
+**Diagnostic findings (last diag run, `cargo test -- --ignored diag_probe_h264_encoder --nocapture`):**
+- NVIDIA H.264 Encoder MFT: **fully works.** `PRISM_DIAG_PACED_MS=16` (60 fps,
+  real-time rate) → 99 packets from 100 frames, saw_sync=true,
+  sps_pps_ready=true, stats=[100,99,0,0,0,0]. The async MFT paces by
+  wall-clock (real-time rate control), so tight-loop feeding starves it —
+  production feeds at real-time rate and works. `MAX_ASYNC_POOL_SLOTS=16`
+  absorbs the startup lag (first HaveOutput ~7 frames after first input).
+- **Diag default is now paced** (`diag_pace()` returns 4 ms when
+  `PRISM_DIAG_PACED_MS` is unset): an uncapped tight loop floods the GPU and
+  blocks in `UpdateSubresource`/`Flush`, hanging the test thread. Production is
+  real-time so this never occurs.
+- AMDh264Encoder ×2: `MFT_MESSAGE_SET_D3D_MANAGER` still returns
+  E_FAIL (0x80004005) even with `D3D11_CREATE_DEVICE_VIDEO_SUPPORT` and a
+  matched-adapter device; SetOutputType fails "The input type is not supported
+  for D3D device" (0xC00D6D76). AMD machines fall back to the MS software
+  encoder. Cannot be tested on the NVIDIA dev machine.
+- MS software encoder (sync path) unaffected: 400 frames OK, saw_sync=true.
+
+**Next steps (in order):**
+1. Verify production end-to-end on NVIDIA: CPU drop vs software, clip save with
+   keyframe retry, thumbnails.
+2. AMD (only testable on AMD hardware): try `MFT_MESSAGE_SET_D3D_MANAGER` AFTER
+   `SetInputType`, `MF_MT_DEFAULT_STRIDE` on the input type, BGRX/BGRA input,
+   or `D3D11_BIND_RENDER_TARGET` textures via the diag probe.
+3. Remove the `PRISM_ASYNC_TRACE` eprintlns (or keep gated) once debugged;
+   remove `diag_async_stats` if unused.
+4. `cargo fmt`, `cargo check`, `cargo test`, full diag probe clean, then
+   `npm run tauri build`.
+
 ### App UI Full Rewrite / Fix
 The desktop app UI needs significant work — potentially a full rewrite. Current state has inconsistencies, missing polish, and suboptimal component architecture. Goals:
 - Consistent dark theme application

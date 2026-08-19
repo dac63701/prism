@@ -64,6 +64,9 @@ pub struct Recorder {
     frames_received: std::sync::atomic::AtomicU64,
     /// Cached FPS to avoid lock contention in the polling loop.
     cached_fps: AtomicU32,
+    /// Set by `request_keyframe()`; the capture loop forces the encoder to emit
+    /// a keyframe on its next frame so a fresh sync point lands in the buffer.
+    force_keyframe_requested: AtomicBool,
 }
 
 struct RecorderInner {
@@ -131,7 +134,7 @@ impl Recorder {
             1920,
             1080,
         );
-let backend = create_capture_backend();
+        let backend = create_capture_backend();
         // Parse capture target from settings (JSON-serialized string)
         let target = if rs.capture_target.is_empty() {
             CaptureTarget::default()
@@ -147,7 +150,7 @@ let backend = create_capture_backend();
             resolution_dimensions(&rs.resolution)
         };
         let backend_config = CaptureConfig {
-            fps: rs.fps,
+            fps,
             capture_cursor: true,
             target,
             target_width: target_w,
@@ -214,6 +217,7 @@ let backend = create_capture_backend();
             polling_spawned: AtomicBool::new(false),
             frames_received: std::sync::atomic::AtomicU64::new(0),
             cached_fps: AtomicU32::new(fps),
+            force_keyframe_requested: AtomicBool::new(false),
         }
     }
 
@@ -303,9 +307,7 @@ let backend = create_capture_backend();
 
         #[cfg(target_os = "windows")]
         if inner.capture_audio {
-            inner
-                .audio
-                .start(inner.buffer.config().max_duration_secs);
+            inner.audio.start(inner.buffer.config().max_duration_secs);
         }
 
         self.running.store(true, Ordering::SeqCst);
@@ -354,6 +356,12 @@ let backend = create_capture_backend();
     /// Check whether recording is active (atomic, no lock).
     pub fn is_recording(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    /// Ask the capture loop to force a keyframe on the next encoded frame.
+    /// Used by clip save when no decodable sync point is buffered yet.
+    pub fn request_keyframe(&self) {
+        self.force_keyframe_requested.store(true, Ordering::SeqCst);
     }
 
     /// Spawn the background polling thread if not already spawned.
@@ -447,7 +455,11 @@ let backend = create_capture_backend();
     ///   Phase 3 (brief lock): restore encoder, push encoded packets to buffer
     pub fn poll_and_push(&self) -> u32 {
         let prof = prof_enabled();
-        let t0 = if prof { Some(std::time::Instant::now()) } else { None };
+        let t0 = if prof {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
 
         // ── Phase 1: Lock, read frame, take encoder, clone state ──────────
         let mut guard = self.inner.lock();
@@ -501,13 +513,14 @@ let backend = create_capture_backend();
                 }
             }
 
+            let force_keyframe = self.force_keyframe_requested.swap(false, Ordering::SeqCst);
             let encoder = inner.h264_encoder.take();
             let init_failed = inner.h264_encoder_init_failed;
             let sps = inner.sps.clone();
             let pps = inner.pps.clone();
             let idx = inner.frame_index;
             inner.frame_index += 1;
-            (frame, encoder, init_failed, sps, pps, idx)
+            (frame, encoder, init_failed, sps, pps, idx, force_keyframe)
         };
 
         #[cfg(target_os = "macos")]
@@ -531,7 +544,11 @@ let backend = create_capture_backend();
 
         // ── Lock released here (guard drops) ──────────────────────────────
         drop(guard);
-        let t1 = if prof { Some(std::time::Instant::now()) } else { None };
+        let t1 = if prof {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
 
         // ── Phase 2: Encoding (NO lock held) ──────────────────────────────
         #[cfg(target_os = "windows")]
@@ -542,7 +559,11 @@ let backend = create_capture_backend();
 
         #[cfg(target_os = "linux")]
         let phase2 = Self::process_linux_frame(phase1);
-        let t2 = if prof { Some(std::time::Instant::now()) } else { None };
+        let t2 = if prof {
+            Some(std::time::Instant::now())
+        } else {
+            None
+        };
 
         // ── Phase 3: Lock, restore encoder, push results ──────────────────
         let mut guard = self.inner.lock();
@@ -608,13 +629,14 @@ let backend = create_capture_backend();
     /// Phase 2 (Windows): encode NV12 frame outside the lock.
     #[cfg(target_os = "windows")]
     fn process_windows_frame(
-        (frame, encoder_opt, init_failed, sps, pps, _frame_idx): (
+        (frame, encoder_opt, init_failed, sps, pps, _frame_idx, force_keyframe): (
             CapturedFrame,
             Option<MfH264Encoder>,
             bool,
             Vec<u8>,
             Vec<u8>,
             u64,
+            bool,
         ),
     ) -> (
         Option<MfH264Encoder>,
@@ -629,16 +651,14 @@ let backend = create_capture_backend();
             // evicts the oldest raw frames, so this cannot grow unboundedly, and
             // clip-save surfaces a clear "no H.264" error instead of an empty
             // buffer.
-            return (
-                None,
-                init_failed,
-                sps,
-                pps,
-                vec![StoredFrame::from(frame)],
-            );
+            return (None, init_failed, sps, pps, vec![StoredFrame::from(frame)]);
         };
 
-        match encoder.encode_frame(&frame.data) {
+        if force_keyframe {
+            encoder.request_keyframe();
+        }
+
+        match encoder.encode_frame(&frame.data, frame.timestamp) {
             Ok(packets) => {
                 let mut new_sps = sps;
                 let mut new_pps = pps;
@@ -659,7 +679,7 @@ let backend = create_capture_backend();
                         height: frame.height,
                         stride: 0,
                         pixel_format: crate::capture::PixelFormat::H264,
-                        timestamp: frame.timestamp,
+                        timestamp: pkt.timestamp,
                         is_sync: pkt.is_sync,
                     })
                     .collect();
@@ -1100,7 +1120,11 @@ impl Recorder {
     /// video frames. Grabs the audio ring handle under the recorder lock
     /// (briefly) and copies the PCM outside it.
     #[cfg(target_os = "windows")]
-    pub fn extract_clip_audio(&self, start: std::time::Instant, end: std::time::Instant) -> Option<Vec<u8>> {
+    pub fn extract_clip_audio(
+        &self,
+        start: std::time::Instant,
+        end: std::time::Instant,
+    ) -> Option<Vec<u8>> {
         let ring = self
             .inner
             .lock()
