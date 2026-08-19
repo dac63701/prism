@@ -105,6 +105,20 @@ impl RingBuffer {
         }
     }
 
+    /// Update the byte budget, evicting old frames if it was reduced.
+    pub fn set_byte_budget(&mut self, max_bytes: usize) {
+        self.max_bytes = max_bytes;
+        if self.max_bytes > 0 {
+            while self.total_bytes > self.max_bytes {
+                if let Some(old) = self.frames.pop_front() {
+                    self.total_bytes = self.total_bytes.saturating_sub(old.data.len());
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     /// Return frames from the requested window, including the last H.264 sync
     /// frame before it when one is available. H.264 P-frames cannot be decoded
     /// without that preceding keyframe, so starting at the cutoff would shorten

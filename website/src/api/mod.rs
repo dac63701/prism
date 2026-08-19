@@ -1,4 +1,4 @@
-use axum::{routing, Router};
+use axum::{extract::DefaultBodyLimit, routing, Router};
 
 use crate::AppState;
 
@@ -8,7 +8,7 @@ pub mod clips;
 pub mod public;
 pub mod tags;
 
-pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
+pub fn add_api_routes(router: Router<AppState>, upload_body_limit: usize) -> Router<AppState> {
     router
         .route("/api/health", routing::get(admin::health))
         .route("/api/auth/google", routing::get(auth::google_start))
@@ -39,7 +39,10 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
             "/api/auth/update-profile",
             routing::post(auth::update_profile),
         )
-        .route("/api/clips/upload", routing::post(clips::upload_clip))
+        .route(
+            "/api/clips/upload",
+            routing::post(clips::upload_clip).layer(DefaultBodyLimit::max(upload_body_limit)),
+        )
         .route("/api/clips", routing::get(clips::list_clips))
         .route("/api/clips/{id}", routing::get(clips::get_clip))
         .route("/api/clips/{id}", routing::delete(clips::delete_clip))
@@ -73,4 +76,102 @@ pub fn add_api_routes(router: Router<AppState>) -> Router<AppState> {
         .route("/api/admin/config", routing::put(admin::update_config))
         .route("/api/clips/{id}/tags", routing::get(tags::list_tags))
         .route("/api/clips/{id}/tags", routing::put(tags::set_tags))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        response::{IntoResponse, Response},
+        routing::post,
+        Router,
+    };
+    use tower::ServiceExt;
+
+    const BOUNDARY: &str = "TestBoundary123";
+
+    fn multipart_body(file_size: usize) -> Body {
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.mp4\"\r\nContent-Type: video/mp4\r\n\r\n").as_bytes(),
+        );
+        body.extend(std::iter::repeat_n(0u8, file_size));
+        body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
+        Body::from(body)
+    }
+
+    fn multipart_request(file_size: usize) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/upload")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={BOUNDARY}"),
+            )
+            .body(multipart_body(file_size))
+            .unwrap()
+    }
+
+    async fn handle(mut multipart: axum::extract::Multipart) -> Response {
+        let mut total = 0usize;
+        loop {
+            match multipart.next_field().await {
+                Ok(Some(mut field)) => loop {
+                    match field.chunk().await {
+                        Ok(Some(bytes)) => total += bytes.len(),
+                        Ok(None) => break,
+                        Err(_) => {
+                            return (StatusCode::BAD_REQUEST, "multipart error").into_response()
+                        }
+                    }
+                },
+                Ok(None) => break,
+                Err(_) => return (StatusCode::BAD_REQUEST, "multipart error").into_response(),
+            }
+        }
+        axum::Json(serde_json::json!({ "bytes": total })).into_response()
+    }
+
+    fn upload_router() -> Router {
+        Router::new().route(
+            "/upload",
+            post(handle).layer(DefaultBodyLimit::max(32 * 1024 * 1024)),
+        )
+    }
+
+    fn upload_router_default_limit() -> Router {
+        Router::new().route("/upload", post(handle))
+    }
+
+    /// A 3 MB body (over axum's default 2 MB Multipart limit) must parse once the
+    /// route overrides DefaultBodyLimit — this is the upload bug that showed up as
+    /// "Failed to read file: Error parsing `multipart/form-data` request".
+    #[tokio::test]
+    async fn test_large_multipart_with_override() {
+        let response = upload_router()
+            .oneshot(multipart_request(3 * 1024 * 1024))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "large multipart body should parse with DefaultBodyLimit override"
+        );
+    }
+
+    /// Without the override the default 2 MB limit rejects the same body.
+    #[tokio::test]
+    async fn test_large_multipart_default_limit_rejects() {
+        let response = upload_router_default_limit()
+            .oneshot(multipart_request(3 * 1024 * 1024))
+            .await
+            .unwrap();
+        assert_ne!(
+            response.status(),
+            StatusCode::OK,
+            "large multipart body should be rejected by the default 2 MB limit"
+        );
+    }
 }

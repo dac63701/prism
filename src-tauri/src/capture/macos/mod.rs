@@ -228,6 +228,7 @@ pub fn enumerate_sources() -> CaptureSources {
             width: d.width(),
             height: d.height(),
             is_main: false,
+            refresh_rate: display_refresh_rate(d.display_id()),
         })
         .collect();
     if let Some(first) = displays.first_mut() {
@@ -264,6 +265,21 @@ pub fn enumerate_sources() -> CaptureSources {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Refresh rate in Hz for a display id, or 0 if it can't be queried.
+fn display_refresh_rate(display_id: u32) -> u32 {
+    use core_graphics::display::CGDisplay;
+    CGDisplay::new(display_id)
+        .display_mode()
+        .map(|mode| mode.refresh_rate().round() as u32)
+        .unwrap_or(0)
+}
+
+/// Refresh rate of the main display in Hz, or 0 if undetectable.
+pub fn primary_display_refresh_rate() -> u32 {
+    use core_graphics::display::CGDisplay;
+    display_refresh_rate(CGDisplay::main().id)
+}
 
 impl MacCaptureBackend {
     fn handle_frame(latest: &LatestFrame, pixel_buffer: &screencapturekit::cv::CVPixelBuffer) {

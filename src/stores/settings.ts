@@ -21,11 +21,13 @@ export function getDefaultSettings(): AppSettings {
     recording: {
       buffer_duration_secs: 30,
       fps: 60,
+      fps_auto: true,
       bitrate_kbps: 8000,
       resolution: "1080p",
       output_directory: "",
       always_on_recording: true,
       capture_target: "",
+      capture_audio: true,
     },
     hotkeys: getDefaultHotkeys(),
     general: {
@@ -34,6 +36,7 @@ export function getDefaultSettings(): AppSettings {
       show_clip_notification: true,
       game_detection_enabled: false,
       cs2_gsi_port: 4000,
+      sign_in_prompt_dismissed_at: null,
     },
     storage: {
       max_clips_gb: 50,
@@ -48,6 +51,7 @@ export function getDefaultSettings(): AppSettings {
       max_concurrent_uploads: 1,
       account_display_name: "",
       account_email: "",
+      avatar_url: "",
     },
     auto_clip: {
       enabled: false,

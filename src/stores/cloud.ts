@@ -9,6 +9,7 @@ interface CloudState {
   uploads: UploadTask[];
   loading: boolean;
   uploadError: string | null;
+  statusChecked: boolean;
 
   login: () => Promise<void>;
   logout: () => Promise<void>;
@@ -36,6 +37,17 @@ let unlistenUploadProgress: (() => void) | null = null;
 let unlistenAuthError: (() => void) | null = null;
 let unlistenAuthInvalid: (() => void) | null = null;
 
+function stampSignInPromptDismissed() {
+  const { settings, updateSettings } = useSettingsStore.getState();
+  void updateSettings({
+    ...settings,
+    general: {
+      ...settings.general,
+      sign_in_prompt_dismissed_at: Math.floor(Date.now() / 1000),
+    },
+  });
+}
+
 export const useCloudStore = create<CloudState>((set) => {
   const setupListeners = async () => {
     if (!unlistenAuth) {
@@ -44,6 +56,11 @@ export const useCloudStore = create<CloudState>((set) => {
         // authenticated=true means the backend just created a fresh API key
         // and saved it to settings — no need to re-verify immediately.
         set({ authenticated: event.payload });
+        if (!event.payload) {
+          // Don't nag right after a logout/session expiry — start the
+          // re-ask cooldown so the sign-in prompt stays quiet for a while.
+          stampSignInPromptDismissed();
+        }
       });
     }
     if (!unlistenAuthError) {
@@ -85,6 +102,7 @@ export const useCloudStore = create<CloudState>((set) => {
     uploads: [],
     loading: false,
     uploadError: null,
+    statusChecked: false,
 
     login: async () => {
       const settings = useSettingsStore.getState().settings;
@@ -129,6 +147,8 @@ export const useCloudStore = create<CloudState>((set) => {
         });
       } catch (err) {
         console.error("[cloud] checkStatus failed:", err);
+      } finally {
+        set({ statusChecked: true });
       }
     },
 

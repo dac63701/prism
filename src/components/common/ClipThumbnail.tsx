@@ -81,6 +81,8 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
         <img
           src={thumbSrc}
           alt={`${filename} thumbnail`}
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover"
           onError={handleImgError}
         />
@@ -88,6 +90,8 @@ export default function ClipThumbnail({ path, filename }: ClipThumbnailProps) {
         <img
           src={videoThumb}
           alt={`${filename} thumbnail`}
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover"
         />
       ) : (

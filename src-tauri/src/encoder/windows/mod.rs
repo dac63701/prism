@@ -7,7 +7,7 @@
 pub mod mf_encoder;
 
 use bytes::Bytes;
-use mp4::{AvcConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
+use mp4::{AacConfig, AvcConfig, ChannelConfig, MediaConfig, Mp4Config, Mp4Writer, TrackConfig, TrackType};
 use std::path::Path;
 
 use crate::buffer::StoredFrame;
@@ -98,11 +98,68 @@ impl Encoder for WindowsEncoder {
                 .map_err(|e| EncodeError::EncodeFailed(format!("write_sample {i}: {e}")))?;
         }
 
+        // Mux an optional AAC audio track (track id 2; video is track 1).
+        if let Some(audio) = config.audio.as_ref() {
+            if !audio.frames.is_empty() {
+                let audio_timescale = audio.sample_rate.max(1);
+                let audio_track = TrackConfig {
+                    track_type: TrackType::Audio,
+                    timescale: audio_timescale,
+                    language: "und".to_string(),
+                    media_conf: MediaConfig::AacConfig(AacConfig {
+                        bitrate: audio.bitrate_kbps.saturating_mul(1_000),
+                        profile: mp4::AudioObjectType::AacLowComplexity,
+                        freq_index: sample_freq_index_for_rate(audio.sample_rate),
+                        chan_conf: if audio.channels >= 2 {
+                            ChannelConfig::Stereo
+                        } else {
+                            ChannelConfig::Mono
+                        },
+                    }),
+                };
+                writer
+                    .add_track(&audio_track)
+                    .map_err(|e| EncodeError::OutputFailed(format!("add audio track: {e}")))?;
+
+                for frame in &audio.frames {
+                    let sample = mp4::Mp4Sample {
+                        start_time: frame.start_time,
+                        duration: frame.duration,
+                        rendering_offset: 0,
+                        is_sync: true,
+                        bytes: Bytes::copy_from_slice(&frame.data),
+                    };
+                    writer
+                        .write_sample(2, &sample)
+                        .map_err(|e| EncodeError::EncodeFailed(format!("write audio sample: {e}")))?;
+                }
+            }
+        }
+
         writer
             .write_end()
             .map_err(|e| EncodeError::OutputFailed(format!("write_end: {e}")))?;
 
         Ok(())
+    }
+}
+
+/// Map a capture sample rate to the mp4 `SampleFreqIndex` for the AAC config.
+fn sample_freq_index_for_rate(rate: u32) -> mp4::SampleFreqIndex {
+    match rate {
+        96_000 => mp4::SampleFreqIndex::Freq96000,
+        88_200 => mp4::SampleFreqIndex::Freq88200,
+        64_000 => mp4::SampleFreqIndex::Freq64000,
+        48_000 => mp4::SampleFreqIndex::Freq48000,
+        44_100 => mp4::SampleFreqIndex::Freq44100,
+        32_000 => mp4::SampleFreqIndex::Freq32000,
+        24_000 => mp4::SampleFreqIndex::Freq24000,
+        22_050 => mp4::SampleFreqIndex::Freq22050,
+        16_000 => mp4::SampleFreqIndex::Freq16000,
+        12_000 => mp4::SampleFreqIndex::Freq12000,
+        11_025 => mp4::SampleFreqIndex::Freq11025,
+        8_000 => mp4::SampleFreqIndex::Freq8000,
+        _ => mp4::SampleFreqIndex::Freq48000,
     }
 }
 

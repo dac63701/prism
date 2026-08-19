@@ -144,6 +144,13 @@ async fn main() {
     let site_origin: HeaderValue = config.site_url.parse().expect("Invalid SITE_URL");
     let rate_limiter = Arc::new(middleware::rate_limit::RateLimiter::new(config.rate_limit_per_min));
 
+    // Axum's `Multipart` extractor defaults to a 2 MB body limit, which silently
+    // rejects clips larger than that. Raise the cap for the upload route to the
+    // configured max upload size plus headroom for multipart boundary/text fields.
+    let upload_body_limit = (config.max_upload_size_mb.max(1) as usize)
+        .saturating_mul(1024 * 1024)
+        .saturating_add(8 * 1024 * 1024);
+
     let state = AppState {
         pool,
         config,
@@ -172,7 +179,7 @@ async fn main() {
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::COOKIE])
         .allow_credentials(true);
 
-    let app = api::add_api_routes(Router::<AppState>::new())
+    let app = api::add_api_routes(Router::<AppState>::new(), upload_body_limit)
         .route("/s/{share_id}", get(api::public::serve_share_page))
         .route("/u/{username}", get(api::public::serve_profile_page))
         .layer(axum_middleware::from_fn(middleware::timeout::timeout_middleware))

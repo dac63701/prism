@@ -15,6 +15,9 @@ pub struct BufferConfig {
     pub max_duration_secs: u32,
     /// Expected capture frame rate.
     pub fps: u32,
+    /// Target video bitrate (kbps). Drives the shadow-buffer byte budget so
+    /// the ring holds the full configured duration of compressed video.
+    pub bitrate_kbps: u32,
 }
 
 impl Default for BufferConfig {
@@ -22,6 +25,7 @@ impl Default for BufferConfig {
         Self {
             max_duration_secs: 60,
             fps: 60,
+            bitrate_kbps: 8000,
         }
     }
 }
@@ -70,9 +74,22 @@ impl BufferManager {
         // Frame-capacity ceiling: at most MAX_FRAME_CAPACITY or config capacity,
         // whichever is smaller.
         let capacity = Self::storage_capacity(&config);
-        let buffer = RingBuffer::with_byte_budget(capacity, Self::SHADOW_BUFFER_BYTES);
+        let budget = Self::shadow_buffer_bytes(&config);
+        let buffer = RingBuffer::with_byte_budget(capacity, budget);
 
         Self { buffer, config }
+    }
+
+    /// Byte budget for the shadow buffer: enough for the configured duration of
+    /// compressed H.264 video with a 1.5× headroom factor, capped at 256 MB.
+    fn shadow_buffer_bytes(config: &BufferConfig) -> usize {
+        // bitrate_kbps × 1000 bps / 8 = bytes/sec of compressed video.
+        let bytes_per_sec = (config.bitrate_kbps as usize).saturating_mul(125);
+        let bytes = bytes_per_sec
+            .saturating_mul(config.max_duration_secs as usize)
+            .saturating_mul(3)
+            .saturating_div(2);
+        bytes.clamp(16 * 1024 * 1024, Self::SHADOW_BUFFER_BYTES)
     }
 
     /// Push a frame into the ring buffer.
@@ -88,6 +105,7 @@ impl BufferManager {
         self.config.max_duration_secs = duration_secs;
         self.buffer
             .set_capacity(Self::storage_capacity(&self.config));
+        self.buffer.set_byte_budget(Self::shadow_buffer_bytes(&self.config));
     }
 
     /// Save a clip from the last N seconds of buffer.

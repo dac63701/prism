@@ -1,11 +1,13 @@
 export interface RecordingSettings {
   buffer_duration_secs: number;
   fps: number;
+  fps_auto: boolean;
   bitrate_kbps: number;
   resolution: string;
   output_directory: string;
   always_on_recording: boolean;
   capture_target: string;
+  capture_audio: boolean;
 }
 
 export interface HotkeySettings {
@@ -20,6 +22,7 @@ export interface GeneralSettings {
   show_clip_notification: boolean;
   game_detection_enabled: boolean;
   cs2_gsi_port: number;
+  sign_in_prompt_dismissed_at: number | null;
 }
 
 export interface PerGameAutoClip {
@@ -54,6 +57,7 @@ export interface CloudSettings {
   max_concurrent_uploads: number;
   account_display_name: string;
   account_email: string;
+  avatar_url: string;
 }
 
 export interface AppSettings {

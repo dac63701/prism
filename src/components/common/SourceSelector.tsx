@@ -101,6 +101,14 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
     onChange(JSON.stringify({ application: bundleId }));
   };
 
+  const rowClass = (selected: boolean) =>
+    cn(
+      "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition active:scale-[0.98]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
+      "hover:bg-white/5 border border-transparent",
+      selected && "bg-surface-2 border-accent/20"
+    );
+
   return (
     <div className="flex flex-col gap-3">
       {/* Header */}
@@ -109,19 +117,20 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
         <button
           onClick={loadSources}
           disabled={loading}
-          className="p-1 rounded text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800 transition active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 disabled:opacity-40"
+          className="rounded p-1 text-zinc-600 transition hover:bg-white/5 hover:text-zinc-300 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 disabled:opacity-40"
           title="Refresh sources"
+          aria-label="Refresh sources"
         >
           <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
         </button>
       </div>
 
       {/* Tab buttons */}
-      <div className="flex gap-1 rounded-lg bg-surface border border-border p-0.5">
+      <div className="flex gap-1 rounded-lg border border-border bg-surface p-0.5">
         <button
           onClick={() => setActiveTab("display")}
           className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
             activeTab === "display"
               ? "bg-surface-2 text-white"
               : "text-zinc-400 hover:text-white"
@@ -133,7 +142,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
         <button
           onClick={() => setActiveTab("app")}
           className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
             activeTab === "app"
               ? "bg-surface-2 text-white"
               : "text-zinc-400 hover:text-white"
@@ -145,36 +154,37 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
       </div>
 
       {/* Source list */}
-      <div className="flex flex-col gap-1 max-h-[240px] overflow-y-auto">
+      <div className="flex max-h-[240px] flex-col gap-1 overflow-y-auto">
         {activeTab === "display" && (
           <>
-            {sources?.displays.map((display) => (
-              <button
-                key={display.displayId}
-                onClick={() => selectDisplay(display.displayId, display.isMain)}
-                className={cn(
-                  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
-                  "hover:bg-white/5 border border-transparent",
-                  isDisplaySelected(display.displayId, display.isMain) &&
-                    "bg-surface-2 border-accent/20"
-                )}
-              >
-                <Monitor className="size-4 shrink-0 text-zinc-500" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-zinc-300 truncate">
-                    {display.isMain ? "Main display" : `Display ${display.displayId}`}
-                  </p>
-                  <p className="text-[11px] text-zinc-600">
-                    {display.width}×{display.height}
-                  </p>
-                </div>
-                  {isDisplaySelected(display.displayId, display.isMain) && (
-                  <Check className="size-3.5 text-accent shrink-0" />
-                )}
-              </button>
-            ))}
+            {sources?.displays.map((display) => {
+              const selected = isDisplaySelected(display.displayId, display.isMain);
+              return (
+                <button
+                  key={display.displayId}
+                  onClick={() => selectDisplay(display.displayId, display.isMain)}
+                  className={rowClass(selected)}
+                >
+                  <span className="relative shrink-0">
+                    <Monitor className="size-4 text-zinc-500" />
+                    {display.isMain && (
+                      <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-accent" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-zinc-300">
+                      {display.isMain ? "Main display" : `Display ${display.displayId}`}
+                    </p>
+                    <p className="text-[11px] text-zinc-600">
+                      {display.width}×{display.height}
+                    </p>
+                  </div>
+                  {selected && <Check className="size-3.5 shrink-0 text-accent" />}
+                </button>
+              );
+            })}
             {(!sources?.displays.length && !loading) && (
-              <p className="text-xs text-zinc-600 text-center py-3">
+              <p className="py-3 text-center text-xs text-zinc-600">
                 No displays found
               </p>
             )}
@@ -183,34 +193,30 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
 
         {activeTab === "app" && (
           <>
-            {sources?.applications.map((app) => (
-              <button
-                key={app.bundleId}
-                onClick={() => selectApp(app.bundleId)}
-                className={cn(
-                  "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-left transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
-                  "hover:bg-white/5 border border-transparent",
-                  isAppSelected(app.bundleId) &&
-                    "bg-surface-2 border-accent/20"
-                )}
-              >
-                <AppWindow className="size-4 shrink-0 text-zinc-500" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-zinc-300 truncate">
-                    {app.name}
-                  </p>
-                  <p className="text-[11px] text-zinc-600 truncate">
-                    {app.bundleId}
-                    {app.windowCount > 0 && ` · ${app.windowCount}w`}
-                  </p>
-                </div>
-                  {isAppSelected(app.bundleId) && (
-                  <Check className="size-3.5 text-accent shrink-0" />
-                )}
-              </button>
-            ))}
+            {sources?.applications.map((app) => {
+              const selected = isAppSelected(app.bundleId);
+              return (
+                <button
+                  key={app.bundleId}
+                  onClick={() => selectApp(app.bundleId)}
+                  className={rowClass(selected)}
+                >
+                  <AppWindow className="size-4 shrink-0 text-zinc-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-zinc-300">
+                      {app.name}
+                    </p>
+                    <p className="truncate text-[11px] text-zinc-600">
+                      {app.bundleId}
+                      {app.windowCount > 0 && ` · ${app.windowCount}w`}
+                    </p>
+                  </div>
+                  {selected && <Check className="size-3.5 shrink-0 text-accent" />}
+                </button>
+              );
+            })}
             {(!sources?.applications.length && !loading) && (
-              <p className="text-xs text-zinc-600 text-center py-3">
+              <p className="py-3 text-center text-xs text-zinc-600">
                 No applications found
               </p>
             )}
@@ -219,7 +225,7 @@ export default function SourceSelector({ value, onChange }: SourceSelectorProps)
 
         {loading && (
           <div className="flex items-center justify-center py-4">
-            <RefreshCw className="size-4 text-zinc-500 animate-spin" />
+            <RefreshCw className="size-4 animate-spin text-zinc-500" />
           </div>
         )}
       </div>

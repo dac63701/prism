@@ -1,4 +1,6 @@
 mod auth;
+#[cfg(target_os = "windows")]
+mod audio;
 mod buffer;
 mod capture;
 mod commands;
@@ -14,6 +16,12 @@ use auth::AuthManager;
 use recording::Recorder;
 use settings::SettingsManager;
 use tauri::{Emitter, Listener, Manager, RunEvent};
+
+// Fast, scalable allocator for the recording pipeline (thousands of small
+// per-frame allocations under heavy memory churn).
+#[cfg(target_os = "windows")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -112,6 +120,17 @@ pub fn run() {
                 eprintln!("Warning: Failed to build system tray: {e}");
             }
 
+            // Custom title bar: keep decorations disabled on Windows/Linux
+            // (rendered in-app), but restore native decorations + overlay
+            // traffic lights on macOS so the custom bar sits under the lights.
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(true);
+                    let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -128,6 +147,7 @@ pub fn run() {
             commands::recording::get_preview_frame,
             commands::recording::get_buffer_info,
             commands::recording::get_capture_sources,
+            commands::recording::get_display_refresh_rate,
             commands::recording::set_capture_target,
             commands::settings::get_settings,
             commands::settings::update_settings,

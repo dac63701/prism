@@ -27,6 +27,8 @@ pub async fn update_settings(
     let updated = manager.set(&app, settings).map_err(|e| e.to_string())?;
     if recorder.is_recording() {
         recorder.set_buffer_duration_secs(updated.recording.buffer_duration_secs);
+        #[cfg(target_os = "windows")]
+        recorder.set_capture_audio(updated.recording.capture_audio);
     } else {
         recorder.reconfigure(&updated);
     }

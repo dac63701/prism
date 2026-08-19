@@ -179,6 +179,7 @@ impl AuthManager {
             new_settings.cloud.refresh_token = exchange.refresh_token;
             new_settings.cloud.account_display_name = exchange.user.display_name;
             new_settings.cloud.account_email = exchange.user.email;
+            new_settings.cloud.avatar_url = exchange.user.avatar_url.clone().unwrap_or_default();
             let _ = settings_mgr.set(app, new_settings);
         }
 
@@ -272,6 +273,7 @@ impl AuthManager {
         new_settings.cloud.refresh_token.clear();
         new_settings.cloud.account_display_name.clear();
         new_settings.cloud.account_email.clear();
+        new_settings.cloud.avatar_url.clear();
         let _ = settings_mgr.set(app, new_settings);
 
         {

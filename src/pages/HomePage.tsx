@@ -7,6 +7,8 @@ import { formatDuration } from "@/stores/clips";
 import RecordingControls from "@/components/common/RecordingControls";
 import ScreenPreview from "@/components/common/ScreenPreview";
 import SourceSelector from "@/components/common/SourceSelector";
+import { Badge } from "@/components/ui/brand";
+import { useDisplayRefreshRate } from "@/hooks/useDisplayRefreshRate";
 
 export default function HomePage() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
@@ -16,6 +18,9 @@ export default function HomePage() {
   const resolution = useSettingsStore((s) => s.settings.recording.resolution);
   const bitrateKbps = useSettingsStore((s) => s.settings.recording.bitrate_kbps);
   const fps = useSettingsStore((s) => s.settings.recording.fps);
+  const fpsAuto = useSettingsStore((s) => s.settings.recording.fps_auto);
+  const displayRefreshRate = useDisplayRefreshRate();
+  const effectiveFps = fpsAuto ? displayRefreshRate || fps : fps;
 
   const isRecording = useRecordingStore((s) => s.isRecording);
   const bufferTimeSeconds = useRecordingStore((s) => s.bufferTimeSeconds);
@@ -68,33 +73,30 @@ export default function HomePage() {
   }, [captureTarget]);
 
   return (
-    <div className="h-full flex gap-5 px-6 pb-5">
+    <div className="flex h-full flex-col gap-5 px-6 pb-5 lg:flex-row">
       {/* ── Left: Preview + Controls ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Preview */}
-        <div className="flex-1 min-h-0 pt-3 pb-4">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 pb-4 pt-3">
           <ScreenPreview recording={isRecording} />
         </div>
 
-        {/* Error banner */}
         {error && (
-          <div className="shrink-0 mb-3 flex items-start gap-2 px-4 py-3 rounded-lg bg-red-950/60 border border-red-900/60">
-            <p className="text-xs text-red-300 flex-1 leading-relaxed">{error}</p>
+          <div className="mb-3 flex shrink-0 items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/60 px-4 py-3">
+            <p className="flex-1 text-xs leading-relaxed text-red-300">{error}</p>
             <button
               onClick={clearError}
-              className="p-0.5 rounded text-red-400 hover:text-red-200 transition active:scale-90"
+              className="rounded p-0.5 text-red-400 transition hover:text-red-200 active:scale-90"
+              aria-label="Dismiss error"
             >
               <X className="size-3.5" />
             </button>
           </div>
         )}
 
-        {/* Controls + Info Bar */}
-        <div className="flex flex-col items-center gap-4 shrink-0">
+        <div className="flex shrink-0 flex-col items-center gap-4">
           <RecordingControls />
 
-          {/* State text — elapsed time + buffer time */}
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-zinc-500 tabular-nums">
             {isRecording
               ? framesReceived === 0
                 ? "Recording — waiting for frames..."
@@ -102,34 +104,29 @@ export default function HomePage() {
               : "Idle"}
           </p>
 
-          {/* Compact info bar */}
           {loaded && (
-            <div className="flex items-center gap-4 text-xs text-zinc-500 bg-white/[0.03] border border-border rounded-full px-4 py-1.5">
+            <div className="flex min-w-0 flex-wrap items-center justify-center gap-2 text-xs text-zinc-500">
               {targetLabel && (
-                <>
-                  <span className="flex items-center gap-1.5">
-                    <Monitor className="size-3" />
-                    {targetLabel}
-                  </span>
-                  <span className="text-zinc-700">|</span>
-                </>
+                <Badge className="gap-1.5 px-2.5 py-1 text-[11px]">
+                  <Monitor className="size-3" />
+                  <span className="truncate">{targetLabel}</span>
+                </Badge>
               )}
-              <span className="flex items-center gap-1.5">
+              <Badge className="gap-1.5 px-2.5 py-1 text-[11px]">
                 <HardDrive className="size-3" />
                 {bufferDurationSecs}s clip
-              </span>
-              <span className="text-zinc-700">|</span>
-              <span className="flex items-center gap-1.5">
+              </Badge>
+              <Badge className="gap-1.5 px-2.5 py-1 text-[11px]">
                 <Film className="size-3" />
-                {resolution} · {(bitrateKbps / 1000).toFixed(1).replace(/\.0$/, "")} Mbps · {fps} FPS
-              </span>
+                {resolution} · {(bitrateKbps / 1000).toFixed(1).replace(/\.0$/, "")} Mbps · {effectiveFps} FPS
+              </Badge>
             </div>
           )}
         </div>
       </div>
 
       {/* ── Right: Source Selector ── */}
-      <div className="w-64 shrink-0 pt-3 pb-5">
+      <div className="w-full shrink-0 pb-5 pt-3 lg:w-64">
         <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
           <SourceSelector
             value={captureTarget}

@@ -125,6 +125,29 @@ export default function VideoPlayer({ src, poster, onError }: VideoPlayerProps) 
     onError?.(msg);
   };
 
+  // Keyboard shortcuts: Space, arrows, M, F
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        void togglePlay();
+      } else if (e.key === "ArrowLeft") {
+        seekTo(currentTime - SKIP_SECONDS);
+      } else if (e.key === "ArrowRight") {
+        seekTo(currentTime + SKIP_SECONDS);
+      } else if (e.key === "m" || e.key === "M") {
+        const v = videoRef.current;
+        if (v) v.muted = !v.muted;
+      } else if (e.key === "f" || e.key === "F") {
+        void toggleFullscreen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [currentTime, seekTo, togglePlay, toggleFullscreen]);
+
   return (
     <div
       ref={containerRef}
@@ -177,16 +200,22 @@ export default function VideoPlayer({ src, poster, onError }: VideoPlayerProps) 
           showControls ? "opacity-100" : "opacity-0"
         }`}
       >
-        <input
-          aria-label="Seek"
-          type="range"
-          min={0}
-          max={Math.max(duration, 1)}
-          step="0.01"
-          value={Math.min(currentTime, duration || 0)}
-          onChange={(e) => seekTo(Number(e.target.value))}
-          className="h-1.5 w-full cursor-pointer accent-white"
-        />
+        <div className="relative h-1.5 w-full rounded-full bg-white/15">
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 to-blue-300"
+            style={{ width: `${duration > 0 ? (Math.min(currentTime, duration) / duration) * 100 : 0}%` }}
+          />
+          <input
+            aria-label="Seek"
+            type="range"
+            min={0}
+            max={Math.max(duration, 1)}
+            step="0.01"
+            value={Math.min(currentTime, duration || 0)}
+            onChange={(e) => seekTo(Number(e.target.value))}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          />
+        </div>
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-white">
             <button

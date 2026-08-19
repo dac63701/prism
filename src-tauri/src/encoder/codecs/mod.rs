@@ -34,6 +34,9 @@ pub struct EncoderConfig {
     /// Output video height in pixels
     #[allow(dead_code)]
     pub target_height: u32,
+    /// Optional AAC audio track to mux alongside the video.
+    #[allow(dead_code)]
+    pub audio: Option<AudioClip>,
 }
 
 impl Default for EncoderConfig {
@@ -45,6 +48,27 @@ impl Default for EncoderConfig {
             keyframe_interval: 120,
             target_width: 1920,
             target_height: 1080,
+            audio: None,
         }
     }
+}
+
+/// A single raw AAC frame (1024 samples, no ADTS header) for MP4 muxing.
+#[derive(Debug, Clone)]
+pub struct AacFrame {
+    /// Sample start time, in `sample_rate` units (e.g. 48 kHz timescale).
+    pub start_time: u64,
+    /// Samples per AAC frame (always 1024).
+    pub duration: u32,
+    /// Raw AAC payload bytes.
+    pub data: Vec<u8>,
+}
+
+/// An encoded AAC audio clip attached to a clip save.
+#[derive(Debug, Clone)]
+pub struct AudioClip {
+    pub sample_rate: u32,
+    pub channels: u8,
+    pub bitrate_kbps: u32,
+    pub frames: Vec<AacFrame>,
 }

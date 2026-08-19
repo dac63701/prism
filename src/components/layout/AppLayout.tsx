@@ -1,13 +1,20 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
+import TitleBar from "./TitleBar";
 import Sidebar from "./Sidebar";
+import AmbientBackground from "./AmbientBackground";
 import ClipNotification from "@/components/common/ClipNotification";
+import SignInPrompt from "@/components/auth/SignInPrompt";
+import { Toaster } from "@/components/ui/toast";
 import { useRecordingStore } from "@/stores/recording";
 import { useCloudStore } from "@/stores/cloud";
 import { useSettingsStore } from "@/stores/settings";
 
+const SIGN_IN_PROMPT_COOLDOWN_SECS = 3 * 24 * 60 * 60;
+
 export default function AppLayout() {
+  const [showSignInPrompt, setShowSignInPrompt] = useState(false);
   // Suppress the default browser right-click context menu
   useEffect(() => {
     const handler = (e: MouseEvent) => e.preventDefault();
@@ -16,7 +23,10 @@ export default function AppLayout() {
   }, []);
   const saveClip = useRecordingStore((s) => s.saveClip);
   const checkCloudStatus = useCloudStore((s) => s.checkStatus);
+  const cloudStatusChecked = useCloudStore((s) => s.statusChecked);
+  const cloudAuthenticated = useCloudStore((s) => s.authenticated);
   const settingsLoaded = useSettingsStore((s) => s.loaded);
+  const settings = useSettingsStore((s) => s.settings);
 
   const isRecording = useRecordingStore((s) => s.isRecording);
   const checkRecordingStatus = useRecordingStore((s) => s.checkStatus);
@@ -29,8 +39,32 @@ export default function AppLayout() {
   useEffect(() => {
     if (settingsLoaded) {
       checkCloudStatus();
+      void useCloudStore.getState().uploadQueueStatus();
     }
   }, [settingsLoaded, checkCloudStatus]);
+
+  // Show the first-boot sign-in prompt after auth has been verified.
+  // Re-asks after a cooldown if the user dismissed it but never signed in.
+  useEffect(() => {
+    if (!settingsLoaded || !cloudStatusChecked || cloudAuthenticated) return;
+    const dismissedAt = settings.general.sign_in_prompt_dismissed_at;
+    if (dismissedAt == null) {
+      setShowSignInPrompt(true);
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (now - dismissedAt >= SIGN_IN_PROMPT_COOLDOWN_SECS) {
+      setShowSignInPrompt(true);
+    }
+  }, [
+    settingsLoaded,
+    cloudStatusChecked,
+    cloudAuthenticated,
+    settings.general.sign_in_prompt_dismissed_at,
+  ]);
+
+  const closeSignInPrompt = useCallback(() => setShowSignInPrompt(false), []);
+  const openSignInPrompt = useCallback(() => setShowSignInPrompt(true), []);
 
   // Poll recording status every 1s while recording (keeps timer live on all pages)
   useEffect(() => {
@@ -72,18 +106,18 @@ export default function AppLayout() {
   }, [saveClip]);
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-[#050816] text-[#e5eefc]">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-blue-500/[0.07] blur-[120px]" />
-        <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-blue-600/5 blur-[120px]" />
-      </div>
-      <div className="relative z-10 flex h-full w-full">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
+    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-[#050816] text-[#e5eefc]">
+      <AmbientBackground />
+      <TitleBar />
+      <div className="relative z-10 flex h-full min-h-0 w-full">
+        <Sidebar onSignInClick={openSignInPrompt} />
+        <main className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
       <ClipNotification />
+      <SignInPrompt open={showSignInPrompt} onClose={closeSignInPrompt} />
+      <Toaster />
     </div>
   );
 }

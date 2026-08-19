@@ -5,7 +5,6 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
@@ -29,11 +28,34 @@ use crate::settings::config::{is_native_resolution, resolution_dimensions};
 /// so we don't busy-loop but still catch frames in time.
 const POLL_FRACTION: f32 = 1.0;
 
+/// Whether per-frame timing diagnostics are enabled (`PRISM_PROF=1`).
+/// Emits phase timings from `poll_and_push` and clip-save to stderr.
+fn prof_enabled() -> bool {
+    std::env::var("PRISM_PROF").as_deref() == Ok("1")
+}
+
+/// Resolve the effective capture FPS. When `fps_auto` is set, match the main
+/// display's refresh rate (clamped to a sane 24–240 range); fall back to the
+/// configured manual FPS if detection fails.
+fn effective_fps(rs: &crate::settings::config::RecordingSettings) -> u32 {
+    if rs.fps_auto {
+        let detected = crate::capture::primary_display_refresh_rate();
+        if (24..=240).contains(&detected) {
+            return detected;
+        }
+        eprintln!(
+            "[recording] display refresh rate detection failed ({detected}); using {} FPS",
+            rs.fps
+        );
+    }
+    rs.fps
+}
+
 /// Tauri-managed recording state.
 ///
-/// Thread-safe: all mutable access goes through a single Mutex.
+/// Thread-safe: all mutable access goes through a single parking_lot Mutex.
 pub struct Recorder {
-    inner: Mutex<Option<RecorderInner>>,
+    inner: parking_lot::Mutex<Option<RecorderInner>>,
     /// Flag readable without the lock — quick state check.
     running: AtomicBool,
     /// Prevents spawning multiple polling tasks.
@@ -87,38 +109,49 @@ struct RecorderInner {
     /// Target encoder dimensions (from settings for non-native, from first frame for native).
     target_width: u32,
     target_height: u32,
+    /// WASAPI system audio capture (Windows only).
+    #[cfg(target_os = "windows")]
+    audio: crate::audio::AudioCapturer,
+    /// Whether audio capture is enabled by settings.
+    #[cfg(target_os = "windows")]
+    capture_audio: bool,
 }
 
 impl Recorder {
     /// Create a new recorder from app settings.
     pub fn new(settings: &AppSettings) -> Self {
         let rs = &settings.recording;
+        let fps = effective_fps(rs);
         let buffer = BufferManager::new(
             BufferConfig {
                 max_duration_secs: rs.buffer_duration_secs,
-                fps: rs.fps,
+                fps,
+                bitrate_kbps: rs.bitrate_kbps,
             },
             1920,
             1080,
         );
-        let backend = create_capture_backend();
+let backend = create_capture_backend();
         // Parse capture target from settings (JSON-serialized string)
         let target = if rs.capture_target.is_empty() {
             CaptureTarget::default()
         } else {
             serde_json::from_str(&rs.capture_target).unwrap_or_default()
         };
+        let native = is_native_resolution(&rs.resolution);
+        // Configured output dimensions (0,0 = native). The Windows backend now
+        // honors these directly (GPU/CPU downscale); macOS resizes in-process.
+        let (target_w, target_h) = if native {
+            (0, 0)
+        } else {
+            resolution_dimensions(&rs.resolution)
+        };
         let backend_config = CaptureConfig {
             fps: rs.fps,
             capture_cursor: true,
             target,
-        };
-
-        let native = is_native_resolution(&rs.resolution);
-        let (target_w, target_h) = if native {
-            (1920, 1080)
-        } else {
-            resolution_dimensions(&rs.resolution)
+            target_width: target_w,
+            target_height: target_h,
         };
 
         // Windows needs the captured frame dimensions for native resolution,
@@ -142,7 +175,7 @@ impl Recorder {
         };
 
         Self {
-            inner: Mutex::new(Some(RecorderInner {
+            inner: parking_lot::Mutex::new(Some(RecorderInner {
                 backend,
                 buffer,
                 backend_config,
@@ -172,11 +205,15 @@ impl Recorder {
                 native_bitrate_kbps: rs.bitrate_kbps,
                 target_width: target_w,
                 target_height: target_h,
+                #[cfg(target_os = "windows")]
+                audio: crate::audio::AudioCapturer::default(),
+                #[cfg(target_os = "windows")]
+                capture_audio: rs.capture_audio,
             })),
             running: AtomicBool::new(false),
             polling_spawned: AtomicBool::new(false),
             frames_received: std::sync::atomic::AtomicU64::new(0),
-            cached_fps: AtomicU32::new(rs.fps),
+            cached_fps: AtomicU32::new(fps),
         }
     }
 
@@ -184,10 +221,9 @@ impl Recorder {
     #[allow(dead_code)]
     pub fn reconfigure(&self, settings: &AppSettings) {
         let rs = &settings.recording;
-        self.cached_fps.store(rs.fps, Ordering::SeqCst);
-        let Ok(mut guard) = self.inner.lock() else {
-            return;
-        };
+        let fps = effective_fps(rs);
+        self.cached_fps.store(fps, Ordering::SeqCst);
+        let mut guard = self.inner.lock();
         if let Some(inner) = guard.as_mut() {
             // Update output directory
             inner.output_dir = resolve_output_dir(&rs.output_directory);
@@ -195,7 +231,8 @@ impl Recorder {
             inner.buffer = BufferManager::new(
                 BufferConfig {
                     max_duration_secs: rs.buffer_duration_secs,
-                    fps: rs.fps,
+                    fps,
+                    bitrate_kbps: rs.bitrate_kbps,
                 },
                 inner.resolution.0,
                 inner.resolution.1,
@@ -204,14 +241,14 @@ impl Recorder {
             // Native resolution defers init until first frame.
             inner.resolution_is_native = is_native_resolution(&rs.resolution);
             inner.native_bitrate_kbps = rs.bitrate_kbps;
-            if inner.resolution_is_native {
-                inner.target_width = 1920;
-                inner.target_height = 1080;
+            let (target_w, target_h) = if inner.resolution_is_native {
+                // (0,0) = native: backend uses the captured source dimensions.
+                (0, 0)
             } else {
-                let (w, h) = resolution_dimensions(&rs.resolution);
-                inner.target_width = w;
-                inner.target_height = h;
-            }
+                resolution_dimensions(&rs.resolution)
+            };
+            inner.target_width = target_w;
+            inner.target_height = target_h;
             #[cfg(target_os = "windows")]
             {
                 inner.frame_index = 0;
@@ -227,18 +264,23 @@ impl Recorder {
                 inner.pps.clear();
                 inner.h264_encoder = None;
             }
-            // Update capture config
-            inner.backend_config.fps = rs.fps;
+            // Update capture config (applied on next backend.start()).
+            inner.backend_config.fps = fps;
+            inner.backend_config.target_width = target_w;
+            inner.backend_config.target_height = target_h;
+            #[cfg(target_os = "windows")]
+            {
+                inner.capture_audio = rs.capture_audio;
+            }
         }
     }
 
     /// Update the capture target (display/window/application) at runtime.
     /// Does not restart the capture — call before starting or stop/start manually.
     pub fn reconfigure_target(&self, target: CaptureTarget) {
-        if let Ok(mut guard) = self.inner.lock() {
-            if let Some(inner) = guard.as_mut() {
-                inner.backend_config.target = target;
-            }
+        let mut guard = self.inner.lock();
+        if let Some(inner) = guard.as_mut() {
+            inner.backend_config.target = target;
         }
     }
 
@@ -251,16 +293,20 @@ impl Recorder {
             return Ok(());
         }
 
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|e| format!("Recorder lock poisoned: {e}"))?;
+        let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or("Recorder not initialized")?;
 
         inner
             .backend
             .start(inner.backend_config.clone())
             .map_err(|e| format!("Failed to start capture: {e}"))?;
+
+        #[cfg(target_os = "windows")]
+        if inner.capture_audio {
+            inner
+                .audio
+                .start(inner.buffer.config().max_duration_secs);
+        }
 
         self.running.store(true, Ordering::SeqCst);
         Ok(())
@@ -276,9 +322,7 @@ impl Recorder {
         self.polling_spawned.store(false, Ordering::SeqCst);
         self.frames_received.store(0, Ordering::SeqCst);
 
-        let Ok(mut guard) = self.inner.lock() else {
-            return Ok(());
-        };
+        let mut guard = self.inner.lock();
         if let Some(inner) = guard.as_mut() {
             inner
                 .backend
@@ -289,6 +333,7 @@ impl Recorder {
             inner.latest_frame = None;
             #[cfg(target_os = "windows")]
             {
+                inner.audio.stop();
                 inner.h264_encoder = None;
                 inner.frame_index = 0;
                 inner.sps.clear();
@@ -311,34 +356,39 @@ impl Recorder {
         self.running.load(Ordering::SeqCst)
     }
 
-    /// Spawn the background polling task if not already spawned.
-    /// Returns true if the task was spawned, false if already running.
+    /// Spawn the background polling thread if not already spawned.
+    /// Returns true if the thread was spawned, false if already running.
     pub fn start_polling(&self, app: AppHandle) -> bool {
         if self.polling_spawned.swap(true, Ordering::SeqCst) {
             return false; // already spawned
         }
 
+        // Dedicated OS thread so H.264 encoding and capture polling never
+        // compete with the tokio worker threads that service save_clip /
+        // get_preview_frame commands (previously caused lock contention and
+        // stutters).
         let app_handle = app;
-        tauri::async_runtime::spawn(async move {
-            loop {
-                let poll_started = std::time::Instant::now();
-                let (running, interval) = {
+        std::thread::Builder::new()
+            .name("prism-capture".into())
+            .spawn(move || {
+                loop {
+                    let poll_started = std::time::Instant::now();
                     let recorder = app_handle.state::<Recorder>();
                     if !recorder.is_recording() {
-                        (false, std::time::Duration::ZERO)
-                    } else {
-                        recorder.poll_and_push();
-                        (true, recorder.poll_interval())
+                        break;
                     }
-                };
-                if !running {
-                    break;
+                    recorder.poll_and_push();
+                    let interval = recorder.poll_interval();
+                    // Keep the configured frame period stable instead of adding
+                    // capture and encode time to every interval.
+                    std::thread::sleep(interval.saturating_sub(poll_started.elapsed()));
                 }
-                // Keep the configured frame period stable instead of adding
-                // capture and encode time to every interval.
-                tokio::time::sleep(interval.saturating_sub(poll_started.elapsed())).await;
-            }
-        });
+            })
+            .map_err(|e| eprintln!("[prism] failed to spawn capture thread: {e}"))
+            .err()
+            .map(|_| {
+                self.polling_spawned.store(false, Ordering::SeqCst);
+            });
 
         true
     }
@@ -346,10 +396,9 @@ impl Recorder {
     /// Clear the ring buffer (e.g. on game switch).
     #[allow(dead_code)]
     pub fn clear_buffer(&self) {
-        if let Ok(mut guard) = self.inner.lock() {
-            if let Some(inner) = guard.as_mut() {
-                inner.buffer.clear();
-            }
+        let mut guard = self.inner.lock();
+        if let Some(inner) = guard.as_mut() {
+            inner.buffer.clear();
         }
     }
 
@@ -359,19 +408,31 @@ impl Recorder {
     pub fn buffer_duration_secs(&self) -> u32 {
         self.inner
             .lock()
-            .ok()
-            .and_then(|g| {
-                g.as_ref()
-                    .map(|inner| inner.buffer.config().max_duration_secs)
-            })
+            .as_ref()
+            .map(|inner| inner.buffer.config().max_duration_secs)
             .unwrap_or(60)
     }
 
     /// Update the active buffer duration without interrupting capture.
     pub fn set_buffer_duration_secs(&self, duration_secs: u32) {
-        if let Ok(mut guard) = self.inner.lock() {
-            if let Some(inner) = guard.as_mut() {
-                inner.buffer.set_duration_secs(duration_secs);
+        let mut guard = self.inner.lock();
+        if let Some(inner) = guard.as_mut() {
+            inner.buffer.set_duration_secs(duration_secs);
+        }
+    }
+
+    /// Toggle system-audio capture live. When enabled mid-session, starts the
+    /// WASAPI capturer with the current buffer duration; when disabled, stops
+    /// and clears buffered audio.
+    #[cfg(target_os = "windows")]
+    pub fn set_capture_audio(&self, enabled: bool) {
+        let mut guard = self.inner.lock();
+        if let Some(inner) = guard.as_mut() {
+            inner.capture_audio = enabled;
+            if enabled && self.running.load(Ordering::SeqCst) {
+                inner.audio.start(inner.buffer.config().max_duration_secs);
+            } else if !enabled {
+                inner.audio.stop();
             }
         }
     }
@@ -385,11 +446,11 @@ impl Recorder {
     ///   Phase 2 (no lock):    H.264 encoding (the expensive part)
     ///   Phase 3 (brief lock): restore encoder, push encoded packets to buffer
     pub fn poll_and_push(&self) -> u32 {
+        let prof = prof_enabled();
+        let t0 = if prof { Some(std::time::Instant::now()) } else { None };
+
         // ── Phase 1: Lock, read frame, take encoder, clone state ──────────
-        let mut guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(_) => return 0,
-        };
+        let mut guard = self.inner.lock();
         let inner = match guard.as_mut() {
             Some(i) => i,
             None => return 0,
@@ -470,6 +531,7 @@ impl Recorder {
 
         // ── Lock released here (guard drops) ──────────────────────────────
         drop(guard);
+        let t1 = if prof { Some(std::time::Instant::now()) } else { None };
 
         // ── Phase 2: Encoding (NO lock held) ──────────────────────────────
         #[cfg(target_os = "windows")]
@@ -480,15 +542,13 @@ impl Recorder {
 
         #[cfg(target_os = "linux")]
         let phase2 = Self::process_linux_frame(phase1);
+        let t2 = if prof { Some(std::time::Instant::now()) } else { None };
 
         // ── Phase 3: Lock, restore encoder, push results ──────────────────
-        let mut guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(_) => return 1, // frame was polled but push may be partial
-        };
+        let mut guard = self.inner.lock();
         let inner = match guard.as_mut() {
             Some(i) => i,
-            None => return 1,
+            None => return 1, // frame was polled but push may be partial
         };
 
         #[cfg(target_os = "windows")]
@@ -532,6 +592,16 @@ impl Recorder {
         }
 
         self.frames_received.fetch_add(1, Ordering::SeqCst);
+
+        if let (Some(t0), Some(t1), Some(t2)) = (t0, t1, t2) {
+            let total = t2.elapsed();
+            let lock1 = t1.duration_since(t0);
+            let encode = t2.duration_since(t1);
+            eprintln!(
+                "[prof] lock1={:?} encode={:?} total={:?}",
+                lock1, encode, total
+            );
+        }
         1
     }
 
@@ -554,9 +624,18 @@ impl Recorder {
         Vec<StoredFrame>,
     ) {
         let Some(mut encoder) = encoder_opt else {
-            // Raw NV12 cannot be muxed by the Windows clip writer and consumes
-            // several MiB per frame. Drop it rather than thrashing the buffer.
-            return (None, init_failed, sps, pps, Vec::new());
+            // No encoder available (init pending/failed) — store raw NV12 so the
+            // shadow buffer keeps accumulating frames. The byte-budgeted ring
+            // evicts the oldest raw frames, so this cannot grow unboundedly, and
+            // clip-save surfaces a clear "no H.264" error instead of an empty
+            // buffer.
+            return (
+                None,
+                init_failed,
+                sps,
+                pps,
+                vec![StoredFrame::from(frame)],
+            );
         };
 
         match encoder.encode_frame(&frame.data) {
@@ -587,8 +666,14 @@ impl Recorder {
                 (Some(encoder), false, new_sps, new_pps, stored)
             }
             Err(e) => {
-                eprintln!("H.264 encode error (dropping frame): {e}");
-                (Some(encoder), false, sps, pps, Vec::new())
+                eprintln!("H.264 encode error (storing raw NV12 fallback): {e}");
+                (
+                    Some(encoder),
+                    false,
+                    sps,
+                    pps,
+                    vec![StoredFrame::from(frame)],
+                )
             }
         }
     }
@@ -793,8 +878,8 @@ impl Recorder {
     pub fn preview_available(&self) -> bool {
         self.inner
             .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|inner| inner.latest_frame.is_some()))
+            .as_ref()
+            .map(|inner| inner.latest_frame.is_some())
             .unwrap_or(false)
     }
 
@@ -813,13 +898,11 @@ impl Recorder {
     pub fn recording_elapsed_secs(&self) -> f64 {
         self.inner
             .lock()
-            .ok()
-            .and_then(|g| {
-                g.as_ref().and_then(|inner| {
-                    inner
-                        .recording_started_at
-                        .map(|t| t.elapsed().as_secs_f64())
-                })
+            .as_ref()
+            .and_then(|inner| {
+                inner
+                    .recording_started_at
+                    .map(|t| t.elapsed().as_secs_f64())
             })
             .unwrap_or(0.0)
     }
@@ -829,8 +912,8 @@ impl Recorder {
     pub fn buffer_time_secs(&self) -> f64 {
         self.inner
             .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|i| i.buffer.time_span_secs()))
+            .as_ref()
+            .map(|i| i.buffer.time_span_secs())
             .unwrap_or(0.0)
     }
 
@@ -846,8 +929,8 @@ impl Recorder {
     pub fn frame_count(&self) -> usize {
         self.inner
             .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|i| i.buffer.frame_count()))
+            .as_ref()
+            .map(|i| i.buffer.frame_count())
             .unwrap_or(0)
     }
 
@@ -865,7 +948,7 @@ impl Recorder {
     pub fn get_preview_frame(&self) -> Option<String> {
         // JPEG conversion is expensive; retain only the Arc-backed frame while
         // locked so capture can continue while the preview is generated.
-        let frame = self.inner.lock().ok()?.as_ref()?.latest_frame.clone()?;
+        let frame = self.inner.lock().as_ref()?.latest_frame.clone()?;
 
         let width = frame.width;
         let height = frame.height;
@@ -968,7 +1051,7 @@ impl Recorder {
     /// This is the ONLY operation that needs the recorder lock.
     /// Encoding should happen AFTER releasing the lock.
     pub fn extract_clip_data(&self, duration_secs: u32) -> Result<ClipData, String> {
-        let guard = self.inner.lock().map_err(|e| e.to_string())?;
+        let guard = self.inner.lock();
         let inner = guard.as_ref().ok_or("Recorder not initialized")?;
         let frames = if duration_secs > 0 {
             inner.buffer.clip(Duration::from_secs(duration_secs as u64))
@@ -1011,6 +1094,20 @@ impl Recorder {
             pps: Vec::new(),
             preview_frame: inner.latest_frame.clone(),
         })
+    }
+
+    /// Extract the system-audio PCM window `[start, end)` matching the saved
+    /// video frames. Grabs the audio ring handle under the recorder lock
+    /// (briefly) and copies the PCM outside it.
+    #[cfg(target_os = "windows")]
+    pub fn extract_clip_audio(&self, start: std::time::Instant, end: std::time::Instant) -> Option<Vec<u8>> {
+        let ring = self
+            .inner
+            .lock()
+            .as_ref()
+            .and_then(|inner| inner.capture_audio.then(|| inner.audio.ring_handle()))?;
+        let audio = ring.lock().extract(start, end);
+        audio
     }
 }
 

@@ -20,8 +20,11 @@ pub struct AppSettings {
 pub struct RecordingSettings {
     /// Ring buffer duration in seconds (10–1800)
     pub buffer_duration_secs: u32,
-    /// Capture FPS (24, 30, 60)
+    /// Capture FPS (24, 30, 60). Ignored when `fps_auto` is true.
     pub fps: u32,
+    /// Match capture FPS to the display's refresh rate automatically.
+    #[serde(default)]
+    pub fps_auto: bool,
     /// Target output bitrate in kilobits per second.
     #[serde(default = "default_bitrate_kbps")]
     pub bitrate_kbps: u32,
@@ -35,6 +38,13 @@ pub struct RecordingSettings {
     pub capture_target: String,
     /// Start recording buffer automatically on app launch
     pub always_on_recording: bool,
+    /// Capture system audio (WASAPI loopback) alongside video.
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for RecordingSettings {
@@ -42,11 +52,13 @@ impl Default for RecordingSettings {
         Self {
             buffer_duration_secs: 30,
             fps: 60,
+            fps_auto: true,
             bitrate_kbps: default_bitrate_kbps(),
             resolution: default_resolution().into(),
             output_directory: String::new(),
             capture_target: String::new(),
             always_on_recording: true,
+            capture_audio: true,
         }
     }
 }
@@ -87,6 +99,11 @@ pub struct GeneralSettings {
     /// Localhost port used by Counter-Strike 2 Game State Integration.
     #[serde(default = "default_cs2_gsi_port")]
     pub cs2_gsi_port: u16,
+    /// Unix timestamp (seconds) when the user last dismissed the first-boot
+    /// sign-in prompt. `None` = never dismissed (show on next launch).
+    /// Re-prompts after a cooldown if the user still isn't signed in.
+    #[serde(default)]
+    pub sign_in_prompt_dismissed_at: Option<u64>,
 }
 
 impl Default for GeneralSettings {
@@ -97,6 +114,7 @@ impl Default for GeneralSettings {
             show_clip_notification: true,
             game_detection_enabled: false,
             cs2_gsi_port: default_cs2_gsi_port(),
+            sign_in_prompt_dismissed_at: None,
         }
     }
 }
@@ -204,6 +222,9 @@ pub struct CloudSettings {
     pub account_display_name: String,
     /// Email of the connected account (if any)
     pub account_email: String,
+    /// Avatar URL of the connected account (if any)
+    #[serde(default)]
+    pub avatar_url: String,
 }
 
 impl Default for CloudSettings {
@@ -217,6 +238,7 @@ impl Default for CloudSettings {
             max_concurrent_uploads: 1,
             account_display_name: String::new(),
             account_email: String::new(),
+            avatar_url: String::new(),
         }
     }
 }

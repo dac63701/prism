@@ -34,6 +34,16 @@ fn ensure_mf() -> Result<(), EncodeError> {
     }
 }
 
+/// Exact byte size of a tightly-packed NV12 frame: Y plane (`w*h`) followed by
+/// interleaved UV (`ceil(w/2)*ceil(h/2)*2`). Equals `w*h*3/2` for even
+/// dimensions; larger for odd ones. Must match `bgra_to_nv12` and the capture
+/// staging packers so the encoder's strict size guard accepts real frames.
+fn nv12_packed_size(width: u32, height: u32) -> usize {
+    let w = width as usize;
+    let h = height as usize;
+    w * h + w.div_ceil(2) * h.div_ceil(2) * 2
+}
+
 // ---------------------------------------------------------------------------
 // Encoded packet
 // ---------------------------------------------------------------------------
@@ -42,6 +52,85 @@ fn ensure_mf() -> Result<(), EncodeError> {
 pub struct EncodedPacket {
     pub data: Vec<u8>,
     pub is_sync: bool,
+}
+
+/// Create an H.264 encoder MFT, preferring a hardware encoder (NVENC / AMF /
+/// QuickSync) when one is available, falling back to the Microsoft software
+/// encoder (`CLSID_MSH264EncoderMFT`).
+///
+/// Set `PRISM_FORCE_MS_H264=1` to always use the Microsoft software encoder.
+fn create_h264_encoder() -> Result<IMFTransform, EncodeError> {
+    if std::env::var("PRISM_FORCE_MS_H264").as_deref() == Ok("1") {
+        eprintln!("[h264] PRISM_FORCE_MS_H264=1, using Microsoft software encoder");
+        return create_ms_software_encoder();
+    }
+
+    // Enumerate hardware H.264 video encoders. Filter by input (NV12) and
+    // output (H.264) media types so only compatible encoders are considered,
+    // and sort so the best match comes first.
+    let input_type = MFT_REGISTER_TYPE_INFO {
+        guidMajorType: MFMediaType_Video,
+        guidSubtype: MFVideoFormat_NV12,
+    };
+    let output_type = MFT_REGISTER_TYPE_INFO {
+        guidMajorType: MFMediaType_Video,
+        guidSubtype: MFVideoFormat_H264,
+    };
+
+    let mut activates: *mut Option<IMFActivate> = std::ptr::null_mut();
+    let mut count: u32 = 0;
+    let result = unsafe {
+        MFTEnumEx(
+            MFT_CATEGORY_VIDEO_ENCODER,
+            MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_LOCALMFT
+                | MFT_ENUM_FLAG_SORTANDFILTER,
+            Some(&input_type),
+            Some(&output_type),
+            &mut activates,
+            &mut count,
+        )
+    };
+
+    if result.is_ok() && count > 0 && !activates.is_null() {
+        let mut selected: Option<IMFTransform> = None;
+        // SAFETY: `MFTEnumEx` allocated an array of `count` activate pointers
+        // that we own and must free with `CoTaskMemFree`.
+        let activates_slice = unsafe { std::slice::from_raw_parts(activates, count as usize) };
+        for (i, activate) in activates_slice.iter().enumerate() {
+            if let Some(activate) = activate {
+                match unsafe { activate.ActivateObject::<IMFTransform>() } {
+                    Ok(transform) => {
+                        eprintln!("[h264] using hardware encoder MFT #{i}");
+                        selected = Some(transform);
+                        break;
+                    }
+                    Err(e) => {
+                        eprintln!("[h264] hardware encoder #{i} failed to activate: {e}");
+                    }
+                }
+            }
+        }
+        // Free the activate-pointer array; the selected transform is already AddRef'd.
+        unsafe {
+            windows::Win32::System::Com::CoTaskMemFree(Some(activates as *const _));
+        }
+        if let Some(transform) = selected {
+            return Ok(transform);
+        }
+    } else if result.is_err() {
+        eprintln!("[h264] MFTEnumEx failed, falling back to MS encoder");
+    }
+
+    create_ms_software_encoder()
+}
+
+fn create_ms_software_encoder() -> Result<IMFTransform, EncodeError> {
+    // SAFETY: The Microsoft H.264 encoder is an in-proc COM server.
+    unsafe {
+        let transform: IMFTransform = CoCreateInstance(&CLSID_MSH264EncoderMFT, None, CLSCTX_INPROC_SERVER)
+            .map_err(|e| EncodeError::InitFailed(format!("CoCreateInstance H.264 encoder MFT: {e}")))?;
+        Ok(transform)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +150,9 @@ pub struct MfH264Encoder {
     pps: Vec<u8>,
     /// Whether sps/pps have been populated at least once.
     sps_pps_ready: bool,
+    /// Reusable input sample + buffer, avoiding per-frame MF allocations.
+    input_sample: Option<IMFSample>,
+    input_buffer: Option<IMFMediaBuffer>,
 }
 
 // SAFETY: `IMFTransform` is a COM pointer. The underlying MFT (H.264 Video Encoder)
@@ -87,11 +179,9 @@ impl MfH264Encoder {
         ensure_mf()?;
 
         unsafe {
-            // Create the H.264 encoder MFT via its CLSID
-            let transform: IMFTransform =
-                CoCreateInstance(&CLSID_MSH264EncoderMFT, None, CLSCTX_INPROC_SERVER).map_err(
-                    |e| EncodeError::InitFailed(format!("CoCreateInstance H.264 encoder MFT: {e}")),
-                )?;
+            // Prefer a hardware H.264 encoder (NVENC/AMF/QuickSync), falling
+            // back to the Microsoft software encoder.
+            let transform = create_h264_encoder()?;
 
             // ------ Set input type: NV12 ------
             let input_type: IMFMediaType = MFCreateMediaType()
@@ -186,6 +276,8 @@ impl MfH264Encoder {
                 sps: Vec::new(),
                 pps: Vec::new(),
                 sps_pps_ready: false,
+                input_sample: None,
+                input_buffer: None,
             })
         }
     }
@@ -196,7 +288,10 @@ impl MfH264Encoder {
     /// MFT may batch multiple frames internally before producing output.
     pub fn encode_frame(&mut self, nv12: &[u8]) -> Result<Vec<EncodedPacket>, EncodeError> {
         unsafe {
-            let expected_size = (self.width * self.height * 3 / 2) as usize;
+            // NV12 packers in this app emit a tightly packed Y-then-UV buffer.
+            // Compute the exact packed size so the strict `!=` guard accepts
+            // every capture path without truncating or rejecting valid frames.
+            let expected_size = nv12_packed_size(self.width, self.height);
             if nv12.len() != expected_size {
                 return Err(EncodeError::EncodeFailed(format!(
                     "Invalid NV12 buffer size: got {} expected {}",
@@ -205,9 +300,24 @@ impl MfH264Encoder {
                 )));
             }
 
-            // ------ Create input sample ------
-            let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(expected_size as u32)
-                .map_err(|e| EncodeError::EncodeFailed(format!("CreateMemoryBuffer: {e}")))?;
+            // ------ Create/reuse input sample ------
+            // Reusing a single IMFSample + IMFMediaBuffer across frames avoids
+            // two MF allocations (and their refcount churn) per captured frame.
+            let (sample, buffer) = match (self.input_sample.as_ref(), self.input_buffer.as_ref()) {
+                (Some(s), Some(b)) => (s.clone(), b.clone()),
+                _ => {
+                    let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(expected_size as u32)
+                        .map_err(|e| EncodeError::EncodeFailed(format!("CreateMemoryBuffer: {e}")))?;
+                    let sample: IMFSample = MFCreateSample()
+                        .map_err(|e| EncodeError::EncodeFailed(format!("CreateSample: {e}")))?;
+                    sample
+                        .AddBuffer(&buffer)
+                        .map_err(|e| EncodeError::EncodeFailed(format!("AddBuffer: {e}")))?;
+                    self.input_sample = Some(sample.clone());
+                    self.input_buffer = Some(buffer.clone());
+                    (sample, buffer)
+                }
+            };
 
             let mut ptr: *mut u8 = std::ptr::null_mut();
             let mut max_len: u32 = 0;
@@ -226,13 +336,6 @@ impl MfH264Encoder {
             buffer
                 .Unlock()
                 .map_err(|e| EncodeError::EncodeFailed(format!("Unlock buffer: {e}")))?;
-
-            let sample: IMFSample = MFCreateSample()
-                .map_err(|e| EncodeError::EncodeFailed(format!("CreateSample: {e}")))?;
-
-            sample
-                .AddBuffer(&buffer)
-                .map_err(|e| EncodeError::EncodeFailed(format!("AddBuffer: {e}")))?;
 
             let duration_100ns = 10_000_000 / self.timescale;
             let timestamp_100ns = self.frame_index * duration_100ns;
@@ -271,7 +374,7 @@ impl MfH264Encoder {
                             return Ok(None);
                         };
                         let raw = collect_sample_bytes(out_sample)?;
-                        let avcc = h264_to_avcc(&raw)?;
+                        let avcc = h264_to_avcc(raw)?;
                         let clean_point = is_keyframe(out_sample);
                         let has_idr = avcc_contains_idr(&avcc);
                         let is_key = clean_point || has_idr;
@@ -504,13 +607,14 @@ fn looks_like_annex_b(data: &[u8]) -> bool {
     data[2] == 1 || (data.len() >= 4 && data[2] == 0 && data[3] == 1)
 }
 
-/// Normalize a Media Foundation H.264 packet to AVCC. Hardware MFTs may emit
-/// either Annex B or AVCC depending on the driver and negotiated output type.
+/// Normalize a Media Foundation H.264 packet to AVCC, consuming the input
+/// buffer. Hardware MFTs may emit either Annex B or AVCC depending on the
+/// driver and negotiated output type.
 ///
-/// Fast path: avoids the O(n) `is_valid_avcc` scan for the common case where
-/// the MFT already outputs AVCC (modern drivers).
-fn h264_to_avcc(data: &[u8]) -> Result<Vec<u8>, EncodeError> {
-    if !looks_like_annex_b(data) {
+/// Fast path: avoids an O(n) `is_valid_avcc` scan AND a buffer copy for the
+/// common case where the MFT already outputs AVCC (modern drivers).
+fn h264_to_avcc(data: Vec<u8>) -> Result<Vec<u8>, EncodeError> {
+    if !looks_like_annex_b(&data) {
         // Common case: MFT outputs AVCC directly — skip O(n) validation scan.
         // Still verify the first NALU length is within bounds (O(1)) to catch
         // clearly malformed packets without scanning the entire buffer.
@@ -522,10 +626,10 @@ fn h264_to_avcc(data: &[u8]) -> Result<Vec<u8>, EncodeError> {
                 ));
             }
         }
-        return Ok(data.to_vec());
+        return Ok(data);
     }
 
-    let avcc = annex_b_to_avcc(data);
+    let avcc = annex_b_to_avcc(&data);
     if is_valid_avcc(&avcc) {
         Ok(avcc)
     } else {
@@ -636,13 +740,30 @@ mod tests {
     }
 
     #[test]
+    fn nv12_packed_size_matches_half_sized_uv_for_even_dims() {
+        assert_eq!(nv12_packed_size(1920, 1080), 1920 * 1080 * 3 / 2);
+        assert_eq!(nv12_packed_size(3840, 2160), 3840 * 2160 * 3 / 2);
+    }
+
+    #[test]
+    fn nv12_packed_size_handles_odd_dimensions() {
+        // ceil-w/2 * ceil-h/2 * 2 is larger than w*h/2, so the strict `!=`
+        // guard must use the packed size or odd-resolution frames get rejected.
+        let w = 1367u32;
+        let h = 768u32;
+        let packed = nv12_packed_size(w, h);
+        assert_eq!(packed, (w * h) as usize + ((w / 2 + 1) * (h / 2) * 2) as usize);
+        assert!(packed > (w * h * 3 / 2) as usize);
+    }
+
+    #[test]
     fn preserves_avcc_samples_and_captures_parameter_sets() {
         let sps = [0x67, 0x42, 0x00, 0x1E];
         let pps = [0x68, 0xCE, 0x06, 0xE2];
         let idr = [0x65, 0x88, 0x84];
         let packet = avcc(&[&sps, &pps, &idr]);
 
-        let normalized = h264_to_avcc(&packet).unwrap();
+        let normalized = h264_to_avcc(packet.clone()).unwrap();
         let mut found_sps = Vec::new();
         let mut found_pps = Vec::new();
         capture_sps_pps_from_avcc(&normalized, &mut found_sps, &mut found_pps);
@@ -663,7 +784,7 @@ mod tests {
             annex_b.extend_from_slice(nal);
         }
 
-        let normalized = h264_to_avcc(&annex_b).unwrap();
+        let normalized = h264_to_avcc(annex_b).unwrap();
         let mut found_sps = Vec::new();
         let mut found_pps = Vec::new();
         capture_sps_pps_from_avcc(&normalized, &mut found_sps, &mut found_pps);
@@ -675,7 +796,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_h264_packets() {
-        let error = h264_to_avcc(&[0, 0, 0, 8, 0x65]).unwrap_err();
+        let error = h264_to_avcc(vec![0, 0, 0, 8, 0x65]).unwrap_err();
 
         assert!(error.to_string().contains("invalid H.264 packet"));
     }

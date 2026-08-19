@@ -2,6 +2,9 @@ import { useCallback } from "react";
 import { Play, Square, Scissors, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRecordingStore } from "@/stores/recording";
+import { useSettingsStore } from "@/stores/settings";
+import { Kbd } from "@/components/ui/kbd";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export default function RecordingControls() {
   const isRecording = useRecordingStore((s) => s.isRecording);
@@ -12,6 +15,7 @@ export default function RecordingControls() {
   const stopRecording = useRecordingStore((s) => s.stopRecording);
   const saveClip = useRecordingStore((s) => s.saveClip);
   const clearError = useRecordingStore((s) => s.clearError);
+  const saveHotkey = useSettingsStore((s) => s.settings.hotkeys.save_clip);
 
   const handleMainClick = useCallback(() => {
     if (starting) return;
@@ -24,13 +28,13 @@ export default function RecordingControls() {
 
   return (
     <div className="flex flex-col items-center gap-3">
-      {/* Inline error */}
       {error && (
-        <div className="flex items-center gap-2 max-w-xs px-3 py-2 rounded-lg bg-red-950/70 border border-red-900/60">
-          <p className="text-[11px] text-red-300 leading-relaxed">{error}</p>
+        <div className="flex max-w-xs items-center gap-2 rounded-lg border border-red-900/60 bg-red-950/70 px-3 py-2">
+          <p className="flex-1 text-[11px] leading-relaxed text-red-300">{error}</p>
           <button
             onClick={clearError}
-            className="p-0.5 rounded shrink-0 text-red-400 hover:text-red-200 transition active:scale-90"
+            className="shrink-0 rounded p-0.5 text-red-400 transition hover:text-red-200 active:scale-90"
+            aria-label="Dismiss error"
           >
             <Square className="size-3 rotate-45" />
           </button>
@@ -38,35 +42,47 @@ export default function RecordingControls() {
       )}
 
       <div className="flex items-center justify-center gap-5">
-        {/* Clip save button — only visible while recording */}
-        <button
-          onClick={() => saveClip()}
-          disabled={saving || !isRecording}
-          className={cn(
-            "size-11 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95",
-            "bg-surface border border-border text-zinc-400",
-            "hover:bg-white/5 hover:text-zinc-200 hover:border-border",
-            "disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:text-zinc-400",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
-            !isRecording && "opacity-0 pointer-events-none scale-75"
-          )}
-          title="Save clip"
+        <Tooltip
+          label={
+            <span className="inline-flex items-center gap-1.5">
+              Save clip
+              <Kbd>{saveHotkey}</Kbd>
+            </span>
+          }
+          side="top"
         >
-          <Scissors className="size-4" />
-        </button>
+          <button
+            onClick={() => saveClip()}
+            disabled={saving || !isRecording}
+            className={cn(
+              "size-11 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95",
+              "bg-surface border border-border text-zinc-400",
+              "hover:bg-white/5 hover:text-zinc-200",
+              "disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-surface disabled:hover:text-zinc-400",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
+              !isRecording && "pointer-events-none scale-75 opacity-0"
+            )}
+            title={`Save clip (${saveHotkey})`}
+            aria-label="Save clip"
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Scissors className="size-4" />
+            )}
+          </button>
+        </Tooltip>
 
-        {/* Main record / stop button */}
         <button
           onClick={handleMainClick}
           disabled={starting}
           className={cn(
-            "size-16 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95",
-            "border-2",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
-            starting && "opacity-70 cursor-wait",
+            "relative size-16 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95",
+            "border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20",
+            starting && "cursor-wait opacity-70",
             isRecording
-              ? "bg-red-600 border-red-500 hover:bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.35)]"
-              : "bg-surface border-border hover:bg-white/5 hover:border-border"
+              ? "bg-red-600 border-red-500 hover:bg-red-500 shadow-[0_0_24px_rgba(239,68,68,0.4)]"
+              : "bg-surface border-border hover:bg-white/5"
           )}
           title={
             starting
@@ -75,13 +91,23 @@ export default function RecordingControls() {
                 ? "Stop recording"
                 : "Start recording"
           }
+          aria-label={
+            starting
+              ? "Starting..."
+              : isRecording
+                ? "Stop recording"
+                : "Start recording"
+          }
         >
+          {isRecording && (
+            <span className="pointer-events-none absolute inset-0 animate-pulse-ring rounded-full border-2 border-red-500" />
+          )}
           {starting ? (
-            <Loader2 className="size-6 text-zinc-100 animate-spin" />
+            <Loader2 className="size-6 animate-spin text-zinc-100" />
           ) : isRecording ? (
             <Square className="size-5 fill-current text-zinc-100" />
           ) : (
-            <Play className="size-6 text-zinc-100 ml-0.5" />
+            <Play className="ml-0.5 size-6 text-zinc-100" />
           )}
         </button>
       </div>

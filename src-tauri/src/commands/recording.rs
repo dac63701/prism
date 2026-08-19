@@ -84,6 +84,9 @@ pub(crate) fn save_clip_internal(
     duration: u32,
     filename: String,
 ) -> Result<String, String> {
+    let prof = std::env::var("PRISM_PROF").as_deref() == Ok("1");
+    let t_start = if prof { Some(std::time::Instant::now()) } else { None };
+
     // Step 1: Extract frames under the recorder's brief internal lock.
     let clip_data = recorder.extract_clip_data(duration)?;
 
@@ -100,10 +103,11 @@ pub(crate) fn save_clip_internal(
     let enc_config = EncoderConfig {
         codec: Codec::H264,
         bitrate_kbps: rs.bitrate_kbps,
-        fps: rs.fps,
-        keyframe_interval: rs.fps,
+        fps: recorder.cached_fps(),
+        keyframe_interval: recorder.cached_fps(),
         target_width,
         target_height,
+        audio: None,
     };
 
     // Step 3: Generate output path
@@ -140,8 +144,19 @@ pub(crate) fn save_clip_internal(
     );
     let frames_with_sps =
         prepare_h264_clip_frames(clip_data.frames, &clip_data.sps, &clip_data.pps)?;
+    let t_extract = if prof { Some(std::time::Instant::now()) } else { None };
 
-    // Step 6: Encode (NO lock held — polling continues)
+    // Step 6: Extract system audio for the exact video window and AAC-encode
+    // it outside the recorder lock. Missing/disabled audio is not fatal — the
+    // clip simply saves without an audio track.
+    let enc_config = {
+        let mut cfg = enc_config;
+        cfg.audio = extract_and_encode_audio(recorder, &frames_with_sps, &cfg)?;
+        cfg
+    };
+    let t_audio = if prof { Some(std::time::Instant::now()) } else { None };
+
+    // Step 7: Encode (NO lock held — polling continues)
     eprintln!(
         "[recording] save_clip encoding {} frames to {}",
         frames_with_sps.len(),
@@ -153,10 +168,91 @@ pub(crate) fn save_clip_internal(
         .map_err(|e| format!("Encoding failed: {e}"))?;
     eprintln!("[recording] save_clip encoding complete");
 
+    if let (Some(t_start), Some(t_extract), Some(t_audio)) = (t_start, t_extract, t_audio) {
+        let extract = t_extract.duration_since(t_start);
+        let audio = t_audio.duration_since(t_extract);
+        let mux = t_audio.elapsed();
+        eprintln!(
+            "[prof] clip: extract={extract:?} audio={audio:?} mux={mux:?}"
+        );
+    }
+
     let output_str = output_path.to_string_lossy().to_string();
     let _ = app.emit("clip-saved", &output_str);
 
     Ok(output_str)
+}
+
+/// Extract the system-audio window matching `frames` and AAC-encode it.
+///
+/// The window is `[first.timestamp, last.timestamp + frame_duration)` so the
+/// audio track lines up with the video timeline. Returns `None` when audio is
+/// disabled, unavailable, or encoding fails (the clip saves video-only).
+fn extract_and_encode_audio(
+    recorder: &Recorder,
+    frames: &[crate::buffer::StoredFrame],
+    cfg: &EncoderConfig,
+) -> Result<Option<crate::encoder::codecs::AudioClip>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(first) = frames.first() else {
+            return Ok(None);
+        };
+        let Some(last) = frames.last() else {
+            return Ok(None);
+        };
+        let frame_dur = std::time::Duration::from_secs_f64(1.0 / cfg.fps.max(1) as f64);
+        let start = first.timestamp;
+        let end = last.timestamp + frame_dur;
+
+        let Some(pcm) = recorder.extract_clip_audio(start, end) else {
+            eprintln!("[recording] no system audio available for clip window");
+            return Ok(None);
+        };
+        if pcm.is_empty() {
+            return Ok(None);
+        }
+
+        let bitrate = if cfg.bitrate_kbps >= 160 {
+            128
+        } else {
+            96
+        };
+        eprintln!(
+            "[recording] encoding {} KB of system audio ({:.2}s)",
+            pcm.len() / 1024,
+            pcm.len() as f64 / (crate::audio::SAMPLE_RATE as f64 * crate::audio::BYTES_PER_FRAME as f64)
+        );
+        match crate::audio::aac::encode_clip_audio(
+            &pcm,
+            crate::audio::SAMPLE_RATE,
+            crate::audio::CHANNELS,
+            bitrate,
+        ) {
+            Ok(audio) if !audio.frames.is_empty() => {
+                eprintln!(
+                    "[recording] audio encoded: {} AAC frames @ {} kbps",
+                    audio.frames.len(),
+                    audio.bitrate_kbps
+                );
+                Ok(Some(audio))
+            }
+            Ok(_) => {
+                eprintln!("[recording] AAC encoder produced no frames");
+                Ok(None)
+            }
+            Err(e) => {
+                eprintln!("[recording] AAC encoding failed: {e}");
+                Ok(None)
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (recorder, frames, cfg);
+        Ok(None)
+    }
 }
 
 /// Select a decodable H.264 sequence for MP4 muxing.
@@ -304,6 +400,12 @@ pub async fn get_buffer_info(recorder: State<'_, Recorder>) -> Result<serde_json
 #[tauri::command]
 pub async fn get_capture_sources() -> Result<CaptureSources, String> {
     Ok(enumerate_capture_sources())
+}
+
+/// Refresh rate of the main display in Hz (0 if undetectable).
+#[tauri::command]
+pub async fn get_display_refresh_rate() -> Result<u32, String> {
+    Ok(crate::capture::primary_display_refresh_rate())
 }
 
 /// Set the capture target (display, window, or application).
