@@ -307,38 +307,41 @@ impl UploadQueue {
     }
 
     /// Keep upload history from growing unbounded. Completed uploads are retained
-/// (so the Library can show what's already uploaded across restarts) up to a
-/// cap, dropping the oldest once exceeded.
-pub fn cleanup_completed(&self) {
-    const MAX_COMPLETED: usize = 2000;
+    /// (so the Library can show what's already uploaded across restarts) up to a
+    /// cap, dropping the oldest once exceeded.
+    pub fn cleanup_completed(&self) {
+        const MAX_COMPLETED: usize = 2000;
 
-    if let Ok(mut queue) = self.inner.lock() {
-        let completed_count = queue
-            .iter()
-            .filter(|t| t.status == UploadStatus::Completed)
-            .count();
-        if completed_count > MAX_COMPLETED {
-            let mut completed: Vec<(usize, u64)> = queue
+        if let Ok(mut queue) = self.inner.lock() {
+            let completed_count = queue
                 .iter()
-                .enumerate()
-                .filter(|(_, t)| t.status == UploadStatus::Completed)
-                .map(|(i, t)| (i, t.started_at_secs.unwrap_or(0)))
-                .collect();
-            completed.sort_by_key(|(_, started)| *started);
-            let remove_count = completed_count - MAX_COMPLETED;
-            let to_remove: std::collections::HashSet<usize> =
-                completed.iter().take(remove_count).map(|(i, _)| *i).collect();
-            let retained: Vec<UploadTask> = queue
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| !to_remove.contains(i))
-                .map(|(_, t)| t.clone())
-                .collect();
-            *queue = retained;
+                .filter(|t| t.status == UploadStatus::Completed)
+                .count();
+            if completed_count > MAX_COMPLETED {
+                let mut completed: Vec<(usize, u64)> = queue
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| t.status == UploadStatus::Completed)
+                    .map(|(i, t)| (i, t.started_at_secs.unwrap_or(0)))
+                    .collect();
+                completed.sort_by_key(|(_, started)| *started);
+                let remove_count = completed_count - MAX_COMPLETED;
+                let to_remove: std::collections::HashSet<usize> = completed
+                    .iter()
+                    .take(remove_count)
+                    .map(|(i, _)| *i)
+                    .collect();
+                let retained: Vec<UploadTask> = queue
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| !to_remove.contains(i))
+                    .map(|(_, t)| t.clone())
+                    .collect();
+                *queue = retained;
+            }
         }
+        self.persist();
     }
-    self.persist();
-}
 }
 
 #[cfg(test)]
@@ -548,7 +551,11 @@ mod tests {
         }
         q.cleanup_completed();
         let all = q.all();
-        assert_eq!(all.len(), 1, "completed uploads should be retained as history");
+        assert_eq!(
+            all.len(),
+            1,
+            "completed uploads should be retained as history"
+        );
     }
 
     #[test]

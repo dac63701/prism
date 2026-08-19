@@ -574,8 +574,7 @@ fn pack_nv12_staging(mapped: D3D11_MAPPED_SUBRESOURCE, width: u32, height: u32) 
     let uv_height = height.div_ceil(2);
     let uv_size = (uv_width * uv_height * 2) as usize;
     let total = y_size + uv_size;
-    let mut out = Vec::with_capacity(total);
-    out.resize(total, 0);
+    let mut out = vec![0; total];
 
     let pitch = mapped.RowPitch as usize;
     let src = unsafe {

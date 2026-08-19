@@ -138,11 +138,8 @@ fn enumerate_h264_encoders() -> Result<Vec<MfHardwareCandidate>, EncodeError> {
                 let name = mft_friendly_name(activate);
                 let is_async = unsafe { activate.GetUINT32(&MF_TRANSFORM_ASYNC) }.unwrap_or(0) != 0;
                 let adapter_luid = unsafe { activate.GetUINT64(&MFT_ENUM_ADAPTER_LUID) }.ok();
-                if adapter_luid.is_some() {
-                    eprintln!(
-                        "[h264] hardware encoder \"{name}\" adapter LUID=0x{:x}",
-                        adapter_luid.unwrap()
-                    );
+                if let Some(luid) = adapter_luid {
+                    eprintln!("[h264] hardware encoder \"{name}\" adapter LUID=0x{luid:x}");
                 }
                 match unsafe { activate.ActivateObject::<IMFTransform>() } {
                     Ok(transform) => {
@@ -289,13 +286,10 @@ fn find_adapter_by_luid(luid: u64) -> Result<Option<IDXGIAdapter1>, EncodeError>
                 )))
             }
         };
-        match unsafe { adapter.GetDesc1() } {
-            Ok(desc) => {
-                if desc.AdapterLuid.LowPart == want_low && desc.AdapterLuid.HighPart == want_high {
-                    return Ok(Some(adapter));
-                }
+        if let Ok(desc) = unsafe { adapter.GetDesc1() } {
+            if desc.AdapterLuid.LowPart == want_low && desc.AdapterLuid.HighPart == want_high {
+                return Ok(Some(adapter));
             }
-            Err(_) => {}
         }
         index += 1;
     }
@@ -559,6 +553,7 @@ impl MfH264Encoder {
     /// device created for the DXGI manager is placed on that adapter so the
     /// MFT accepts it. Pass `None` for software encoders.
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_transform(
         transform: IMFTransform,
         width: u32,
@@ -1058,19 +1053,18 @@ impl MfH264Encoder {
 
         // Fallback: if SPS/PPS still not found in the bitstream, try the output
         // media type (some GPU drivers omit parameter sets from the bitstream).
-        if !self.sps_pps_ready {
-            if capture_sps_pps_from_media_type(&self.transform, &mut self.sps, &mut self.pps)
+        if !self.sps_pps_ready
+            && capture_sps_pps_from_media_type(&self.transform, &mut self.sps, &mut self.pps)
                 .is_ok()
-            {
-                if !self.sps.is_empty() && !self.pps.is_empty() {
-                    self.sps_pps_ready = true;
-                    eprintln!(
-                        "[prism] captured SPS({}) PPS({}) from output media type",
-                        self.sps.len(),
-                        self.pps.len()
-                    );
-                }
-            }
+            && !self.sps.is_empty()
+            && !self.pps.is_empty()
+        {
+            self.sps_pps_ready = true;
+            eprintln!(
+                "[prism] captured SPS({}) PPS({}) from output media type",
+                self.sps.len(),
+                self.pps.len()
+            );
         }
 
         self.frame_index += 1;
@@ -1172,7 +1166,7 @@ impl MfH264Encoder {
                                 state.free.push(slot);
                                 ts
                             })
-                            .unwrap_or_else(|| std::time::Instant::now());
+                            .unwrap_or_else(std::time::Instant::now);
                         build_packet_from_sample(
                             out_sample,
                             Some(&state.context),

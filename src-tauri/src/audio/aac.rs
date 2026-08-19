@@ -186,7 +186,7 @@ impl AacEncoder {
     /// 1024-sample frames; a partial tail is silently dropped.
     pub fn encode_pcm(&mut self, pcm: &[u8]) -> Result<Vec<AacFrame>, EncodeError> {
         let bytes_per_frame = (self.channels as usize) * 2;
-        if pcm.len() % bytes_per_frame != 0 {
+        if !pcm.len().is_multiple_of(bytes_per_frame) {
             return Err(EncodeError::EncodeFailed(format!(
                 "PCM length {} is not a multiple of {bytes_per_frame}",
                 pcm.len()

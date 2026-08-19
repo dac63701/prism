@@ -145,7 +145,11 @@ pub fn start_upload_processor(app: AppHandle) {
                                 refreshed_this_session = true;
                                 // Re-enqueue as pending so next loop picks it up
                                 // (mark_failed honors the configured max_upload_retries)
-                                queue.mark_failed(&task_id, "Token expired, will retry".into(), max_retries);
+                                queue.mark_failed(
+                                    &task_id,
+                                    "Token expired, will retry".into(),
+                                    max_retries,
+                                );
                                 continue;
                             }
                             Err(refresh_err) => {

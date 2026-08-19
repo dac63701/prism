@@ -376,7 +376,7 @@ impl Recorder {
         // get_preview_frame commands (previously caused lock contention and
         // stutters).
         let app_handle = app;
-        std::thread::Builder::new()
+        if let Err(e) = std::thread::Builder::new()
             .name("prism-capture".into())
             .spawn(move || {
                 loop {
@@ -392,11 +392,10 @@ impl Recorder {
                     std::thread::sleep(interval.saturating_sub(poll_started.elapsed()));
                 }
             })
-            .map_err(|e| eprintln!("[prism] failed to spawn capture thread: {e}"))
-            .err()
-            .map(|_| {
-                self.polling_spawned.store(false, Ordering::SeqCst);
-            });
+        {
+            eprintln!("[prism] failed to spawn capture thread: {e}");
+            self.polling_spawned.store(false, Ordering::SeqCst);
+        }
 
         true
     }

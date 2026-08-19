@@ -173,17 +173,17 @@ pub fn register_aumid(app: &AppHandle) {
 /// installed this is a no-op.
 #[cfg(target_os = "windows")]
 fn ensure_start_menu_shortcut() {
+    use windows::core::{Interface, PCWSTR, PWSTR};
     use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
-    use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoTaskMemAlloc, CoTaskMemFree, CoUninitialize, IPersistFile,
-        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
-    };
     use windows::Win32::System::Com::StructuredStorage::{
         PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
     };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoTaskMemAlloc, CoTaskMemFree, CoUninitialize,
+        IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+    };
     use windows::Win32::System::Variant::VT_LPWSTR;
     use windows::Win32::UI::Shell::{IShellLinkW, PropertiesSystem::IPropertyStore, ShellLink};
-    use windows::core::{Interface, PCWSTR, PWSTR};
 
     let exe = match std::env::current_exe() {
         Ok(path) => path,
@@ -263,11 +263,7 @@ fn ensure_start_menu_shortcut() {
                 let aumid_wide = encode_wide(AUMID);
                 aumid_mem = CoTaskMemAlloc(aumid_wide.len() * 2) as *mut u16;
                 if !aumid_mem.is_null() {
-                    std::ptr::copy_nonoverlapping(
-                        aumid_wide.as_ptr(),
-                        aumid_mem,
-                        aumid_wide.len(),
-                    );
+                    std::ptr::copy_nonoverlapping(aumid_wide.as_ptr(), aumid_mem, aumid_wide.len());
                     let propvar = PROPVARIANT {
                         Anonymous: PROPVARIANT_0 {
                             Anonymous: std::mem::ManuallyDrop::new(PROPVARIANT_0_0 {
