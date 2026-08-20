@@ -4,8 +4,21 @@
 
 **Always run `npm run tauri build` after completing the full todo list.**
 
-The build produces `Prism_0.3.1_x64_en-US.msi` and `Prism_0.3.1_x64-setup.exe`.
+The build produces `Prism_0.3.2_x64_en-US.msi` and `Prism_0.3.2_x64-setup.exe`.
 Confirm the build succeeds before reporting completion.
+
+## Version Bumps
+
+After completing a significant change (a feature, fix, or refactor that warrants
+a new release), bump the app version to the next patch and rebuild:
+
+- Version lives in four places that must stay in sync: `package.json`,
+  `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the `prism` entry in
+  `src-tauri/Cargo.lock` (also update `package-lock.json`, the `Prism vX.Y.Z`
+  fallback in `src/components/layout/Sidebar.tsx`, this file's artifact names,
+  and `docs/UI-REWRITE-SPEC.md`'s app version).
+- Commit as `chore: bump version to vX.Y.Z`, tag it `vX.Y.Z`, and push both.
+- Match the pattern in the previous bump commits (`git show e7bca90`).
 
 ## Development Commands
 
