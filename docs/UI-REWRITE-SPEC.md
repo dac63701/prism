@@ -1,6 +1,6 @@
 # Prism Desktop UI Rewrite — Feature Specification
 
-**Version:** 1.0 · **Status:** Draft · **App version:** 0.3.0 (Windows-first, macOS in CI)
+**Version:** 1.0 · **Status:** Draft · **App version:** 0.3.1 (Windows-first, macOS in CI)
 
 ## 1. Overview
 

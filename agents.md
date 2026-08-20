@@ -4,7 +4,7 @@
 
 **Always run `npm run tauri build` after completing the full todo list.**
 
-The build produces `Prism_0.3.0_x64_en-US.msi` and `Prism_0.3.0_x64-setup.exe`.
+The build produces `Prism_0.3.1_x64_en-US.msi` and `Prism_0.3.1_x64-setup.exe`.
 Confirm the build succeeds before reporting completion.
 
 ## Development Commands
