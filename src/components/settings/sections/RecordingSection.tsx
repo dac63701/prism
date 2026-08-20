@@ -39,6 +39,20 @@ const RESOLUTION_OPTIONS: SegmentedOption[] = [
   { value: "2160p", label: "4K" },
 ];
 
+const ASPECT_OPTIONS: SegmentedOption[] = [
+  { value: "match", label: "Match" },
+  { value: "16:9", label: "16:9" },
+  { value: "21:9", label: "21:9" },
+  { value: "32:9", label: "32:9" },
+];
+
+const ASPECT_LABEL: Record<string, string> = {
+  match: "Match",
+  "16:9": "16:9",
+  "21:9": "21:9",
+  "32:9": "32:9",
+};
+
 const FPS_OPTIONS = [24, 30, 60, 120, 144] as const;
 
 const BITRATE_OPTIONS: PresetOption[] = [
@@ -97,6 +111,8 @@ export default function RecordingSection() {
 
   const setResolution = (value: string) =>
     updateRecording({ resolution: value, quality_preset: "custom" });
+
+  const setAspect = (value: string) => updateRecording({ aspect_ratio: value });
 
   const setFps = (value: number) =>
     updateRecording(
@@ -186,6 +202,19 @@ export default function RecordingSection() {
             </SettingRow>
 
             <SettingRow
+              label="Aspect ratio"
+              help="Match keeps your display's ratio — an ultrawide stays ultrawide instead of being stretched. Forcing a ratio fills that shape (may stretch if your display differs)."
+              className="flex-wrap"
+            >
+              <SegmentedControl
+                value={s.aspect_ratio}
+                options={ASPECT_OPTIONS}
+                onChange={setAspect}
+                ariaLabel="Aspect ratio"
+              />
+            </SettingRow>
+
+            <SettingRow
               label="FPS"
               help="Auto matches your display's refresh rate. Higher FPS = smoother clips, larger files."
               className="flex-wrap"
@@ -217,8 +246,10 @@ export default function RecordingSection() {
           <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs">
             <span className="text-zinc-500">Output</span>
             <span className="tabular-nums text-zinc-100">
-              {s.resolution === "native" ? "Native" : s.resolution} · {effectiveFps} FPS ·{" "}
-              {bitrateMbps} Mbps · ≈{mbPerMin} MB/min
+              {s.resolution === "native"
+                ? "Native"
+                : `${s.resolution} · ${ASPECT_LABEL[s.aspect_ratio] ?? "Match"}`}{" "}
+              · {effectiveFps} FPS · {bitrateMbps} Mbps · ≈{mbPerMin} MB/min
             </span>
           </div>
         </SettingCard>

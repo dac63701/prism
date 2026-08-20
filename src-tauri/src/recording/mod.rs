@@ -116,6 +116,9 @@ struct RecorderInner {
     /// Target encoder dimensions (from settings for non-native, from first frame for native).
     target_width: u32,
     target_height: u32,
+    /// Aspect-ratio mode ("match" | "16:9" | "21:9" | "32:9"). Used to derive
+    /// the effective output dimensions from the capture source dimensions.
+    aspect_ratio: String,
     /// WASAPI system audio capture (Windows only).
     #[cfg(target_os = "windows")]
     audio: crate::audio::AudioCapturer,
@@ -159,6 +162,7 @@ impl Recorder {
             target,
             target_width: target_w,
             target_height: target_h,
+            aspect_ratio: rs.aspect_ratio.clone(),
         };
 
         // Windows needs the captured frame dimensions for native resolution,
@@ -212,6 +216,7 @@ impl Recorder {
                 native_bitrate_kbps: rs.bitrate_kbps,
                 target_width: target_w,
                 target_height: target_h,
+                aspect_ratio: rs.aspect_ratio.clone(),
                 #[cfg(target_os = "windows")]
                 audio: crate::audio::AudioCapturer::default(),
                 #[cfg(target_os = "windows")]
@@ -258,6 +263,7 @@ impl Recorder {
             };
             inner.target_width = target_w;
             inner.target_height = target_h;
+            inner.aspect_ratio = rs.aspect_ratio.clone();
             #[cfg(target_os = "windows")]
             {
                 inner.frame_index = 0;
@@ -277,6 +283,7 @@ impl Recorder {
             inner.backend_config.fps = fps;
             inner.backend_config.target_width = target_w;
             inner.backend_config.target_height = target_h;
+            inner.backend_config.aspect_ratio = rs.aspect_ratio.clone();
             #[cfg(target_os = "windows")]
             {
                 inner.capture_audio = rs.capture_audio;
@@ -541,6 +548,7 @@ impl Recorder {
                 inner.sps.clone(),
                 inner.pps.clone(),
                 inner.frame_index,
+                inner.aspect_ratio.clone(),
             )
         };
 
@@ -731,6 +739,7 @@ impl Recorder {
             mut sps,
             mut pps,
             frame_idx,
+            aspect_ratio,
         ): (
             CapturedFrame,
             u32,
@@ -742,19 +751,36 @@ impl Recorder {
             Vec<u8>,
             Vec<u8>,
             u64,
+            String,
         ),
     ) -> (Option<VtH264Encoder>, Vec<u8>, Vec<u8>, Vec<StoredFrame>) {
+        // Effective output dimensions: native keeps the source size; presets
+        // scale to the preset height while preserving the aspect-ratio mode
+        // ("match" keeps the source ratio — an ultrawide stays ultrawide).
+        let (tw, th) = if resolution_is_native || target_height == 0 {
+            (frame.width, frame.height)
+        } else {
+            crate::settings::config::aspect_dimensions(
+                frame.width,
+                frame.height,
+                target_height,
+                &aspect_ratio,
+            )
+        };
         if frame_idx == 0 {
             eprintln!(
-                "[prism] macOS frame: capture={}x{} target={}x{} native={} fps={}",
-                frame.width, frame.height, target_width, target_height, resolution_is_native, fps,
+                "[prism] macOS frame: capture={}x{} output={}x{} native={} fps={}",
+                frame.width,
+                frame.height,
+                tw,
+                th,
+                resolution_is_native,
+                fps,
             );
         }
-        let tw = target_width.max(1);
-        let th = target_height.max(1);
         let (nv12, nv12_width, nv12_height): (Vec<u8>, u32, u32) =
             if frame.pixel_format == crate::capture::PixelFormat::Bgra {
-                if frame.width != target_width || frame.height != target_height {
+                if frame.width != tw || frame.height != th {
                     match resize_bgra_frame(
                         &frame.data,
                         frame.width,
@@ -793,12 +819,7 @@ impl Recorder {
 
         // Init encoder if not available
         if encoder_opt.is_none() {
-            let (enc_w, enc_h) = if resolution_is_native {
-                (nv12_width, nv12_height)
-            } else {
-                (tw, th)
-            };
-            match VtH264Encoder::new(enc_w, enc_h, fps, native_bitrate_kbps, fps) {
+            match VtH264Encoder::new(tw, th, fps, native_bitrate_kbps, fps) {
                 Ok(enc) => {
                     encoder_opt = Some(enc);
                 }

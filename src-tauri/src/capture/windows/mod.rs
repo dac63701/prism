@@ -40,6 +40,8 @@ pub struct WindowsCaptureBackend {
     /// Requested output dimensions from settings (0 = native).
     target_width: u32,
     target_height: u32,
+    /// Aspect-ratio mode ("match" | "16:9" | "21:9" | "32:9").
+    aspect_ratio: String,
 }
 
 /// D3D11 video processor pipeline: converts the desktop texture (BGRA) to NV12
@@ -83,6 +85,7 @@ impl WindowsCaptureBackend {
             current_height: 0,
             target_width: 0,
             target_height: 0,
+            aspect_ratio: crate::settings::config::default_aspect_ratio_string(),
         }
     }
 
@@ -531,7 +534,7 @@ impl WindowsCaptureBackend {
             std::slice::from_raw_parts(mapped.pData as *const u8, (src_stride * height) as usize)
         };
 
-        let (dst_w, dst_h) = self.output_dimensions(width, height);
+        let (dst_w, dst_h) = self.output_dimensions();
         let nv12_data = if dst_w == width && dst_h == height {
             bgra_to_nv12(mapped_data, width, height, src_stride)
         } else {
@@ -555,12 +558,18 @@ impl WindowsCaptureBackend {
         Ok(Some(frame))
     }
 
-    /// Effective output size for this frame: configured target or native.
-    fn output_dimensions(&self, src_width: u32, src_height: u32) -> (u32, u32) {
+    /// Effective output size for this session: configured target (AR-matched
+    /// to the capture source) or native when no target is configured.
+    fn output_dimensions(&self) -> (u32, u32) {
         if self.target_width > 0 && self.target_height > 0 {
-            (self.target_width, self.target_height)
+            crate::settings::config::aspect_dimensions(
+                self.current_width,
+                self.current_height,
+                self.target_height,
+                &self.aspect_ratio,
+            )
         } else {
-            (src_width, src_height)
+            (self.current_width, self.current_height)
         }
     }
 }
@@ -628,10 +637,11 @@ impl CaptureBackend for WindowsCaptureBackend {
         self.current_height = dup_desc.ModeDesc.Height;
         self.target_width = config.target_width;
         self.target_height = config.target_height;
+        self.aspect_ratio = config.aspect_ratio.clone();
 
         // Create the GPU conversion pipeline once. Any failure falls back to
         // the CPU conversion path transparently (old/weak GPUs, odd drivers).
-        let (dst_w, dst_h) = self.output_dimensions(self.current_width, self.current_height);
+        let (dst_w, dst_h) = self.output_dimensions();
         self.video_pipeline = self.create_video_pipeline(
             self.current_width,
             self.current_height,

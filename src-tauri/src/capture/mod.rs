@@ -67,6 +67,9 @@ pub struct CaptureConfig {
     pub target_width: u32,
     /// Output height the backend should produce. `0` = native capture size.
     pub target_height: u32,
+    /// Aspect-ratio mode: "match" (preserve source), "16:9", "21:9", or "32:9".
+    /// Used to derive the final output dimensions from the capture source.
+    pub aspect_ratio: String,
 }
 
 impl Default for CaptureConfig {
@@ -77,6 +80,7 @@ impl Default for CaptureConfig {
             target: CaptureTarget::default(),
             target_width: 0,
             target_height: 0,
+            aspect_ratio: crate::settings::config::default_aspect_ratio_string(),
         }
     }
 }

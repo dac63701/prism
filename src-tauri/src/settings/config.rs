@@ -32,6 +32,10 @@ pub struct RecordingSettings {
     /// "native" preserves the capture source's original dimensions.
     #[serde(default = "default_resolution_string")]
     pub resolution: String,
+    /// Output aspect ratio: "match" (preserve the source — never stretches),
+    /// or a forced "16:9" | "21:9" | "32:9". Ignored when `resolution` is native.
+    #[serde(default = "default_aspect_ratio_string")]
+    pub aspect_ratio: String,
     /// Output directory — if empty, use default OS Videos/Prism
     pub output_directory: String,
     /// Serialized capture target ("display", "display_id:N", "window:N", "application:bundle_id")
@@ -51,6 +55,16 @@ fn default_quality_preset() -> String {
     "balanced".into()
 }
 
+/// Default output aspect ratio: preserve the capture source so ultrawide
+/// displays record without distortion.
+pub fn default_aspect_ratio() -> &'static str {
+    "match"
+}
+
+pub fn default_aspect_ratio_string() -> String {
+    default_aspect_ratio().to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -63,6 +77,7 @@ impl Default for RecordingSettings {
             fps_auto: true,
             bitrate_kbps: default_bitrate_kbps(),
             resolution: default_resolution().into(),
+            aspect_ratio: default_aspect_ratio_string(),
             output_directory: String::new(),
             capture_target: String::new(),
             always_on_recording: false,
@@ -309,4 +324,70 @@ pub fn resolution_dimensions(label: &str) -> (u32, u32) {
 /// Returns `true` when the resolution label is set to native capture.
 pub fn is_native_resolution(label: &str) -> bool {
     label.eq_ignore_ascii_case("native")
+}
+
+/// Compute the output dimensions for a capture source of `src_w × src_h`
+/// scaled to a preset vertical resolution `target_h`, honoring the aspect mode.
+///
+/// - `"match"` preserves the source aspect ratio (no distortion) — an
+///   ultrawide 3440×1440 source at 1080p becomes 2580×1080, not a stretched
+///   1920×1080.
+/// - `"16:9" | "21:9" | "32:9"` force that ratio (the previous behavior for
+///   a 16:9 source; deliberately stretches when the source differs).
+///
+/// Returns even dimensions for H.264/NV12 alignment. When `src_w`/`src_h` or
+/// `target_h` are zero (native capture), returns the source dimensions.
+pub fn aspect_dimensions(src_w: u32, src_h: u32, target_h: u32, aspect: &str) -> (u32, u32) {
+    if src_w == 0 || src_h == 0 || target_h == 0 {
+        return (src_w, src_h);
+    }
+    let h = target_h & !1;
+    if h == 0 {
+        return (src_w, src_h);
+    }
+    let w = match aspect.to_ascii_lowercase().as_str() {
+        "16:9" => h * 16 / 9,
+        "21:9" => h * 21 / 9,
+        "32:9" => h * 32 / 9,
+        _ => {
+            // Preserve the source aspect ratio, scaled to the target height.
+            let w = (src_w as u64 * h as u64 + src_h as u64 / 2) / src_h as u64;
+            w.max(2) as u32
+        }
+    };
+    (w.max(2) & !1, h)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aspect_match_preserves_ultrawide_ratio() {
+        // 3440×1440 (21:9) at 1080p stays ultrawide instead of stretching.
+        assert_eq!(aspect_dimensions(3440, 1440, 1080, "match"), (2580, 1080));
+        // 5120×1440 (32:9) at 1080p keeps its ratio.
+        assert_eq!(aspect_dimensions(5120, 1440, 1080, "match"), (3840, 1080));
+        // 16:9 source is unchanged.
+        assert_eq!(aspect_dimensions(1920, 1080, 1080, "match"), (1920, 1080));
+    }
+
+    #[test]
+    fn aspect_forced_ratios() {
+        assert_eq!(aspect_dimensions(3440, 1440, 1080, "16:9"), (1920, 1080));
+        assert_eq!(aspect_dimensions(1920, 1080, 1080, "21:9"), (2520, 1080));
+        assert_eq!(aspect_dimensions(1920, 1080, 1440, "32:9"), (5120, 1440));
+        assert_eq!(aspect_dimensions(3440, 1440, 1440, "match"), (3440, 1440));
+    }
+
+    #[test]
+    fn aspect_dimensions_edge_cases() {
+        // Native / zero inputs fall back to the source dimensions.
+        assert_eq!(aspect_dimensions(1920, 1080, 0, "match"), (1920, 1080));
+        assert_eq!(aspect_dimensions(0, 0, 1080, "match"), (0, 0));
+        // Output stays even-aligned.
+        let (w, h) = aspect_dimensions(1000, 700, 501, "match");
+        assert_eq!(w % 2, 0);
+        assert_eq!(h % 2, 0);
+    }
 }

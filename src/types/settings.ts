@@ -4,6 +4,7 @@ export interface RecordingSettings {
   fps_auto: boolean;
   bitrate_kbps: number;
   resolution: string;
+  aspect_ratio: string;
   output_directory: string;
   always_on_recording: boolean;
   capture_target: string;

@@ -24,6 +24,7 @@ export function getDefaultSettings(): AppSettings {
       fps_auto: true,
       bitrate_kbps: 8000,
       resolution: "1080p",
+      aspect_ratio: "match",
       output_directory: "",
       always_on_recording: false,
       capture_target: "",
