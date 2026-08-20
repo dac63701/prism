@@ -259,7 +259,7 @@ export default function RecordingSection() {
             description="Recording behavior and audio."
           />
           <div className="mt-3 space-y-1 border-t border-border pt-3">
-            <SettingRow label="Always-on recording" help="Start the buffer automatically when Prism launches.">
+            <SettingRow label="Always-on recording" help="Automatically start the buffer when Prism launches. Turn this off to start and stop the buffer manually with the Home-screen button or the toggle-recording hotkey.">
               <Switch
                 ariaLabel="Always-on recording"
                 checked={s.always_on_recording}

@@ -37,7 +37,17 @@ export const useRecordingStore = create<RecordingState>((set) => {
     if (!unlistenStateChanged) {
       unlistenStateChanged = await listen<boolean>("recording-state-changed", (event) => {
         console.log("[recording] event: recording-state-changed =", event.payload);
-        set({ isRecording: event.payload, starting: false });
+        set(
+          event.payload
+            ? { isRecording: true, starting: false, error: null }
+            : {
+                isRecording: false,
+                starting: false,
+                framesReceived: 0,
+                bufferTimeSeconds: 0,
+                recordingElapsedSeconds: 0,
+              },
+        );
       });
     }
     if (!unlistenClipSaved) {

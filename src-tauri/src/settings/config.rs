@@ -65,7 +65,7 @@ impl Default for RecordingSettings {
             resolution: default_resolution().into(),
             output_directory: String::new(),
             capture_target: String::new(),
-            always_on_recording: true,
+            always_on_recording: false,
             capture_audio: true,
             quality_preset: default_quality_preset(),
         }

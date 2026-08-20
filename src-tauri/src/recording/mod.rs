@@ -4,7 +4,7 @@
 //! can control recording and trigger clip saves.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
@@ -67,6 +67,10 @@ pub struct Recorder {
     /// Set by `request_keyframe()`; the capture loop forces the encoder to emit
     /// a keyframe on its next frame so a fresh sync point lands in the buffer.
     force_keyframe_requested: AtomicBool,
+    /// Monotonic recording-session counter. Incremented on every start so an
+    /// in-flight frame from a previous session can never be pushed into the
+    /// current session's buffer after a stop/start cycle.
+    generation: AtomicU64,
 }
 
 struct RecorderInner {
@@ -218,6 +222,7 @@ impl Recorder {
             frames_received: std::sync::atomic::AtomicU64::new(0),
             cached_fps: AtomicU32::new(fps),
             force_keyframe_requested: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -310,6 +315,7 @@ impl Recorder {
             inner.audio.start(inner.buffer.config().max_duration_secs);
         }
 
+        self.generation.fetch_add(1, Ordering::SeqCst);
         self.running.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -541,6 +547,11 @@ impl Recorder {
         #[cfg(target_os = "linux")]
         let phase1 = (frame,);
 
+        // Session generation captured under the lock; Phase 3 compares it to
+        // the current value so frames encoded for a stopped session are never
+        // pushed into the buffer after a stop/start cycle.
+        let session = self.generation.load(Ordering::SeqCst);
+
         // ── Lock released here (guard drops) ──────────────────────────────
         drop(guard);
         let t1 = if prof {
@@ -570,6 +581,15 @@ impl Recorder {
             Some(i) => i,
             None => return 1, // frame was polled but push may be partial
         };
+
+        // Recording was stopped (or a new session started) while this frame
+        // was being encoded. Drop the frame and encoder so a Stop always
+        // leaves an empty shadow buffer and stale frames never leak into a
+        // new session.
+        if !self.running.load(Ordering::SeqCst) || session != self.generation.load(Ordering::SeqCst)
+        {
+            return 1;
+        }
 
         #[cfg(target_os = "windows")]
         {

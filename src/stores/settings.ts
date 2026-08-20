@@ -25,7 +25,7 @@ export function getDefaultSettings(): AppSettings {
       bitrate_kbps: 8000,
       resolution: "1080p",
       output_directory: "",
-      always_on_recording: true,
+      always_on_recording: false,
       capture_target: "",
       capture_audio: true,
       quality_preset: "balanced",
